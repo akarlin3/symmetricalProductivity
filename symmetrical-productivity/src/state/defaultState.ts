@@ -216,6 +216,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
   logicalDayKey: initialLogicalDay,
   todayBlockLog: DEFAULT_TODAY_BLOCK_LOG,
   upcomingMilestones: ['Nov 12: Anatomy Exam', 'Dec 8–9: Comp Exam'],
+  bandwidth: 'Sharp',
   loadMode: 'CRUISE',
   preExamTaperActive: false,
   cruisePlus: false,

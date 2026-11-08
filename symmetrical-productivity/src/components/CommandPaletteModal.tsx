@@ -47,6 +47,7 @@ interface CommandPaletteModalProps {
   smartIntakePreview: SmartIntakePlanResult | null;
   onSetSmartIntakePreview: (plan: SmartIntakePlanResult | null) => void;
   onApplySmartIntakePlan: (plan: SmartIntakePlanResult) => void;
+  onOpenGeminiBridgeModal?: () => void;
 }
 
 export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
@@ -66,6 +67,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   smartIntakePreview,
   onSetSmartIntakePreview,
   onApplySmartIntakePlan,
+  onOpenGeminiBridgeModal,
 }) => {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [isParsing, setIsParsing] = useState(false);
@@ -95,6 +97,24 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   };
 
   const quickActions = [
+    ...(onOpenGeminiBridgeModal
+      ? [
+          {
+            id: 'cmd-open-gemini-bridge',
+            label: 'Sync with Gemini & Bidirectional Hub',
+            subtitle:
+              'Compile 3-Part state.md + JSON (Modes A–D) or paste response from Gemini',
+            shortcut: '⌘G',
+            icon: Sparkles,
+            accent: 'text-sky-300',
+            action: () => {
+              triggerHaptic([12]);
+              onClose();
+              onOpenGeminiBridgeModal();
+            },
+          },
+        ]
+      : []),
     {
       id: 'cmd-toggle-timer',
       label: state.timer.isRunning

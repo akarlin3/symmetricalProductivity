@@ -39,6 +39,7 @@ interface HeaderBarProps {
   onResetDefault: () => void;
   isEveningTheme: boolean;
   onOpenCommandDock?: () => void;
+  onOpenGeminiBridgeModal?: () => void;
   cinemaFocusMode?: boolean;
   onToggleCinemaFocusMode?: () => void;
 }
@@ -62,6 +63,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   onResetDefault,
   isEveningTheme,
   onOpenCommandDock,
+  onOpenGeminiBridgeModal,
   cinemaFocusMode = false,
   onToggleCinemaFocusMode,
 }) => {
@@ -252,6 +254,29 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                 : ''
             }`}
           >
+            {onOpenGeminiBridgeModal && (
+              <button
+                id="btn-open-gemini-bridge-modal"
+                type="button"
+                onClick={() => {
+                  triggerHaptic([12]);
+                  onOpenGeminiBridgeModal();
+                }}
+                className={`px-3 py-1.5 rounded-xl border text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer transition shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18)] ${
+                  isEveningTheme
+                    ? 'bg-gradient-to-r from-amber-500/25 to-orange-500/20 hover:from-amber-500/35 hover:to-orange-500/30 border-amber-400/50 text-amber-100'
+                    : 'bg-gradient-to-r from-sky-500/25 to-indigo-500/25 hover:from-sky-500/35 hover:to-indigo-500/35 border-sky-400/50 text-sky-100 shadow-[0_0_15px_rgba(56,189,248,0.18)]'
+                }`}
+                title="Open Export to Gemini & Bidirectional Sync Hub (Cmd/Ctrl + G)"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-sky-300 shrink-0" />
+                <span>Sync with Gemini</span>
+                <kbd className="px-1 py-0.5 rounded bg-black/45 border border-white/15 text-[9px] font-mono text-sky-200">
+                  ⌘G
+                </kbd>
+              </button>
+            )}
+
             {onOpenCommandDock && (
               <button
                 id="btn-open-command-dock"

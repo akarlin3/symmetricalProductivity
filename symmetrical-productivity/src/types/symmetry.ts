@@ -2,6 +2,9 @@ export type TabId = 'PIPELINE' | 'TIMER' | 'RECHARGE' | 'ROADMAP';
 
 export type LoadMode = 'CRUISE' | 'SURGE' | 'TAPER';
 
+export type BandwidthLevel = 'Sharp' | 'Steady' | 'Low';
+
+
 export type FixedEventType = 'NONE' | 'LAB_2H' | 'VOLUNTEER' | 'EVENING_OUTING_6PM';
 
 export type BaselineCategory = 'FLASHCARDS_ANATOMY' | 'FLASHCARDS_COMP' | 'READING' | 'SYNTHESIS';
@@ -321,6 +324,7 @@ export interface SymmetryState {
   logicalDayKey?: string; // Logical day boundary key (hours < logicalDayRolloverHour counts as previous day)
   todayBlockLog: TodayBlockLogEntry[];
   upcomingMilestones: string[];
+  bandwidth?: BandwidthLevel;
   loadMode: LoadMode;
   preExamTaperActive: boolean; // Cancels heavy prose/synthesis, caps at 7-9 blocks, routes strictly to Exam Review & Active Recall
   cruisePlus: boolean;

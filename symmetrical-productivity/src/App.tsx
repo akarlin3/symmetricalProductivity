@@ -77,6 +77,7 @@ import {
 } from './utils/smartIntakePlanner';
 import { HeaderBar } from './components/HeaderBar';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
+import { GeminiBridgeModal } from './components/GeminiBridgeModal';
 import { OnboardingWizardModal } from './components/OnboardingWizardModal';
 import { PipelineDrawer } from './components/PipelineDrawer';
 import { PlanningAssistantDrawer } from './components/PlanningAssistantDrawer';
@@ -105,6 +106,7 @@ export function App() {
   const [pipelineDrawerOpen, setPipelineDrawerOpen] = useState(false);
   const [assistantDrawerOpen, setAssistantDrawerOpen] = useState(false);
   const [stateModalOpen, setStateModalOpen] = useState(false);
+  const [geminiBridgeOpen, setGeminiBridgeOpen] = useState(false);
   const [onboardingWizardOpen, setOnboardingWizardOpen] = useState(false);
   const [isFirstVisitOnboarding, setIsFirstVisitOnboarding] = useState(false);
   const [commandDockOpen, setCommandDockOpen] = useState(false);
@@ -587,9 +589,16 @@ export function App() {
     return () => window.clearInterval(id);
   }, [undoToast]);
 
-  // Global Keyboard Shortcuts: Cmd/Ctrl + K for Command Dock, Cmd/Ctrl + / for Planning Assistant, Cmd/Ctrl+J for Smart Intake, F for Cinema Focus, Cmd/Ctrl+Z for Undo, Spacebar to start/pause timer
+  // Global Keyboard Shortcuts: Cmd/Ctrl + G for Gemini Sync Hub, Cmd/Ctrl + K for Command Dock, Cmd/Ctrl + / for Planning Assistant, Cmd/Ctrl+J for Smart Intake, F for Cinema Focus, Cmd/Ctrl+Z for Undo, Spacebar to start/pause timer
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'g') {
+        e.preventDefault();
+        triggerHaptic([12]);
+        setGeminiBridgeOpen((prev) => !prev);
+        return;
+      }
+
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         triggerHaptic([12]);
@@ -625,6 +634,12 @@ export function App() {
           target.tagName === 'TEXTAREA' ||
           target.tagName === 'SELECT' ||
           target.isContentEditable);
+
+      if (e.key === 'Escape' && geminiBridgeOpen) {
+        e.preventDefault();
+        setGeminiBridgeOpen(false);
+        return;
+      }
 
       if (e.key === 'Escape' && commandDockOpen) {
         e.preventDefault();
@@ -684,7 +699,7 @@ export function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activeTab, pipelineDrawerOpen, commandDockOpen, handleTriggerUndo]);
+  }, [activeTab, pipelineDrawerOpen, commandDockOpen, geminiBridgeOpen, handleTriggerUndo]);
 
   const handleApplySmartIntakePlan = (plan: SmartIntakePlanResult) => {
     setState((prev) => {
@@ -2624,6 +2639,7 @@ export function App() {
           }}
           isEveningTheme={isEveningTheme}
           onOpenCommandDock={() => setCommandDockOpen(true)}
+          onOpenGeminiBridgeModal={() => setGeminiBridgeOpen(true)}
           cinemaFocusMode={cinemaFocusMode}
           onToggleCinemaFocusMode={() =>
             setCinemaFocusMode((prev) => !prev)
@@ -4720,6 +4736,28 @@ export function App() {
         smartIntakePreview={smartIntakePreview}
         onSetSmartIntakePreview={setSmartIntakePreview}
         onApplySmartIntakePlan={handleApplySmartIntakePlan}
+        onOpenGeminiBridgeModal={() => setGeminiBridgeOpen(true)}
+      />
+
+      {/* Export to Gemini & Bidirectional Sync Hub (Cmd/Ctrl + G) */}
+      <GeminiBridgeModal
+        isOpen={geminiBridgeOpen}
+        onClose={() => setGeminiBridgeOpen(false)}
+        state={state}
+        onApplyImportedState={(nextState, summary) => {
+          setState((prev) => {
+            pushUndoSnapshot(prev, `Synced from Gemini (${summary})`);
+            return nextState;
+          });
+        }}
+        onChangeBandwidth={(bandwidth) =>
+          setState((prev) => ({
+            ...prev,
+            bandwidth,
+          }))
+        }
+        onShowNotice={showNotice}
+        isEveningTheme={isEveningTheme}
       />
     </div>
   );
