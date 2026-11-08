@@ -239,6 +239,54 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
           );
         })}
       </div>
+
+      {/* Persistent Completed Deliverables Ledger Archive */}
+      <section
+        id="roadmap-completed-deliverables-archive"
+        aria-labelledby="completed-deliverables-heading"
+        className="p-5 sm:p-6 rounded-3xl bento-surface space-y-3"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-300 font-bold">
+              PERSISTENT OUTPUT ARCHIVE • COMPLETED DELIVERABLES LOG
+            </span>
+            <h3
+              id="completed-deliverables-heading"
+              className="font-serif text-2xl text-white mt-0.5"
+            >
+              Completed Deliverables Ledger Archive ({state.completedDeliverablesLog?.length || 0})
+            </h3>
+          </div>
+        </div>
+
+        {state.completedDeliverablesLog && state.completedDeliverablesLog.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            {state.completedDeliverablesLog.map((item) => (
+              <div
+                key={item.id}
+                className="p-3.5 rounded-2xl bg-black/35 border border-emerald-500/30 flex items-center justify-between gap-3"
+              >
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-white truncate">
+                    {item.title}
+                  </div>
+                  <div className="text-[11px] font-mono text-slate-400">
+                    Date: {item.date || item.completedDate} • Track: {item.trackId.toUpperCase()}
+                  </div>
+                </div>
+                <span className="px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-400/40 font-mono text-xs font-bold text-emerald-200 shrink-0">
+                  {item.blockCount ?? item.blocksCompleted}/{item.totalBlocks} blks
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs font-mono text-slate-400">
+            No deliverables archived yet. Click &ldquo;Complete Deliverable&rdquo; on Locked Focus #1 to archive it here, credit the 4-Rung Output bar, and promote the next item from openListBacklog.
+          </p>
+        )}
+      </section>
     </div>
   );
 };

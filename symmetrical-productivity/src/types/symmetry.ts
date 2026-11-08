@@ -98,8 +98,23 @@ export interface StickySlotState {
   activeTitle: string;
   startupStep: string;
   backlogQueue: string[];
+  queuedNextTitle: string; // Top item in backlogQueue ready for one-tap promotion
   fiveMinStarts: number; // [X / 3] counter
+  startsLogged: number; // Alias synchronized with fiveMinStarts ([X / 3] starts)
   unlockedViaCheckIn: boolean;
+  archivedTitles?: string[];
+}
+
+export interface CompletedDeliverableEntry {
+  id: string;
+  title: string;
+  date: string;
+  completedDate: string;
+  blockCount: number;
+  blocksCompleted: number;
+  totalBlocks: number;
+  trackId: TrackId;
+  presetType: ProjectPresetType;
 }
 
 export type RechargePacingStage =
@@ -167,6 +182,7 @@ export interface SymmetryState {
   logicalDayKey?: string; // 4:00 AM boundary day key (hours < 4 counts as previous day)
   upcomingMilestones: string[];
   loadMode: LoadMode;
+  preExamTaperActive: boolean; // Cancels heavy prose/synthesis, caps at 7-9 blocks, routes strictly to Exam Review & Active Recall
   cruisePlus: boolean;
   customModeBlockAdjustment: number; // e.g. 11 vs 12 for Cruise, 14 vs 15 for Surge, 7-9 for Taper
   surgeConsecutiveDays: number; // Hard cap max 2 consecutive Surge days
@@ -178,6 +194,8 @@ export interface SymmetryState {
   baselineBlocks: BaselineBlock[];
   projectQueue: ProjectItem[];
   projectBacklog: Omit<ProjectItem, 'slot'>[];
+  openListBacklog: Omit<ProjectItem, 'slot'>[];
+  completedDeliverablesLog: CompletedDeliverableEntry[];
   pipelineDays: PipelineDay[];
   discretionaryBlocksCompletedToday: number;
   timer: TimerConsoleState;

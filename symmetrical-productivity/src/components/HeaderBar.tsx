@@ -108,17 +108,21 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                       : 'text-base sm:text-lg text-white'
                   }`}
                 >
-                  {isEveningTheme ? 'Evening Recharge Sanctuary' : 'SymmetryManager'}
+                  {isEveningTheme ? 'Evening Recharge Menu' : 'SymmetryManager'}
                 </h1>
                 <span
                   className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded-full border transition-colors duration-500 ${
                     isEveningTheme
                       ? 'bg-amber-500/15 border-amber-500/40 text-amber-200'
+                      : state.preExamTaperActive
+                      ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
                       : 'bg-white/[0.04] border-white/[0.12] text-cyan-300'
                   }`}
                 >
                   {isEveningTheme
                     ? 'End-of-Shift Lock'
+                    : state.preExamTaperActive
+                    ? 'Pre-Exam Taper Mode'
                     : `${state.loadMode}${state.cruisePlus ? '+' : ''} Mode`}
                 </span>
                 <span

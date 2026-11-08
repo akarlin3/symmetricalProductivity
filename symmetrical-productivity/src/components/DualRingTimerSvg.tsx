@@ -1,4 +1,5 @@
 import React from 'react';
+import { PictureInPicture2 } from 'lucide-react';
 import { TimerConsoleState } from '../types/symmetry';
 
 interface DualRingTimerSvgProps {
@@ -7,6 +8,8 @@ interface DualRingTimerSvgProps {
   formattedTime: string;
   stageBadgeText: string;
   onToggleRun?: () => void;
+  onOpenMiniHudPip?: () => void;
+  isMiniHudOpen?: boolean;
 }
 
 export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
@@ -15,6 +18,8 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
   formattedTime,
   stageBadgeText,
   onToggleRun,
+  onOpenMiniHudPip,
+  isMiniHudOpen = false,
 }) => {
   const size = 280;
   const center = size / 2;
@@ -314,7 +319,7 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
         </div>
       </div>
 
-      {/* Ring Legend Pills */}
+      {/* Ring Legend Pills + Mini HUD (PiP) Button */}
       <div className="flex flex-wrap items-center justify-center gap-1.5 text-[10px] font-mono">
         <span
           className={`px-2.5 py-1 rounded-full border flex items-center gap-1.5 ${
@@ -346,6 +351,26 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
           />
           <span>Outer: 15m Momentum</span>
         </span>
+
+        {onOpenMiniHudPip && (
+          <button
+            id="btn-mini-hud-pip"
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenMiniHudPip();
+            }}
+            className={`px-2.5 py-1 rounded-full border flex items-center gap-1.5 cursor-pointer transition ${
+              isMiniHudOpen
+                ? 'bg-cyan-400 text-slate-950 border-cyan-300 font-bold shadow-[0_0_12px_rgba(34,211,238,0.35)]'
+                : 'bg-cyan-500/15 hover:bg-cyan-500/25 border-cyan-400/50 text-cyan-200 font-bold'
+            }`}
+            title="Float live 5m Startup / 15m Momentum countdown (260x110 Document Picture-in-Picture or corner overlay)"
+          >
+            <PictureInPicture2 className="w-3 h-3 shrink-0" />
+            <span>Mini HUD (PiP)</span>
+          </button>
+        )}
       </div>
     </div>
   );

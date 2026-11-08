@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Activity,
   AlertTriangle,
+  Archive,
+  Calendar,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -9,12 +11,16 @@ import {
   Coffee,
   FastForward,
   Flame,
+  GraduationCap,
   Lock,
+  Mic,
+  MicOff,
   Music,
   Pause,
   Play,
   Plus,
   RotateCcw,
+  Send,
   ShieldAlert,
   Sliders,
   Sparkles,
@@ -27,20 +33,23 @@ import {
   FixedEventType,
   Level2BreakProtocol,
   LoadMode,
+  PipelineDay,
   ProjectPresetType,
   StressResetProtocol,
   SymmetryState,
   TimerRunMode,
   TrackId,
 } from '../types/symmetry';
-import { computeShiftMetrics } from '../state/defaultState';
+import { computeShiftMetrics, getPreExamTaperSuggestion } from '../state/defaultState';
 import { DualRingTimerSvg } from './DualRingTimerSvg';
 import { BreathingVisualizer478 } from './BreathingVisualizer478';
+import { InteractivePipelineTable } from './PipelineDrawer';
 import { triggerHaptic } from '../utils/haptics';
 
 interface Tab1PipelineProps {
   state: SymmetryState;
   onSelectLoadMode: (mode: LoadMode, targetBlocks: number, cruisePlus?: boolean) => void;
+  onTogglePreExamTaper: (forceValue?: boolean) => void;
   onSetSurgeConsecutiveDays: (days: number) => void;
   onSetFixedEvent: (event: FixedEventType) => void;
   onSetSessionDisplayDuration: (mins: 20 | 40) => void;
@@ -63,6 +72,10 @@ interface Tab1PipelineProps {
     startupStep: string
   ) => void;
   onOpenPipelineDrawer: () => void;
+  onUpdatePipelineDay: (dayIndex: number, patch: Partial<PipelineDay>) => void;
+  onSmartIntakeSubmit: (rawText: string) => void;
+  onOpenMiniHudPip?: () => void;
+  isMiniHudOpen?: boolean;
   onTriggerMidDayReset: () => void;
   // Timer HUD & Quick Triage Dock handlers
   onToggleTimerRun: () => void;
@@ -83,6 +96,7 @@ interface Tab1PipelineProps {
 export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   state,
   onSelectLoadMode,
+  onTogglePreExamTaper,
   onSetSurgeConsecutiveDays,
   onSetFixedEvent,
   onSetSessionDisplayDuration,
@@ -94,6 +108,10 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   onCompleteProjectItem1,
   onAddProjectToQueue,
   onOpenPipelineDrawer,
+  onUpdatePipelineDay,
+  onSmartIntakeSubmit,
+  onOpenMiniHudPip,
+  isMiniHudOpen,
   onTriggerMidDayReset,
   onToggleTimerRun,
   onResetCurrentStage,
@@ -127,6 +145,20 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
     'Open document, create section headings, and draft first 3 lines.'
   );
 
+  // Smart Intake Bar + Voice Dictation state
+  const [intakeText, setIntakeText] = useState('');
+  const [isListeningVoice, setIsListeningVoice] = useState(false);
+  const [voiceStatusMsg, setVoiceStatusMsg] = useState<string | null>(null);
+  // Optional date override to preview Nov 12 / Dec 8 exam proximity suggestion
+  const [simulateExamProximityDate, setSimulateExamProximityDate] = useState<boolean>(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null);
+
+  const examCheckDate = simulateExamProximityDate
+    ? new Date(new Date().getFullYear(), 10, 10, 12, 0, 0) // Nov 10 (2 days before Nov 12)
+    : new Date();
+  const examSuggestion = getPreExamTaperSuggestion(examCheckDate);
+
   // Rule 3: Block flashcards from being scheduled/executed as the final block of the night
   const isFinalBlockOfNight = metrics.remainingBlocks === 1;
 
@@ -146,14 +178,35 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   };
 
   // Auto-Router: compute the exact "Up Next" recommended block
+  // When Pre-Exam Taper is active, cancel heavy prose/half-chapter synthesis blocks and route strictly to Exam Review & Active Recall
   const nextEligibleBaseline = state.baselineBlocks.find((b) => {
     if (b.completed || b.bankedViaEarlyClearance) return false;
+    if (state.preExamTaperActive && (b.category === 'SYNTHESIS' || b.category === 'READING')) {
+      return false;
+    }
     if (isFinalBlockOfNight && isFlashcardBlock(b)) return false;
     return true;
   });
   const primaryProject = state.projectQueue[0];
 
-  const upNextBlock = nextEligibleBaseline
+  const upNextBlock = state.preExamTaperActive
+    ? nextEligibleBaseline
+      ? {
+          sourceId: nextEligibleBaseline.id,
+          title: `${nextEligibleBaseline.title} (Active Recall)`,
+          badge: 'PRE-EXAM TAPER • EXAM REVIEW & ACTIVE RECALL',
+          taskType: 'FLASHCARDS' as const,
+          startupStep: nextEligibleBaseline.startupStep,
+        }
+      : {
+          sourceId: primaryProject?.id || 'exam_recall_sprint',
+          title: 'Exam Review & Active Recall — Practice Questions & Weak-Tag Drill',
+          badge: 'PRE-EXAM TAPER • EXAM REVIEW & ACTIVE RECALL (7–9 BLOCK CAP)',
+          taskType: 'FLASHCARDS' as const,
+          startupStep:
+            'Open high-yield missed card tags + complete 15 active recall questions without notes.',
+        }
+    : nextEligibleBaseline
     ? {
         sourceId: nextEligibleBaseline.id,
         title: nextEligibleBaseline.title,
@@ -185,6 +238,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
     state.baselineBlocks[0];
 
   const lockedSecondaryProjects = state.projectQueue.slice(1);
+  const openBacklogList = state.openListBacklog ?? state.projectBacklog ?? [];
 
   const stageBadgeText =
     timer.mode === 'WORK_20M'
@@ -218,8 +272,201 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
     setNewProjTitle('');
   };
 
+  const handleSmartIntakeFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!intakeText.trim()) return;
+    onSmartIntakeSubmit(intakeText.trim());
+    setIntakeText('');
+    setVoiceStatusMsg(null);
+  };
+
+  const handleToggleVoiceDictation = () => {
+    triggerHaptic([15]);
+    if (typeof window === 'undefined') return;
+
+    if (isListeningVoice && recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
+      setIsListeningVoice(false);
+      setVoiceStatusMsg('Dictation stopped.');
+      return;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const win = window as any;
+    const SpeechRecognitionCtor =
+      win.SpeechRecognition || win.webkitSpeechRecognition;
+
+    if (!SpeechRecognitionCtor) {
+      setVoiceStatusMsg(
+        'SpeechRecognition API unavailable in this browser context — type directly into Smart Intake.'
+      );
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognitionCtor();
+      recognition.lang = 'en-US';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        setIsListeningVoice(true);
+        setVoiceStatusMsg('Listening for voice brain-dump...');
+      };
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      recognition.onresult = (event: any) => {
+        const transcript = event?.results?.[0]?.[0]?.transcript || '';
+        if (transcript) {
+          setIntakeText((prev) =>
+            prev ? `${prev.trim()} ${transcript.trim()}` : transcript.trim()
+          );
+          setVoiceStatusMsg(`Captured: "${transcript.trim()}"`);
+        }
+      };
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      recognition.onerror = (event: any) => {
+        setIsListeningVoice(false);
+        setVoiceStatusMsg(
+          `Voice dictation notice: ${event?.error || 'microphone permission needed'}`
+        );
+      };
+
+      recognition.onend = () => {
+        setIsListeningVoice(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch {
+      setIsListeningVoice(false);
+      setVoiceStatusMsg('Could not start SpeechRecognition.');
+    }
+  };
+
   return (
     <div className="space-y-4 animate-tab-enter">
+      {/* SMART INTAKE BAR WITH VOICE DICTATION (SpeechRecognition / webkitSpeechRecognition) */}
+      <section
+        id="smart-intake-bar"
+        aria-label="Smart Intake Brain-Dump Parser and Voice Dictation"
+        className="rounded-2xl bento-surface p-3.5 sm:p-4 border border-cyan-500/25"
+      >
+        <form
+          onSubmit={handleSmartIntakeFormSubmit}
+          className="flex flex-wrap items-center gap-2"
+        >
+          <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-cyan-500/15 border border-cyan-400/40 text-cyan-200 font-mono text-[10px] font-bold uppercase tracking-wider shrink-0">
+            <Sparkles className="w-3.5 h-3.5 text-cyan-300" />
+            <span>Smart Intake</span>
+          </div>
+
+          <input
+            id="smart-intake-input"
+            type="text"
+            value={intakeText}
+            onChange={(e) => setIntakeText(e.target.value)}
+            placeholder='Brain-dump task or command (e.g., "Draft 2-page paper on renal clearance", "pre-exam taper", "stress reset")...'
+            className="flex-1 min-w-[210px] bg-slate-950/90 border border-white/[0.12] focus:border-cyan-400/70 rounded-xl px-3 py-2 text-xs font-mono text-slate-100 placeholder:text-slate-500 focus:outline-none"
+          />
+
+          <button
+            id="btn-voice-dictation-intake"
+            type="button"
+            onClick={handleToggleVoiceDictation}
+            aria-label="Voice Dictation Intake (SpeechRecognition)"
+            title="Speak brain-dump directly into Smart Intake Parser (SpeechRecognition / webkitSpeechRecognition)"
+            className={`px-3 py-2 rounded-xl border font-mono text-xs font-bold flex items-center gap-1.5 cursor-pointer transition shrink-0 ${
+              isListeningVoice
+                ? 'bg-rose-500/25 border-rose-400 text-rose-200 animate-pulse'
+                : 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.12] text-cyan-200'
+            }`}
+          >
+            {isListeningVoice ? (
+              <>
+                <MicOff className="w-3.5 h-3.5 text-rose-300" />
+                <span>Listening...</span>
+              </>
+            ) : (
+              <>
+                <Mic className="w-3.5 h-3.5 text-cyan-300" />
+                <span>Dictate</span>
+              </>
+            )}
+          </button>
+
+          <button
+            id="btn-smart-intake-submit"
+            type="submit"
+            className="px-3.5 py-2 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-mono font-bold text-xs flex items-center gap-1.5 cursor-pointer shrink-0"
+          >
+            <Send className="w-3.5 h-3.5" />
+            <span>Parse Intake</span>
+          </button>
+        </form>
+
+        {voiceStatusMsg && (
+          <div
+            id="smart-intake-voice-status"
+            className="mt-2 text-[11px] font-mono text-cyan-300/90 flex items-center justify-between"
+          >
+            <span>{voiceStatusMsg}</span>
+            <button
+              type="button"
+              onClick={() => setVoiceStatusMsg(null)}
+              className="text-slate-400 hover:text-slate-200 underline text-[10px] cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+      </section>
+
+      {/* Auto-Suggest Banner when within 3 days of Nov 12 or Dec 8 */}
+      {(examSuggestion.isWithin3Days || state.preExamTaperActive) && (
+        <div
+          id="pre-exam-taper-banner"
+          className="p-3.5 rounded-2xl bg-indigo-950/60 border border-indigo-400/50 text-indigo-100 flex flex-wrap items-center justify-between gap-3"
+        >
+          <div className="flex items-center gap-2.5">
+            <GraduationCap className="w-5 h-5 text-indigo-300 shrink-0" />
+            <div>
+              <div className="text-xs font-mono font-bold uppercase tracking-wider text-indigo-200">
+                {state.preExamTaperActive
+                  ? 'Pre-Exam Taper Active • Ceiling Capped at 7–9 Blocks • Synthesis Canceled'
+                  : `Pre-Exam Taper Auto-Suggested (${examSuggestion.daysUntil}d to ${examSuggestion.examLabel})`}
+              </div>
+              <p className="text-[11px] text-indigo-200/80 font-mono">
+                Cancels heavy prose/half-chapter synthesis blocks, caps workload at Taper ceiling (7–9 blocks), and routes strictly to Exam Review &amp; Active Recall.
+              </p>
+            </div>
+          </div>
+
+          <button
+            id="btn-banner-toggle-pre-exam-taper"
+            type="button"
+            onClick={() => {
+              triggerHaptic([15]);
+              onTogglePreExamTaper();
+            }}
+            className={`px-3.5 py-1.5 rounded-xl font-mono text-xs font-bold cursor-pointer border ${
+              state.preExamTaperActive
+                ? 'bg-indigo-400 text-slate-950 border-indigo-300'
+                : 'bg-indigo-500/25 hover:bg-indigo-500/40 text-indigo-100 border-indigo-400/60'
+            }`}
+          >
+            {state.preExamTaperActive
+              ? '✓ Pre-Exam Taper Engaged (Disable)'
+              : 'Activate Pre-Exam Taper'}
+          </button>
+        </div>
+      )}
+
       {/* End-of-Shift Lock Banner when 0m work left */}
       {metrics.isZeroWorkLeft && (
         <div
@@ -235,7 +482,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 End-of-Shift Lock Engaged • [0m work left]
               </h2>
               <p className="text-xs text-amber-100/80">
-                Daily work quota reached. Pipeline is locked—transition to the Evening Recharge Sanctuary or open Flow Extension.
+                Daily work quota reached. Pipeline is locked—transition to the Evening Recharge Menu or open Flow Extension.
               </p>
             </div>
           </div>
@@ -247,7 +494,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
             }}
             className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-stone-950 font-mono font-bold text-xs cursor-pointer shadow-lg shadow-amber-500/20"
           >
-            Enter Evening Recharge Sanctuary →
+            Enter Evening Recharge Menu →
           </button>
         </div>
       )}
@@ -345,6 +592,8 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 triggerHaptic([15]);
                 onToggleTimerRun();
               }}
+              onOpenMiniHudPip={onOpenMiniHudPip}
+              isMiniHudOpen={isMiniHudOpen}
             />
           </div>
 
@@ -550,7 +799,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               </button>
             </div>
 
-            {/* Compact Load Mode & Duration-Only Countdown Bar */}
+            {/* Compact Load Mode & Duration-Only Countdown Bar (includes Pre-Exam Taper toggle) */}
             <div className="pt-3 border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-2.5">
               <div className="flex flex-wrap items-center gap-1.5">
                 {(
@@ -572,7 +821,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     },
                   ] as const
                 ).map((item) => {
-                  const active = state.loadMode === item.mode;
+                  const active = state.loadMode === item.mode && !state.preExamTaperActive;
                   const surgeLocked =
                     item.mode === 'SURGE' &&
                     state.surgeConsecutiveDays >= 2 &&
@@ -598,6 +847,34 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     </button>
                   );
                 })}
+
+                {/* Pre-Exam Taper Auto-Mode Toggle inside Load Mode Selector */}
+                <button
+                  id="btn-toggle-pre-exam-taper"
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic([15]);
+                    onTogglePreExamTaper();
+                  }}
+                  title="Pre-Exam Taper Auto-Mode: Cancels heavy prose/synthesis, caps workload at 7–9 blocks, and routes strictly to Exam Review & Active Recall (auto-suggested within 3d of Nov 12 or Dec 8)"
+                  className={`px-2.5 py-1 rounded-xl font-mono text-[11px] font-bold border transition cursor-pointer flex items-center gap-1 ${
+                    state.preExamTaperActive
+                      ? 'bg-indigo-500/30 border-indigo-400 text-indigo-100 shadow-[0_0_12px_rgba(129,140,248,0.3)]'
+                      : examSuggestion.isWithin3Days
+                      ? 'bg-indigo-500/15 border-indigo-400/60 text-indigo-200 animate-pulse'
+                      : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.08] text-slate-300'
+                  }`}
+                >
+                  <GraduationCap className="w-3.5 h-3.5 text-indigo-300" />
+                  <span>
+                    Pre-Exam Taper{state.preExamTaperActive ? ' (ON)' : ''}
+                  </span>
+                  {examSuggestion.isWithin3Days && !state.preExamTaperActive && (
+                    <span className="px-1 py-0.2 rounded bg-indigo-400/25 text-[9px] text-indigo-200">
+                      Suggested
+                    </span>
+                  )}
+                </button>
               </div>
 
               <div className="flex items-center gap-2">
@@ -630,6 +907,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                   </span>
                   <div className="flex flex-wrap gap-1">
                     {state.loadMode === 'CRUISE' &&
+                      !state.preExamTaperActive &&
                       [11, 12, 13].map((n) => (
                         <button
                           key={n}
@@ -645,6 +923,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                         </button>
                       ))}
                     {state.loadMode === 'SURGE' &&
+                      !state.preExamTaperActive &&
                       [14, 15].map((n) => (
                         <button
                           key={n}
@@ -659,14 +938,14 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                           {n} blks
                         </button>
                       ))}
-                    {state.loadMode === 'TAPER' &&
+                    {(state.loadMode === 'TAPER' || state.preExamTaperActive) &&
                       [7, 8, 9].map((n) => (
                         <button
                           key={n}
                           type="button"
                           onClick={() => onSelectLoadMode('TAPER', n, false)}
                           className={`px-2 py-0.5 rounded border text-[11px] cursor-pointer ${
-                            state.customModeBlockAdjustment === n
+                            metrics.totalTargetBlocks === n
                               ? 'bg-emerald-400 text-slate-950 border-emerald-300 font-bold'
                               : 'bg-white/[0.04] border-white/[0.08] text-slate-300'
                           }`}
@@ -693,7 +972,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
 
                 <div className="p-2.5 rounded-xl bg-black/30 border border-white/[0.07] space-y-1.5">
                   <span className="text-[10px] uppercase text-slate-400 block">
-                    Fixed Event Anchor
+                    Fixed Event &amp; Exam Proximity
                   </span>
                   <select
                     id="select-fixed-event"
@@ -706,6 +985,22 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     <option value="VOLUNTEER">Volunteer (01:00–03:00 PM)</option>
                     <option value="EVENING_OUTING_6PM">6:00 PM Evening Outing</option>
                   </select>
+                  <button
+                    id="btn-simulate-exam-proximity"
+                    type="button"
+                    onClick={() =>
+                      setSimulateExamProximityDate(!simulateExamProximityDate)
+                    }
+                    className={`w-full py-0.5 px-2 rounded border text-[10px] cursor-pointer ${
+                      simulateExamProximityDate || examSuggestion.isWithin3Days
+                        ? 'bg-indigo-500/20 border-indigo-400/60 text-indigo-200'
+                        : 'bg-white/[0.03] border-white/[0.08] text-slate-400'
+                    }`}
+                  >
+                    {examSuggestion.isWithin3Days
+                      ? `≤3d to ${examSuggestion.examLabel} (Auto-Suggest Active)`
+                      : 'Simulate ≤3d to Nov 12 / Dec 8 Exam'}
+                  </button>
                 </div>
 
                 <div className="p-2.5 rounded-xl bg-black/30 border border-white/[0.07] space-y-1.5">
@@ -882,47 +1177,61 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       3 Half-Chapter Blocks (2 Read/Eq + 1 Synth)
                     </span>
                     <span className="text-[10px] font-mono text-slate-400">
-                      In + Out
+                      {state.preExamTaperActive ? 'Synth Canceled' : 'In + Out'}
                     </span>
                   </div>
 
                   <div className="grid grid-cols-3 gap-1.5">
                     {halfChapterBlocks.map((b, idx) => {
                       const isSelected = selectedBaseline?.id === b.id;
+                      const isCanceledByTaper =
+                        state.preExamTaperActive && b.category === 'SYNTHESIS';
                       const shortTag =
-                        b.category === 'SYNTHESIS' ? 'SYNTH 1' : `READ ${idx + 1}`;
+                        b.category === 'SYNTHESIS'
+                          ? isCanceledByTaper
+                            ? 'CANCELED'
+                            : 'SYNTH 1'
+                          : `READ ${idx + 1}`;
                       return (
                         <button
                           key={b.id}
                           id={`pill-segment-${b.id}`}
                           type="button"
-                          disabled={metrics.isZeroWorkLeft}
+                          disabled={metrics.isZeroWorkLeft || isCanceledByTaper}
                           onClick={() => {
                             triggerHaptic([10]);
                             setSelectedBaselineId(b.id);
                             onToggleBaselineBlock(b.id);
                           }}
                           className={`p-2.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between min-h-[54px] ${
-                            b.completed
+                            isCanceledByTaper
+                              ? 'bg-indigo-950/35 border-indigo-500/40 text-indigo-300/70 line-through cursor-not-allowed'
+                              : b.completed
                               ? 'bg-emerald-500/20 border-emerald-400/60 text-emerald-100 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.15)]'
                               : isSelected
                               ? 'bg-white/[0.08] border-cyan-400/60 text-white'
                               : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.08] text-slate-300'
                           }`}
-                          title={`${b.title} — Click to toggle complete`}
+                          title={
+                            isCanceledByTaper
+                              ? 'Heavy prose/synthesis canceled during Pre-Exam Taper — routed to Exam Review & Active Recall'
+                              : `${b.title} — Click to toggle complete`
+                          }
                         >
                           <div className="flex items-center justify-between w-full">
                             <span className="font-mono text-[10px] font-bold">
                               {shortTag}
                             </span>
-                            {b.completed && (
+                            {b.completed && !isCanceledByTaper && (
                               <Check className="w-3 h-3 text-emerald-300" />
                             )}
                           </div>
                           <div className="w-full h-1.5 rounded-full bg-black/40 overflow-hidden mt-1.5">
                             <div
                               className={`h-full rounded-full ${
-                                b.completed
+                                isCanceledByTaper
+                                  ? 'w-full bg-indigo-400/50'
+                                  : b.completed
                                   ? 'w-full bg-emerald-400'
                                   : 'w-1/4 bg-indigo-400/60'
                               }`}
@@ -952,6 +1261,8 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     disabled={
                       metrics.isZeroWorkLeft ||
                       isSurgeMidDayResetRequired ||
+                      (state.preExamTaperActive &&
+                        selectedBaseline.category === 'SYNTHESIS') ||
                       (isFinalBlockOfNight &&
                         isFlashcardBlock(selectedBaseline) &&
                         !selectedBaseline.completed)
@@ -1072,7 +1383,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     </p>
                   </div>
 
-                  {/* Primary Action Row for Focus #1 */}
+                  {/* Primary Action Row for Focus #1 (includes One-Tap Complete Deliverable) */}
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       id="btn-launch-project-1"
@@ -1114,11 +1425,27 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                         onCompleteProjectItem1();
                       }}
                       className="py-2 px-3 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-mono font-bold text-xs flex items-center gap-1 cursor-pointer"
-                      title="Mark Item #1 Complete and promote Item #2 to Primary Target"
+                      title="Archive Item #1 into completedDeliverablesLog, increment 4-Rung Roadmap Output bar, shift #2 → #1, and promote top item from openListBacklog into slot #3"
                     >
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Done</span>
+                      <span>Complete Deliverable</span>
                     </button>
+                  </div>
+
+                  {/* Open Backlog Next-Up & Completed Ledger Status */}
+                  <div className="pt-1 flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono text-slate-400">
+                    <span className="truncate">
+                      Open Backlog ({openBacklogList.length}):{' '}
+                      <span className="text-slate-200">
+                        {openBacklogList[0]?.title || 'Empty'}
+                      </span>
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 flex items-center gap-1 shrink-0">
+                      <Archive className="w-3 h-3" />
+                      <span>
+                        Archived: {(state.completedDeliverablesLog ?? []).length}
+                      </span>
+                    </span>
                   </div>
                 </div>
               ) : (
@@ -1454,6 +1781,37 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 </button>
               </div>
             </div>
+          </section>
+
+          {/* -------------------------------------------------------------------
+              INTERACTIVE 7-DAY MASTER PIPELINE TABLE (CLICK ROW TO CYCLE MODE + CHIPS)
+             ------------------------------------------------------------------- */}
+          <section
+            id="bento-interactive-7day-pipeline"
+            aria-label="Interactive 7-Day Master Pipeline Table"
+            className="rounded-3xl bento-surface p-5 space-y-3"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-cyan-400" />
+                <h3 className="text-xs sm:text-sm font-mono uppercase tracking-wider font-bold text-slate-200">
+                  Interactive 7-Day Master Pipeline Table
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={onOpenPipelineDrawer}
+                className="text-[11px] font-mono text-cyan-300 hover:text-cyan-200 underline cursor-pointer"
+              >
+                Expand Drawer View →
+              </button>
+            </div>
+
+            <InteractivePipelineTable
+              state={state}
+              onUpdateDay={onUpdatePipelineDay}
+              compact={true}
+            />
           </section>
         </div>
       </div>

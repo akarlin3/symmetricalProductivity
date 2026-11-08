@@ -112,6 +112,47 @@ export default defineConfig({
             purpose: 'any maskable',
           },
         ],
+        shortcuts: [
+          {
+            name: 'Start 5m Startup',
+            short_name: '5m Startup',
+            description: 'Launch directly into the 5-minute Startup Step (IGNITION_5M) timer',
+            url: '/?action=start',
+            icons: [
+              {
+                src: INLINE_PRISM_ICON,
+                sizes: '192x192',
+                type: 'image/svg+xml',
+              },
+            ],
+          },
+          {
+            name: 'Stress Reset',
+            short_name: 'Stress Reset',
+            description: 'Suspend heavy work and start a 15-minute 4-7-8 Stress / Fatigue Reset',
+            url: '/?action=reset',
+            icons: [
+              {
+                src: INLINE_PRISM_ICON,
+                sizes: '192x192',
+                type: 'image/svg+xml',
+              },
+            ],
+          },
+          {
+            name: 'Evening Recharge',
+            short_name: 'Evening Recharge',
+            description: 'Open the Evening Recharge Menu',
+            url: '/?action=evening',
+            icons: [
+              {
+                src: INLINE_PRISM_ICON,
+                sizes: '192x192',
+                type: 'image/svg+xml',
+              },
+            ],
+          },
+        ],
       },
     }),
   ],

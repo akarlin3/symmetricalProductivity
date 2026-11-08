@@ -47,6 +47,7 @@ interface Tab3RechargeProps {
   onAdvanceCategoryPacingMilestone: () => void;
   onResolveCheckInPrompt: (decision: 'KEEP_GOING' | 'SWITCH' | 'REST') => void;
   onSwapStickyItemFromBacklog: (key: StickyKey) => void;
+  onIncrementStickyStart?: (key: StickyKey) => void;
 }
 
 /**
@@ -78,7 +79,7 @@ const StickyDotsCounter: React.FC<{
       </span>
       {(starts >= 3 || unlockedViaCheckIn) && (
         <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/50 font-mono text-[9px] uppercase text-emerald-200 font-bold">
-          Swap Ready
+          Swap / Complete Ready
         </span>
       )}
     </div>
@@ -105,6 +106,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
   onAdvanceCategoryPacingMilestone,
   onResolveCheckInPrompt,
   onSwapStickyItemFromBacklog,
+  onIncrementStickyStart,
 }) => {
   const metrics = computeShiftMetrics(state);
   const { recharge } = state;
@@ -139,15 +141,15 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
         }}
       />
 
-      {/* Sanctuary Header Banner with Instrument Serif Typography */}
+      {/* Header Banner */}
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-amber-500/20 pb-4">
         <div>
           <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-widest text-amber-300/90">
             <Moon className="w-3.5 h-3.5 text-amber-400" />
-            <span>LOW-BLUE-LIGHT SANCTUARY • ZERO GAMIFICATION</span>
+            <span>LOW-BLUE-LIGHT MODE • ZERO GAMIFICATION</span>
           </div>
           <h2 className="font-serif text-3xl sm:text-4xl text-amber-50 tracking-normal mt-1">
-            Evening Recharge Menu &amp; Stillness Sanctuary
+            Evening Recharge Menu
           </h2>
         </div>
 
@@ -509,8 +511,10 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
               </span>
 
               <StickyDotsCounter
-                starts={makerSlot.fiveMinStarts}
-                unlockedViaCheckIn={makerSlot.unlockedViaCheckIn}
+                starts={makerSlot.startsLogged ?? makerSlot.fiveMinStarts}
+                unlockedViaCheckIn={
+                  makerSlot.unlockedViaCheckIn || recharge.checkInModalOpen
+                }
               />
             </div>
 
@@ -527,14 +531,19 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
               5m Startup: “{makerSlot.startupStep}”
             </div>
 
-            <div className="text-[11px] font-mono text-stone-400 flex items-center justify-between">
+            <div className="text-[11px] font-mono text-stone-400 flex flex-wrap items-center justify-between gap-1">
               <span className="truncate">
-                Next Up: {makerSlot.backlogQueue[0] || 'None'}
+                Queued Next: {makerSlot.queuedNextTitle || makerSlot.backlogQueue[0] || 'None'}
               </span>
+              {makerSlot.archivedTitles && makerSlot.archivedTitles.length > 0 && (
+                <span className="text-emerald-300/90 text-[10px]">
+                  Archived: {makerSlot.archivedTitles.length}
+                </span>
+              )}
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={(e) => {
@@ -542,27 +551,44 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                 onSelectCategory('CAT2_MAKER');
                 onStartCategory5mStep();
               }}
-              className="flex-1 py-2.5 px-3 rounded-xl bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+              className="flex-1 py-2.5 px-2.5 rounded-xl bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-bold text-xs flex items-center justify-center gap-1 cursor-pointer"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
               <span>5m K1C Step</span>
             </button>
 
+            {onIncrementStickyStart && (
+              <button
+                id="btn-log-start-CAT2_MAKER"
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onIncrementStickyStart('CAT2_MAKER');
+                }}
+                className="py-2.5 px-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.12] border border-amber-500/30 text-amber-200 font-mono text-[11px] cursor-pointer"
+                title="Log +1 5m start toward [3 / 3] unlock"
+              >
+                +1 Start
+              </button>
+            )}
+
             <button
               id="btn-swap-sticky-CAT2_MAKER"
               type="button"
               disabled={
-                makerSlot.fiveMinStarts < 3 && !makerSlot.unlockedViaCheckIn
+                (makerSlot.startsLogged ?? makerSlot.fiveMinStarts) < 3 &&
+                !makerSlot.unlockedViaCheckIn &&
+                !recharge.checkInModalOpen
               }
               onClick={(e) => {
                 e.stopPropagation();
                 onSwapStickyItemFromBacklog('CAT2_MAKER');
               }}
-              className="py-2.5 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.14] disabled:opacity-35 border border-amber-400/40 text-amber-100 font-mono text-xs flex items-center gap-1 cursor-pointer"
+              className="py-2.5 px-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.14] disabled:opacity-35 border border-amber-400/40 text-amber-100 font-mono text-xs flex items-center gap-1 cursor-pointer"
               title="Unlock after [3 / 3] 5m starts or at any 20m Check-In"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              <span>Swap</span>
+              <span>Swap / Complete</span>
             </button>
           </div>
         </article>
@@ -634,8 +660,10 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
               </span>
 
               <StickyDotsCounter
-                starts={activeMediaSlot.fiveMinStarts}
-                unlockedViaCheckIn={activeMediaSlot.unlockedViaCheckIn}
+                starts={activeMediaSlot.startsLogged ?? activeMediaSlot.fiveMinStarts}
+                unlockedViaCheckIn={
+                  activeMediaSlot.unlockedViaCheckIn || recharge.checkInModalOpen
+                }
               />
             </div>
 
@@ -671,6 +699,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                 const Icon = tab.icon;
                 const active = recharge.activeMediaTab === tab.id;
                 const slot = recharge.stickySlots[tab.id];
+                const starts = slot.startsLogged ?? slot.fiveMinStarts;
                 return (
                   <button
                     key={tab.id}
@@ -695,7 +724,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                           active ? 'text-stone-900 font-extrabold' : 'text-amber-300'
                         }`}
                       >
-                        [{slot.fiveMinStarts}/3]
+                        [{starts}/3]
                       </span>
                     </div>
                     <span className="text-[11px] truncate mt-0.5 block">
@@ -748,15 +777,27 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
 
               <div className="text-[11px] font-mono text-stone-400 flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-amber-500/15">
                 <span>
-                  Queued Backlog: {activeMediaSlot.backlogQueue.join(' • ')}
+                  Queued Next:{' '}
+                  <strong className="text-amber-200">
+                    {activeMediaSlot.queuedNextTitle ||
+                      activeMediaSlot.backlogQueue[0] ||
+                      'None'}
+                  </strong>{' '}
+                  • Backlog: {activeMediaSlot.backlogQueue.join(' • ')}
                 </span>
                 <span className="text-amber-300">Credits Roadmap Input (50%)</span>
               </div>
+              {activeMediaSlot.archivedTitles &&
+                activeMediaSlot.archivedTitles.length > 0 && (
+                  <div className="text-[10px] font-mono text-emerald-300/90">
+                    Archived Completed: {activeMediaSlot.archivedTitles.join(' • ')}
+                  </div>
+                )}
             </div>
           </div>
 
           <div
-            className="flex items-center gap-2.5"
+            className="flex items-center gap-2"
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -771,19 +812,32 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
               <span>Start 5m ({activeMediaSlot.activeTitle})</span>
             </button>
 
+            {onIncrementStickyStart && (
+              <button
+                id={`btn-log-start-${recharge.activeMediaTab}`}
+                type="button"
+                onClick={() => onIncrementStickyStart(recharge.activeMediaTab)}
+                className="py-2.5 px-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.12] border border-amber-500/30 text-amber-200 font-mono text-[11px] cursor-pointer"
+                title="Log +1 5m start toward [3 / 3] unlock"
+              >
+                +1 Start
+              </button>
+            )}
+
             <button
               id={`btn-swap-sticky-${recharge.activeMediaTab}`}
               type="button"
               disabled={
-                activeMediaSlot.fiveMinStarts < 3 &&
-                !activeMediaSlot.unlockedViaCheckIn
+                (activeMediaSlot.startsLogged ?? activeMediaSlot.fiveMinStarts) < 3 &&
+                !activeMediaSlot.unlockedViaCheckIn &&
+                !recharge.checkInModalOpen
               }
               onClick={() => onSwapStickyItemFromBacklog(recharge.activeMediaTab)}
               className="py-2.5 px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.14] disabled:opacity-35 border border-amber-400/40 text-amber-100 font-mono text-xs flex items-center gap-1.5 cursor-pointer"
-              title="Promote next item from backlog (requires [3 / 3] starts or 20m Check-In)"
+              title="Archive current title & promote queuedNextTitle (requires [3 / 3] starts or 20m Check-In)"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              <span>Swap Track</span>
+              <span>Swap / Complete</span>
             </button>
           </div>
         </article>
@@ -806,8 +860,10 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
               </span>
 
               <StickyDotsCounter
-                starts={gamingSlot.fiveMinStarts}
-                unlockedViaCheckIn={gamingSlot.unlockedViaCheckIn}
+                starts={gamingSlot.startsLogged ?? gamingSlot.fiveMinStarts}
+                unlockedViaCheckIn={
+                  gamingSlot.unlockedViaCheckIn || recharge.checkInModalOpen
+                }
               />
             </div>
 
@@ -825,8 +881,15 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
             </div>
 
             <div className="p-3 rounded-2xl bg-black/35 border border-amber-500/15 space-y-1">
-              <div className="text-[10px] font-mono uppercase text-amber-300/80">
-                Sticky Backlog Queue (Unlocks at [3 / 3] or 20m Check-In)
+              <div className="text-[10px] font-mono uppercase text-amber-300/80 flex items-center justify-between">
+                <span>
+                  Queued Next: {gamingSlot.queuedNextTitle || gamingSlot.backlogQueue[0] || 'None'}
+                </span>
+                {gamingSlot.archivedTitles && gamingSlot.archivedTitles.length > 0 && (
+                  <span className="text-emerald-300">
+                    Archived: {gamingSlot.archivedTitles.length}
+                  </span>
+                )}
               </div>
               <div className="flex flex-wrap gap-1.5 pt-0.5">
                 {gamingSlot.backlogQueue.map((item, idx) => (
@@ -857,17 +920,31 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
               <span>Launch 5m Objective</span>
             </button>
 
+            {onIncrementStickyStart && (
+              <button
+                id="btn-log-start-CAT5_GAMING"
+                type="button"
+                onClick={() => onIncrementStickyStart('CAT5_GAMING')}
+                className="py-2.5 px-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.12] border border-amber-500/30 text-amber-200 font-mono text-[11px] cursor-pointer"
+                title="Log +1 5m start toward [3 / 3] unlock"
+              >
+                +1 Start
+              </button>
+            )}
+
             <button
               id="btn-swap-sticky-CAT5_GAMING"
               type="button"
               disabled={
-                gamingSlot.fiveMinStarts < 3 && !gamingSlot.unlockedViaCheckIn
+                (gamingSlot.startsLogged ?? gamingSlot.fiveMinStarts) < 3 &&
+                !gamingSlot.unlockedViaCheckIn &&
+                !recharge.checkInModalOpen
               }
               onClick={() => onSwapStickyItemFromBacklog('CAT5_GAMING')}
-              className="py-2.5 px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.14] disabled:opacity-35 border border-amber-400/40 text-amber-100 font-mono text-xs flex items-center gap-1.5 cursor-pointer"
+              className="py-2.5 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.14] disabled:opacity-35 border border-amber-400/40 text-amber-100 font-mono text-xs flex items-center gap-1.5 cursor-pointer"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              <span>Swap Game</span>
+              <span>Swap / Complete</span>
             </button>
           </div>
         </article>

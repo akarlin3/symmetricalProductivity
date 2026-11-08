@@ -1,11 +1,16 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Copy,
   Download,
+  FastForward,
   FileText,
   Layers,
   ListChecks,
   Moon,
+  Pause,
+  PictureInPicture2,
+  Play,
   RotateCcw,
   Timer,
   Upload,
@@ -13,6 +18,7 @@ import {
 } from 'lucide-react';
 import { triggerHaptic } from './utils/haptics';
 import {
+  CompletedDeliverableEntry,
   FixedEventType,
   Level2BreakProtocol,
   LoadMode,
@@ -31,6 +37,7 @@ import {
   computeShiftMetrics,
   DEFAULT_SYMMETRY_STATE,
   getLogicalDayKey,
+  getPreExamTaperSuggestion,
   parseFromStateInput,
   serializeToStateMarkdown,
   STORAGE_KEY,
@@ -71,6 +78,9 @@ export function App() {
   const [notificationLog, setNotificationLog] = useState<NotificationLogEntry[]>([]);
   const [notificationsGranted, setNotificationsGranted] = useState(false);
   const [swOfflineReady, setSwOfflineReady] = useState(false);
+  // Document Picture-in-Picture & Floating Corner Fallback state
+  const [pipWindow, setPipWindow] = useState<Window | null>(null);
+  const [floatingMiniHudOpen, setFloatingMiniHudOpen] = useState(false);
 
   const showNotice = (msg: string) => {
     setStatusNotice(msg);
@@ -86,7 +96,7 @@ export function App() {
     });
   };
 
-  // Initialize Capacitor Android Notification Channel & check PWA Service Worker
+  // Initialize Capacitor Android Notification Channel, PWA Service Worker, & Android App Shortcuts (?action=start|reset|evening)
   useEffect(() => {
     initSymmetryNotifications()
       .then((res) => {
@@ -101,6 +111,52 @@ export function App() {
       }
     } catch {
       // Restricted context; swOfflineReady remains false
+    }
+
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const shortcutAction = params.get('action');
+      const now = Date.now();
+      if (shortcutAction === 'start') {
+        setState((prev) => ({
+          ...prev,
+          timer: {
+            ...prev.timer,
+            mode: 'WORK_20M',
+            workStage: 'IGNITION_5M',
+            secondsLeft: 300,
+            targetEndTimeMs: now + 300 * 1000,
+            isRunning: true,
+          },
+        }));
+        setActiveTab('PIPELINE');
+        showNotice('App Shortcut: Started 5m Startup Step (IGNITION_5M).');
+      } else if (shortcutAction === 'reset') {
+        setState((prev) => ({
+          ...prev,
+          timer: {
+            ...prev.timer,
+            mode: 'STRESS_RESET',
+            stressProtocol: 'BREATHING_478',
+            stressDurationMinutes: 15,
+            secondsLeft: 900,
+            targetEndTimeMs: now + 900 * 1000,
+            isRunning: true,
+          },
+        }));
+        setActiveTab('TIMER');
+        showNotice('App Shortcut: Started 15m 4-7-8 Stress Reset.');
+      } else if (shortcutAction === 'evening') {
+        setActiveTab('RECHARGE');
+        showNotice('App Shortcut: Opened Evening Recharge Menu.');
+      } else {
+        const examCheck = getPreExamTaperSuggestion(new Date());
+        if (examCheck.isWithin3Days) {
+          showNotice(
+            `Within ${examCheck.daysUntil}d of ${examCheck.examLabel} — Pre-Exam Taper Auto-Mode suggested.`
+          );
+        }
+      }
     }
   }, []);
 
@@ -995,6 +1051,7 @@ export function App() {
         ...prev,
         loadMode: mode,
         cruisePlus,
+        preExamTaperActive: mode === 'TAPER' ? prev.preExamTaperActive : false,
         customModeBlockAdjustment: targetBlocks,
         fixedEvent: nextFixedEvent,
         pipelineDays: prev.pipelineDays.map((d) =>
@@ -1011,6 +1068,58 @@ export function App() {
       };
     });
     showNotice(`Switched to ${mode}${cruisePlus ? '+' : ''} Mode (${targetBlocks} blocks).`);
+  };
+
+  // Pre-Exam Taper Auto-Mode: Cancels heavy prose/synthesis, caps workload at Taper ceiling (7-9 blocks), routes to Exam Review & Active Recall
+  const handleTogglePreExamTaper = (forceValue?: boolean) => {
+    setState((prev) => {
+      const nextActive =
+        typeof forceValue === 'boolean' ? forceValue : !prev.preExamTaperActive;
+      const cappedBlocks = nextActive
+        ? Math.min(9, Math.max(7, prev.customModeBlockAdjustment || 8))
+        : 12;
+
+      return {
+        ...prev,
+        preExamTaperActive: nextActive,
+        loadMode: nextActive ? 'TAPER' : 'CRUISE',
+        cruisePlus: false,
+        customModeBlockAdjustment: nextActive ? 8 : cappedBlocks,
+        baselineBlocks: prev.baselineBlocks.map((b) =>
+          b.category === 'SYNTHESIS'
+            ? {
+                ...b,
+                bankedViaEarlyClearance: nextActive,
+              }
+            : b
+        ),
+        pipelineDays: prev.pipelineDays.map((d) =>
+          d.isToday
+            ? {
+                ...d,
+                loadMode: nextActive ? 'TAPER' : 'CRUISE',
+                baseTargetBlocks: nextActive ? 8 : cappedBlocks,
+              }
+            : d
+        ),
+        timer: nextActive
+          ? {
+              ...prev.timer,
+              activeBlockSourceId: 'fc_anat_1',
+              activeTaskTitle:
+                'Exam Review & Active Recall — High-Yield Practice Drill',
+              activeTaskType: 'FLASHCARDS',
+              activeStartupPrompt:
+                'Open high-yield missed card tags + complete first 15 active recall questions.',
+            }
+          : prev.timer,
+      };
+    });
+    showNotice(
+      state.preExamTaperActive
+        ? 'Disabled Pre-Exam Taper Mode — restored standard Cruise pipeline.'
+        : 'Pre-Exam Taper Active: Synthesis canceled, ceiling capped at 8 blocks (7–9 range), routed to Exam Review & Active Recall.'
+    );
   };
 
   const handleToggleBaselineBlock = (blockId: string) => {
@@ -1119,27 +1228,76 @@ export function App() {
     showNotice('Logged +1 discretionary project block on Item #1 (Credited to Output).');
   };
 
+  // One-Tap Backlog Promotion & Completed Ledger Archive on Closed List Focus #1
   const handleCompleteProjectItem1 = () => {
     setState((prev) => {
+      const completedItem = prev.projectQueue[0];
       const remaining = prev.projectQueue.slice(1);
-      const [nextFromBacklog, ...restBacklog] = prev.projectBacklog;
+      const sourceBacklog =
+        prev.openListBacklog && prev.openListBacklog.length > 0
+          ? prev.openListBacklog
+          : prev.projectBacklog;
+      const [nextFromBacklog, ...restBacklog] = sourceBacklog;
+
       const newQueue = remaining.map((item, index) => ({
         ...item,
         slot: (index + 1) as 1 | 2 | 3,
+        nextStepNote:
+          index === 0
+            ? 'Promoted to Active Focus #1 — 100% of discretionary blocks locked here.'
+            : 'Locked until Item #1 is marked complete.',
       }));
+
       if (nextFromBacklog && newQueue.length < 3) {
         newQueue.push({
           ...nextFromBacklog,
           slot: (newQueue.length + 1) as 1 | 2 | 3,
+          nextStepNote:
+            newQueue.length === 0
+              ? 'Promoted to Active Focus #1.'
+              : 'Promoted from Open Backlog into Slot #3.',
         });
       }
+
+      const logDate = getLogicalDayKey();
+      const recordedBlocks = completedItem
+        ? Math.max(1, completedItem.completedBlocks || completedItem.totalBlocks)
+        : 4;
+
+      const newLedgerEntry: CompletedDeliverableEntry | null = completedItem
+        ? {
+            id: `done_${completedItem.id}_${Date.now()}`,
+            title: completedItem.title,
+            date: logDate,
+            completedDate: logDate,
+            blockCount: recordedBlocks,
+            blocksCompleted: recordedBlocks,
+            totalBlocks: completedItem.totalBlocks,
+            trackId: completedItem.trackId,
+            presetType: completedItem.presetType,
+          }
+        : null;
+
+      const updatedLedger = newLedgerEntry
+        ? [newLedgerEntry, ...(prev.completedDeliverablesLog ?? [])]
+        : prev.completedDeliverablesLog ?? [];
+
+      const updatedTracks = completedItem
+        ? creditRoadmapTrack(prev.roadmapTracks, completedItem.trackId, 'OUTPUT', 4)
+        : prev.roadmapTracks;
+
       return {
         ...prev,
         projectQueue: newQueue,
         projectBacklog: restBacklog,
+        openListBacklog: restBacklog,
+        completedDeliverablesLog: updatedLedger,
+        roadmapTracks: updatedTracks,
       };
     });
-    showNotice('Completed Item #1! Item #2 is now unlocked as Primary Target.');
+    showNotice(
+      'Archived Deliverable #1 to Completed Ledger, incremented 4-Rung Output bar, shifted #2 → #1, and promoted Open Backlog into Slot #3.'
+    );
   };
 
   const handleAddProjectToQueue = (
@@ -1150,7 +1308,24 @@ export function App() {
     startupStep: string
   ) => {
     setState((prev) => {
-      if (prev.projectQueue.length >= 3) return prev;
+      if (prev.projectQueue.length >= 3) {
+        const backlogItem = {
+          id: `proj_${Date.now()}`,
+          title,
+          presetType,
+          completedBlocks: 0,
+          totalBlocks,
+          trackId,
+          startupStep,
+          nextStepNote: 'Queued in Open List Backlog.',
+        };
+        const nextBacklog = [...(prev.openListBacklog ?? prev.projectBacklog), backlogItem];
+        return {
+          ...prev,
+          projectBacklog: nextBacklog,
+          openListBacklog: nextBacklog,
+        };
+      }
       const newSlot = (prev.projectQueue.length + 1) as 1 | 2 | 3;
       return {
         ...prev,
@@ -1174,6 +1349,217 @@ export function App() {
       };
     });
     showNotice(`Added "${title}" to Active Project Queue.`);
+  };
+
+  // Interactive 7-Day Master Pipeline Day updater
+  const handleUpdatePipelineDay = (dayIndex: number, patch: Partial<PipelineDay>) => {
+    setState((prev) => {
+      const updatedDays = prev.pipelineDays.map((d) =>
+        d.dayIndex === dayIndex ? { ...d, ...patch } : d
+      );
+      const todayPatch = dayIndex === 1 ? patch : {};
+      // Count consecutive Surge days leading into or including Today
+      let maxConsecutiveSurge = prev.surgeConsecutiveDays;
+      if (patch.loadMode) {
+        let streak = 0;
+        let maxStreak = 0;
+        for (const d of updatedDays) {
+          if (d.loadMode === 'SURGE') {
+            streak += 1;
+            if (streak > maxStreak) maxStreak = streak;
+          } else {
+            streak = 0;
+          }
+        }
+        maxConsecutiveSurge = Math.min(2, maxStreak);
+      }
+      return {
+        ...prev,
+        loadMode: todayPatch.loadMode ?? prev.loadMode,
+        customModeBlockAdjustment:
+          todayPatch.baseTargetBlocks ?? prev.customModeBlockAdjustment,
+        fixedEvent: todayPatch.fixedEvent ?? prev.fixedEvent,
+        surgeConsecutiveDays: maxConsecutiveSurge,
+        pipelineDays: updatedDays,
+      };
+    });
+  };
+
+  // Smart Intake Bar brain-dump & voice command parser
+  const handleSmartIntakeSubmit = (rawText: string) => {
+    const cleaned = rawText.trim();
+    if (!cleaned) return;
+    const lower = cleaned.toLowerCase();
+    const now = Date.now();
+
+    if (
+      lower.includes('stress reset') ||
+      lower.includes('4-7-8') ||
+      lower.includes('fatigue reset')
+    ) {
+      setState((prev) => ({
+        ...prev,
+        timer: {
+          ...prev.timer,
+          mode: 'STRESS_RESET',
+          stressProtocol: 'BREATHING_478',
+          stressDurationMinutes: 15,
+          secondsLeft: 900,
+          targetEndTimeMs: now + 900 * 1000,
+          isRunning: true,
+        },
+      }));
+      setActiveTab('TIMER');
+      showNotice('Smart Intake: Started 15m 4-7-8 Stress Reset.');
+      return;
+    }
+
+    if (lower.includes('pre-exam taper') || lower.includes('exam taper')) {
+      handleTogglePreExamTaper(true);
+      return;
+    }
+
+    if (lower.includes('evening recharge') || lower === 'evening') {
+      setActiveTab('RECHARGE');
+      showNotice('Smart Intake: Switched to Evening Recharge Menu.');
+      return;
+    }
+
+    if (lower.includes('start 5m') || lower === 'start timer') {
+      setState((prev) => ({
+        ...prev,
+        timer: {
+          ...prev.timer,
+          mode: 'WORK_20M',
+          workStage: 'IGNITION_5M',
+          secondsLeft: 300,
+          targetEndTimeMs: now + 300 * 1000,
+          isRunning: true,
+        },
+      }));
+      showNotice('Smart Intake: Started 5m Startup Step (IGNITION_5M).');
+      return;
+    }
+
+    // Parse as deliverable / backlog item
+    const isSlide =
+      lower.includes('slide') || lower.includes('deck') || lower.includes('4 block');
+    const preset: ProjectPresetType = isSlide ? 'SLIDES_4' : 'PAPER_8';
+    const blocks = isSlide ? 4 : 8;
+    const track: TrackId =
+      lower.includes('anat') ||
+      lower.includes('comp') ||
+      lower.includes('lab') ||
+      lower.includes('clinical') ||
+      lower.includes('renal') ||
+      lower.includes('exam')
+        ? 'science'
+        : lower.includes('home') || lower.includes('personal')
+        ? 'personal'
+        : 'writing';
+    const startupStep = isSlide
+      ? 'Create 4 slide headers and bullet key takeaway on Slide 1.'
+      : 'Open document, outline 3 headings, and write first 3 sentences.';
+
+    setState((prev) => {
+      if (prev.projectQueue.length < 3) {
+        const newSlot = (prev.projectQueue.length + 1) as 1 | 2 | 3;
+        return {
+          ...prev,
+          projectQueue: [
+            ...prev.projectQueue,
+            {
+              id: `proj_${Date.now()}`,
+              slot: newSlot,
+              title: cleaned,
+              presetType: preset,
+              completedBlocks: 0,
+              totalBlocks: blocks,
+              trackId: track,
+              startupStep,
+              nextStepNote:
+                newSlot === 1
+                  ? 'Active primary target.'
+                  : 'Locked until Item #1 completes.',
+            },
+          ],
+        };
+      }
+      const newBacklogItem = {
+        id: `backlog_${Date.now()}`,
+        title: cleaned,
+        presetType: preset,
+        completedBlocks: 0,
+        totalBlocks: blocks,
+        trackId: track,
+        startupStep,
+        nextStepNote: 'Captured via Smart Intake into Open List Backlog.',
+      };
+      const updatedBacklog = [
+        ...(prev.openListBacklog ?? prev.projectBacklog),
+        newBacklogItem,
+      ];
+      return {
+        ...prev,
+        projectBacklog: updatedBacklog,
+        openListBacklog: updatedBacklog,
+      };
+    });
+
+    showNotice(
+      `Smart Intake parsed "${cleaned}" (${blocks} blocks • ${track.toUpperCase()}) into pipeline.`
+    );
+  };
+
+  // Document Picture-in-Picture API (width: 260, height: 110) with Floating Corner Fallback
+  const handleToggleMiniHudPip = async () => {
+    triggerHaptic([15]);
+    if (typeof window === 'undefined') return;
+
+    if (pipWindow && !pipWindow.closed) {
+      pipWindow.close();
+      setPipWindow(null);
+      setFloatingMiniHudOpen(false);
+      showNotice('Closed Mini HUD (PiP).');
+      return;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const docPip = (window as any).documentPictureInPicture;
+    if (docPip && typeof docPip.requestWindow === 'function') {
+      try {
+        const win: Window = await docPip.requestWindow({
+          width: 260,
+          height: 110,
+        });
+        win.document.title = 'Symmetry Mini HUD';
+        win.document.body.style.margin = '0';
+        win.document.body.style.backgroundColor = '#060911';
+        win.document.body.style.color = '#f8fafc';
+        win.document.body.style.fontFamily =
+          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+        win.document.body.style.overflow = 'hidden';
+
+        const handlePipClose = () => {
+          setPipWindow(null);
+        };
+        win.addEventListener('pagehide', handlePipClose);
+        setPipWindow(win);
+        setFloatingMiniHudOpen(true);
+        showNotice('Opened Always-on-Top Mini HUD (Document Picture-in-Picture 260×110).');
+        return;
+      } catch {
+        // Fall through to compact floating corner fallback
+      }
+    }
+
+    const nextFallback = !floatingMiniHudOpen;
+    setFloatingMiniHudOpen(nextFallback);
+    showNotice(
+      nextFallback
+        ? 'Opened Floating Mini HUD (260×110 corner HUD active).'
+        : 'Closed Floating Mini HUD.'
+    );
   };
 
   // Toggle between On-Duty and 0m work left simulation
@@ -1356,6 +1742,7 @@ export function App() {
             <Tab1Pipeline
               state={state}
               onSelectLoadMode={handleSelectLoadMode}
+              onTogglePreExamTaper={handleTogglePreExamTaper}
               onSetSurgeConsecutiveDays={(days) =>
                 setState((prev) => ({ ...prev, surgeConsecutiveDays: days }))
               }
@@ -1384,6 +1771,10 @@ export function App() {
               onCompleteProjectItem1={handleCompleteProjectItem1}
               onAddProjectToQueue={handleAddProjectToQueue}
               onOpenPipelineDrawer={() => setPipelineDrawerOpen(true)}
+              onUpdatePipelineDay={handleUpdatePipelineDay}
+              onSmartIntakeSubmit={handleSmartIntakeSubmit}
+              onOpenMiniHudPip={handleToggleMiniHudPip}
+              isMiniHudOpen={Boolean(pipWindow) || floatingMiniHudOpen}
               onTriggerMidDayReset={() => {
                 const now = Date.now();
                 setState((prev) => {
@@ -1851,6 +2242,8 @@ export function App() {
                 dispatchLockScreenAlert(eventType, title, body);
                 showNotice(`Dispatched Lock-Screen Alert: ${title}`);
               }}
+              onOpenMiniHudPip={handleToggleMiniHudPip}
+              isMiniHudOpen={Boolean(pipWindow) || floatingMiniHudOpen}
             />
           )}
 
@@ -2107,12 +2500,15 @@ export function App() {
 
                   const updatedSlots = { ...r.stickySlots };
                   if (stickyKey && !r.categoryRunning && r.pacingStage === 'STARTUP_5M') {
+                    const nextStarts = Math.min(
+                      3,
+                      (updatedSlots[stickyKey].startsLogged ??
+                        updatedSlots[stickyKey].fiveMinStarts) + 1
+                    );
                     updatedSlots[stickyKey] = {
                       ...updatedSlots[stickyKey],
-                      fiveMinStarts: Math.min(
-                        3,
-                        updatedSlots[stickyKey].fiveMinStarts + 1
-                      ),
+                      fiveMinStarts: nextStarts,
+                      startsLogged: nextStarts,
                     };
                   }
 
@@ -2187,8 +2583,18 @@ export function App() {
                 triggerHaptic([15]);
                 setState((prev) => {
                   const slot = prev.recharge.stickySlots[key];
-                  if (!slot || slot.backlogQueue.length === 0) return prev;
-                  const [nextTitle, ...restQueue] = slot.backlogQueue;
+                  if (!slot) return prev;
+                  const promotedTitle =
+                    slot.queuedNextTitle || slot.backlogQueue[0] || slot.activeTitle;
+                  const restQueue =
+                    slot.backlogQueue.length > 0
+                      ? slot.backlogQueue.slice(1)
+                      : [];
+                  const updatedBacklog = [...restQueue, slot.activeTitle];
+                  const updatedArchive = [
+                    slot.activeTitle,
+                    ...(slot.archivedTitles ?? []),
+                  ];
                   return {
                     ...prev,
                     recharge: {
@@ -2197,16 +2603,47 @@ export function App() {
                         ...prev.recharge.stickySlots,
                         [key]: {
                           ...slot,
-                          activeTitle: nextTitle,
-                          backlogQueue: [...restQueue, slot.activeTitle],
+                          activeTitle: promotedTitle,
+                          queuedNextTitle: updatedBacklog[0] || slot.activeTitle,
+                          backlogQueue: updatedBacklog,
+                          archivedTitles: updatedArchive,
                           fiveMinStarts: 0,
+                          startsLogged: 0,
                           unlockedViaCheckIn: false,
                         },
                       },
                     },
                   };
                 });
-                showNotice(`Promoted next backlog item for ${key} and reset [0 / 3] counter.`);
+                showNotice(
+                  `Archived active title on ${key}, promoted queuedNextTitle, and reset [0 / 3] startsLogged.`
+                );
+              }}
+              onIncrementStickyStart={(key: StickyKey) => {
+                triggerHaptic([10]);
+                setState((prev) => {
+                  const slot = prev.recharge.stickySlots[key];
+                  if (!slot) return prev;
+                  const nextCount = Math.min(
+                    3,
+                    (slot.startsLogged ?? slot.fiveMinStarts) + 1
+                  );
+                  return {
+                    ...prev,
+                    recharge: {
+                      ...prev.recharge,
+                      stickySlots: {
+                        ...prev.recharge.stickySlots,
+                        [key]: {
+                          ...slot,
+                          fiveMinStarts: nextCount,
+                          startsLogged: nextCount,
+                        },
+                      },
+                    },
+                  };
+                });
+                showNotice(`Logged +1 5m start on ${key}.`);
               }}
             />
           )}
@@ -2341,23 +2778,267 @@ export function App() {
         isOpen={pipelineDrawerOpen}
         onClose={() => setPipelineDrawerOpen(false)}
         state={state}
-        onUpdateDay={(dayIndex: number, patch: Partial<PipelineDay>) =>
-          setState((prev) => {
-            const updatedDays = prev.pipelineDays.map((d) =>
-              d.dayIndex === dayIndex ? { ...d, ...patch } : d
-            );
-            const todayPatch = dayIndex === 1 ? patch : {};
-            return {
-              ...prev,
-              loadMode: todayPatch.loadMode ?? prev.loadMode,
-              customModeBlockAdjustment:
-                todayPatch.baseTargetBlocks ?? prev.customModeBlockAdjustment,
-              fixedEvent: todayPatch.fixedEvent ?? prev.fixedEvent,
-              pipelineDays: updatedDays,
-            };
-          })
-        }
+        onUpdateDay={handleUpdatePipelineDay}
       />
+
+      {/* Document Picture-in-Picture (260x110) Portal */}
+      {pipWindow &&
+        !pipWindow.closed &&
+        createPortal(
+          <div
+            id="doc-pip-mini-hud"
+            style={{
+              width: '100%',
+              height: '100vh',
+              boxSizing: 'border-box',
+              padding: '8px 10px',
+              background: '#060911',
+              color: '#f8fafc',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'space-between',
+              fontFamily:
+                'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '6px',
+                fontSize: '10px',
+                color: '#67e8f9',
+                fontWeight: 700,
+              }}
+            >
+              <span>
+                {state.timer.mode === 'WORK_20M'
+                  ? state.timer.workStage === 'IGNITION_5M'
+                    ? '5m Startup'
+                    : '15m Momentum'
+                  : state.timer.mode}
+              </span>
+              <span
+                style={{
+                  padding: '1px 5px',
+                  borderRadius: '6px',
+                  background: 'rgba(6, 182, 212, 0.16)',
+                  border: '1px solid rgba(34, 211, 238, 0.4)',
+                  color: '#cffafe',
+                  fontSize: '9px',
+                }}
+              >
+                {metrics.durationPrefix}
+              </span>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '8px',
+              }}
+            >
+              <span
+                style={{
+                  fontSize: '24px',
+                  fontWeight: 800,
+                  letterSpacing: '-0.03em',
+                  fontVariantNumeric: 'tabular-nums',
+                  color: '#ffffff',
+                }}
+              >
+                {`${String(Math.floor(state.timer.secondsLeft / 60)).padStart(
+                  2,
+                  '0'
+                )}:${String(state.timer.secondsLeft % 60).padStart(2, '0')}`}
+              </span>
+
+              <div style={{ display: 'flex', gap: '5px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const now = Date.now();
+                    setState((prev) => {
+                      const nextRunning = !prev.timer.isRunning;
+                      const currentSec =
+                        prev.timer.isRunning && prev.timer.targetEndTimeMs
+                          ? Math.max(
+                              0,
+                              Math.ceil(
+                                (prev.timer.targetEndTimeMs - now) / 1000
+                              )
+                            )
+                          : prev.timer.secondsLeft;
+                      return {
+                        ...prev,
+                        timer: {
+                          ...prev.timer,
+                          isRunning: nextRunning,
+                          secondsLeft: currentSec,
+                          targetEndTimeMs: nextRunning
+                            ? now + currentSec * 1000
+                            : null,
+                        },
+                      };
+                    });
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: state.timer.isRunning ? '#fbbf24' : '#22d3ee',
+                    color: '#020617',
+                    fontWeight: 800,
+                    fontSize: '10px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {state.timer.isRunning ? 'Pause' : 'Start'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleFastForwardTimerStage}
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(148, 163, 184, 0.35)',
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    color: '#e2e8f0',
+                    fontWeight: 700,
+                    fontSize: '10px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Skip
+                </button>
+              </div>
+            </div>
+          </div>,
+          pipWindow.document.body
+        )}
+
+      {/* Compact Floating Always-on-Top Corner Fallback Mini-Timer (260x110) */}
+      {floatingMiniHudOpen && (
+        <aside
+          id="floating-mini-hud-pip"
+          aria-label="Floating Always-on-Top Mini-Timer HUD"
+          style={{ width: '260px', height: '110px' }}
+          className="fixed bottom-16 sm:bottom-5 right-4 z-50 rounded-2xl bg-slate-950/95 border border-cyan-400/60 shadow-[0_12px_35px_rgba(6,182,212,0.28)] backdrop-blur-xl px-3 py-2.5 flex flex-col justify-between font-mono"
+        >
+          <div className="flex items-center justify-between gap-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-300 flex items-center gap-1 truncate">
+              <PictureInPicture2 className="w-3 h-3 text-cyan-400 shrink-0" />
+              <span>
+                {state.timer.mode === 'WORK_20M'
+                  ? state.timer.workStage === 'IGNITION_5M'
+                    ? '5m Startup'
+                    : '15m Momentum'
+                  : state.timer.mode === 'STRESS_RESET'
+                  ? '4-7-8 Reset'
+                  : 'Break'}
+              </span>
+            </span>
+            <div className="flex items-center gap-1 shrink-0">
+              <span
+                id="mini-hud-work-left-badge"
+                className="px-1.5 py-0.5 rounded bg-cyan-500/15 border border-cyan-400/40 text-[9px] font-bold text-cyan-200 tabular-nums"
+              >
+                {metrics.durationPrefix}
+              </span>
+              <button
+                id="btn-close-floating-mini-hud"
+                type="button"
+                onClick={() => setFloatingMiniHudOpen(false)}
+                className="p-0.5 rounded hover:bg-white/10 text-slate-400 hover:text-white cursor-pointer"
+                title="Close Mini HUD"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-2">
+            <span
+              id="mini-hud-countdown"
+              className="text-2xl font-extrabold tabular-nums tracking-tight text-white"
+            >
+              {`${String(Math.floor(state.timer.secondsLeft / 60)).padStart(
+                2,
+                '0'
+              )}:${String(state.timer.secondsLeft % 60).padStart(2, '0')}`}
+            </span>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                id="btn-mini-hud-pause-resume"
+                type="button"
+                onClick={() => {
+                  triggerHaptic([10]);
+                  const now = Date.now();
+                  setState((prev) => {
+                    const nextRunning = !prev.timer.isRunning;
+                    const currentSec =
+                      prev.timer.isRunning && prev.timer.targetEndTimeMs
+                        ? Math.max(
+                            0,
+                            Math.ceil((prev.timer.targetEndTimeMs - now) / 1000)
+                          )
+                        : prev.timer.secondsLeft;
+                    return {
+                      ...prev,
+                      timer: {
+                        ...prev.timer,
+                        isRunning: nextRunning,
+                        secondsLeft: currentSec,
+                        targetEndTimeMs: nextRunning
+                          ? now + currentSec * 1000
+                          : null,
+                      },
+                    };
+                  });
+                }}
+                className={`px-2.5 py-1 rounded-lg font-mono text-[10px] font-bold flex items-center gap-1 cursor-pointer ${
+                  state.timer.isRunning
+                    ? 'bg-amber-400 text-slate-950'
+                    : 'bg-cyan-400 text-slate-950'
+                }`}
+              >
+                {state.timer.isRunning ? (
+                  <>
+                    <Pause className="w-3 h-3 fill-current" />
+                    <span>Pause</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3 h-3 fill-current" />
+                    <span>Start</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                id="btn-mini-hud-skip"
+                type="button"
+                onClick={() => {
+                  triggerHaptic([10]);
+                  handleFastForwardTimerStage();
+                }}
+                className="px-2 py-1 rounded-lg bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.15] text-cyan-200 font-mono text-[10px] font-bold flex items-center gap-0.5 cursor-pointer"
+              >
+                <FastForward className="w-3 h-3" />
+                <span>Skip</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="text-[9px] text-slate-400 truncate">
+            {state.timer.activeTaskTitle}
+          </div>
+        </aside>
+      )}
 
       {/* State Sync Modal (Copy State JSON / Markdown, Import State JSON, New Day Reset) */}
       {stateModalOpen && (

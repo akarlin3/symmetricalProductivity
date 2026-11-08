@@ -53,6 +53,8 @@ interface Tab2TimerTriageProps {
     title: string,
     body: string
   ) => void;
+  onOpenMiniHudPip?: () => void;
+  isMiniHudOpen?: boolean;
 }
 
 export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
@@ -74,6 +76,8 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
   swOfflineReady,
   onRequestNotificationPermissions,
   onManualTriggerNotification,
+  onOpenMiniHudPip,
+  isMiniHudOpen,
 }) => {
   const { timer } = state;
   const metrics = computeShiftMetrics(state);
@@ -205,6 +209,8 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
                   triggerHaptic([15]);
                   onToggleTimerRun();
                 }}
+                onOpenMiniHudPip={onOpenMiniHudPip}
+                isMiniHudOpen={isMiniHudOpen}
               />
             </div>
 

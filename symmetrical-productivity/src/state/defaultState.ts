@@ -21,11 +21,85 @@ export function isPre4amRolloverWindow(date: Date = new Date()): boolean {
   return date.getHours() < 4;
 }
 
+export interface ExamProximityInfo {
+  isWithin3Days: boolean;
+  daysToNov12: number;
+  daysToDec8: number;
+  nearestExamLabel: string;
+  daysRemaining: number;
+  examLabel: string;
+  daysUntil: number;
+}
+
+export function getPreExamTaperSuggestion(date: Date = new Date()): ExamProximityInfo {
+  const todayMidnight = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate()
+  ).getTime();
+  const nov12Midnight = new Date(date.getFullYear(), 10, 12).getTime();
+  const dec8Midnight = new Date(date.getFullYear(), 11, 8).getTime();
+
+  const daysToNov12 = Math.round((nov12Midnight - todayMidnight) / (1000 * 60 * 60 * 24));
+  const daysToDec8 = Math.round((dec8Midnight - todayMidnight) / (1000 * 60 * 60 * 24));
+
+  const withinNov12 = daysToNov12 >= 0 && daysToNov12 <= 3;
+  const withinDec8 = daysToDec8 >= 0 && daysToDec8 <= 3;
+  const isWithin3Days = withinNov12 || withinDec8;
+
+  const useNov12 = daysToNov12 >= 0 || daysToDec8 < 0;
+  const label = useNov12 ? 'Nov 12: Anatomy Exam' : 'Dec 8: Comp Exam';
+  const days = useNov12 ? daysToNov12 : daysToDec8;
+  return {
+    isWithin3Days,
+    daysToNov12,
+    daysToDec8,
+    nearestExamLabel: label,
+    daysRemaining: days,
+    examLabel: label,
+    daysUntil: days,
+  };
+}
+
+const DEFAULT_OPEN_LIST_BACKLOG: SymmetryState['openListBacklog'] = [
+  {
+    id: 'proj_4',
+    title: 'Pharmacology Mechanism Summary Sheet (2-Page Paper)',
+    presetType: 'PAPER_8',
+    completedBlocks: 0,
+    totalBlocks: 8,
+    trackId: 'science',
+    startupStep: 'Set up 2-column receptor table and fill first 3 rows.',
+    nextStepNote: 'Ready to promote when an active queue slot opens.',
+  },
+  {
+    id: 'proj_5',
+    title: 'Journal Club Presentation (Slide Deck)',
+    presetType: 'SLIDES_4',
+    completedBlocks: 0,
+    totalBlocks: 4,
+    trackId: 'writing',
+    startupStep: 'Paste primary figure panels into slides 2 and 3.',
+    nextStepNote: 'Queued in project backlog.',
+  },
+  {
+    id: 'proj_6',
+    title: 'Clinical Case Review Protocol Deck',
+    presetType: 'SLIDES_4',
+    completedBlocks: 0,
+    totalBlocks: 4,
+    trackId: 'science',
+    startupStep: 'Draft 4-slide diagnostic differential outline.',
+    nextStepNote: 'Queued in project backlog.',
+  },
+];
+
 export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
   version: '1.0.0',
   logicalDayKey: getLogicalDayKey(),
   upcomingMilestones: ['Nov 12: Anatomy Exam', 'Dec 8–9: Comp Exam'],
   loadMode: 'CRUISE',
+  preExamTaperActive: false,
   cruisePlus: false,
   customModeBlockAdjustment: 12, // 12 total blocks in Cruise; 3 completed = 9 left = 180m (3h 00m work left)
   surgeConsecutiveDays: 1,
@@ -131,28 +205,9 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
       nextStepNote: 'Locked until Item #1 and Item #2 complete.',
     },
   ],
-  projectBacklog: [
-    {
-      id: 'proj_4',
-      title: 'Pharmacology Mechanism Summary Sheet (2-Page Paper)',
-      presetType: 'PAPER_8',
-      completedBlocks: 0,
-      totalBlocks: 8,
-      trackId: 'science',
-      startupStep: 'Set up 2-column receptor table and fill first 3 rows.',
-      nextStepNote: 'Ready to promote when an active queue slot opens.',
-    },
-    {
-      id: 'proj_5',
-      title: 'Journal Club Presentation (Slide Deck)',
-      presetType: 'SLIDES_4',
-      completedBlocks: 0,
-      totalBlocks: 4,
-      trackId: 'writing',
-      startupStep: 'Paste primary figure panels into slides 2 and 3.',
-      nextStepNote: 'Queued in project backlog.',
-    },
-  ],
+  projectBacklog: DEFAULT_OPEN_LIST_BACKLOG,
+  openListBacklog: DEFAULT_OPEN_LIST_BACKLOG,
+  completedDeliverablesLog: [],
   pipelineDays: [
     {
       dayIndex: 1,
@@ -299,8 +354,11 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
         activeTitle: 'Creality K1C 3D Printer',
         startupStep: '1 single 5m diagnostic or mechanical step',
         backlogQueue: ['Custom Cable Organizer CAD Bracket', 'Multimeter Sensor Enclosure Print'],
+        queuedNextTitle: 'Custom Cable Organizer CAD Bracket',
         fiveMinStarts: 0,
+        startsLogged: 0,
         unlockedViaCheckIn: false,
+        archivedTitles: [],
       },
       '3A_FICTION': {
         key: '3A_FICTION',
@@ -308,8 +366,11 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
         activeTitle: 'Soul Music by Terry Pratchett',
         startupStep: 'Listen 5m at 1.75x–2.25x in boots or eyes closed',
         backlogQueue: ['Exoplanet', 'Feet of Clay', 'Hogfather'],
+        queuedNextTitle: 'Exoplanet',
         fiveMinStarts: 0,
+        startsLogged: 0,
         unlockedViaCheckIn: false,
+        archivedTitles: [],
       },
       '3B_NONFICTION': {
         key: '3B_NONFICTION',
@@ -317,8 +378,11 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
         activeTitle: 'The American Way of Killing',
         startupStep: 'Listen 5m in recliner or compression boots',
         backlogQueue: ['The Emperor of All Maladies', 'Thinking in Systems'],
+        queuedNextTitle: 'The Emperor of All Maladies',
         fiveMinStarts: 0,
+        startsLogged: 0,
         unlockedViaCheckIn: false,
+        archivedTitles: [],
       },
       '3C_VIDEO': {
         key: '3C_VIDEO',
@@ -326,8 +390,11 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
         activeTitle: "Widow's Bay",
         startupStep: 'Watch first 5m away from work monitor',
         backlogQueue: ['Severance Season 2', 'Andor Archive Cut'],
+        queuedNextTitle: 'Severance Season 2',
         fiveMinStarts: 0,
+        startsLogged: 0,
         unlockedViaCheckIn: false,
+        archivedTitles: [],
       },
       CAT5_GAMING: {
         key: 'CAT5_GAMING',
@@ -335,8 +402,11 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
         activeTitle: "Baldur's Gate 3",
         startupStep: 'Boot save + 1 single 5m micro-objective',
         backlogQueue: ['Factorio', 'Dwarf Fortress', 'RimWorld', 'Hades II'],
+        queuedNextTitle: 'Factorio',
         fiveMinStarts: 0,
+        startsLogged: 0,
         unlockedViaCheckIn: false,
+        archivedTitles: [],
       },
     },
   },
@@ -570,7 +640,9 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
 };
 
 export function computeShiftMetrics(state: SymmetryState) {
-  const totalTargetBlocks = state.customModeBlockAdjustment;
+  const totalTargetBlocks = state.preExamTaperActive
+    ? Math.min(9, Math.max(7, state.customModeBlockAdjustment))
+    : state.customModeBlockAdjustment;
   const completedBaselineCount = state.baselineBlocks.filter(
     (b) => b.completed || b.bankedViaEarlyClearance
   ).length;
@@ -617,12 +689,15 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
     '# SymmetryManager — State Snapshot (`state.md`)',
     '',
     `- **Upcoming Milestones**: ${milestones}`,
-    `- **Load Mode**: ${state.loadMode}${state.cruisePlus ? ' (Cruise+)' : ''} (${metrics.totalCompletedBlocks} / ${metrics.totalTargetBlocks} blocks complete)`,
+    `- **Load Mode**: ${state.loadMode}${state.cruisePlus ? ' (Cruise+)' : ''}${
+      state.preExamTaperActive ? ' [Pre-Exam Taper Active]' : ''
+    } (${metrics.totalCompletedBlocks} / ${metrics.totalTargetBlocks} blocks complete)`,
     `- **Focus Pipeline Header**: \`${metrics.durationPrefix}\``,
     `- **Fixed Event**: ${state.fixedEvent}`,
     `- **Flashcard Early Clearance**: ${state.earlyClearanceEnabled ? 'Active (Unused blocks banked)' : 'Inactive'}`,
     `- **Surge Consecutive Days**: ${state.surgeConsecutiveDays} / 2`,
     `- **Weekly Flow Extensions Used**: ${state.recharge.weeklyExtensionsUsed} / 2`,
+    `- **Completed Deliverables Logged**: ${state.completedDeliverablesLog?.length || 0}`,
     '',
     '## 7-Block Daily Core Baseline',
     ...state.baselineBlocks.map(
@@ -641,7 +716,7 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
     '## Evening Recharge Menu (Sticky Swap Counters)',
     `- **Category 1 (Music - Fluid)**: Bass / Guitar / Piano / Drums — 5m Startup: *Play 1 familiar song cold — no DAW or drills*`,
     `- **Category 2 (Maker - Sticky)**: ${state.recharge.stickySlots.CAT2_MAKER.activeTitle} \`[${state.recharge.stickySlots.CAT2_MAKER.fiveMinStarts}/3 starts]\` — 5m Startup: *${state.recharge.stickySlots.CAT2_MAKER.startupStep}*`,
-    `- **Category 3A (Fiction - Sticky)**: ${state.recharge.stickySlots['3A_FICTION'].activeTitle} \`[${state.recharge.stickySlots['3A_FICTION'].fiveMinStarts}/3 starts]\` — 5m Startup: *${state.recharge.stickySlots['3A_FICTION'].startupStep}* (Queued Next: ${state.recharge.stickySlots['3A_FICTION'].backlogQueue[0] || 'None'})`,
+    `- **Category 3A (Fiction - Sticky)**: ${state.recharge.stickySlots['3A_FICTION'].activeTitle} \`[${state.recharge.stickySlots['3A_FICTION'].fiveMinStarts}/3 starts]\` — 5m Startup: *${state.recharge.stickySlots['3A_FICTION'].startupStep}* (Queued Next: ${state.recharge.stickySlots['3A_FICTION'].queuedNextTitle || state.recharge.stickySlots['3A_FICTION'].backlogQueue[0] || 'None'})`,
     `- **Category 3B (Nonfiction - Sticky)**: ${state.recharge.stickySlots['3B_NONFICTION'].activeTitle} \`[${state.recharge.stickySlots['3B_NONFICTION'].fiveMinStarts}/3 starts]\` — 5m Startup: *${state.recharge.stickySlots['3B_NONFICTION'].startupStep}*`,
     `- **Category 3C (Video - Sticky)**: ${state.recharge.stickySlots['3C_VIDEO'].activeTitle} \`[${state.recharge.stickySlots['3C_VIDEO'].fiveMinStarts}/3 starts]\` — 5m Startup: *${state.recharge.stickySlots['3C_VIDEO'].startupStep}*`,
     `- **Category 4 (Comfort Show - Fluid)**: It's Always Sunny in Philadelphia — 5m Startup: *First 5m of episode away from work monitor*`,
@@ -663,9 +738,41 @@ export function parseFromStateInput(rawText: string): SymmetryState {
   const parsed = JSON.parse(candidate);
   const defaultSticky = DEFAULT_SYMMETRY_STATE.recharge.stickySlots;
   const parsedSticky = parsed.recharge?.stickySlots || {};
+
+  const normalizeSticky = (
+    def: typeof defaultSticky.CAT2_MAKER,
+    raw: Partial<typeof defaultSticky.CAT2_MAKER> | undefined
+  ) => {
+    const merged = { ...def, ...(raw || {}) };
+    const starts =
+      typeof raw?.startsLogged === 'number'
+        ? raw.startsLogged
+        : typeof raw?.fiveMinStarts === 'number'
+        ? raw.fiveMinStarts
+        : def.fiveMinStarts;
+    const queue = Array.isArray(merged.backlogQueue)
+      ? merged.backlogQueue
+      : def.backlogQueue;
+    return {
+      ...merged,
+      backlogQueue: queue,
+      queuedNextTitle: merged.queuedNextTitle || queue[0] || '',
+      fiveMinStarts: starts,
+      startsLogged: starts,
+      archivedTitles: Array.isArray(merged.archivedTitles) ? merged.archivedTitles : [],
+    };
+  };
+
+  const resolvedBacklog = Array.isArray(parsed.openListBacklog)
+    ? parsed.openListBacklog
+    : Array.isArray(parsed.projectBacklog)
+    ? parsed.projectBacklog
+    : DEFAULT_SYMMETRY_STATE.openListBacklog;
+
   return {
     ...DEFAULT_SYMMETRY_STATE,
     ...parsed,
+    preExamTaperActive: Boolean(parsed.preExamTaperActive),
     upcomingMilestones:
       Array.isArray(parsed.upcomingMilestones) && parsed.upcomingMilestones.length > 0
         ? parsed.upcomingMilestones
@@ -677,6 +784,11 @@ export function parseFromStateInput(rawText: string): SymmetryState {
     projectQueue: Array.isArray(parsed.projectQueue)
       ? parsed.projectQueue
       : DEFAULT_SYMMETRY_STATE.projectQueue,
+    projectBacklog: resolvedBacklog,
+    openListBacklog: resolvedBacklog,
+    completedDeliverablesLog: Array.isArray(parsed.completedDeliverablesLog)
+      ? parsed.completedDeliverablesLog
+      : [],
     pipelineDays:
       Array.isArray(parsed.pipelineDays) && parsed.pipelineDays.length > 0
         ? parsed.pipelineDays
@@ -693,20 +805,20 @@ export function parseFromStateInput(rawText: string): SymmetryState {
       ...DEFAULT_SYMMETRY_STATE.recharge,
       ...(parsed.recharge || {}),
       stickySlots: {
-        CAT2_MAKER: { ...defaultSticky.CAT2_MAKER, ...(parsedSticky.CAT2_MAKER || {}) },
-        '3A_FICTION': {
-          ...defaultSticky['3A_FICTION'],
-          ...(parsedSticky['3A_FICTION'] || {}),
-        },
-        '3B_NONFICTION': {
-          ...defaultSticky['3B_NONFICTION'],
-          ...(parsedSticky['3B_NONFICTION'] || {}),
-        },
-        '3C_VIDEO': { ...defaultSticky['3C_VIDEO'], ...(parsedSticky['3C_VIDEO'] || {}) },
-        CAT5_GAMING: {
-          ...defaultSticky.CAT5_GAMING,
-          ...(parsedSticky.CAT5_GAMING || {}),
-        },
+        CAT2_MAKER: normalizeSticky(defaultSticky.CAT2_MAKER, parsedSticky.CAT2_MAKER),
+        '3A_FICTION': normalizeSticky(
+          defaultSticky['3A_FICTION'],
+          parsedSticky['3A_FICTION']
+        ),
+        '3B_NONFICTION': normalizeSticky(
+          defaultSticky['3B_NONFICTION'],
+          parsedSticky['3B_NONFICTION']
+        ),
+        '3C_VIDEO': normalizeSticky(defaultSticky['3C_VIDEO'], parsedSticky['3C_VIDEO']),
+        CAT5_GAMING: normalizeSticky(
+          defaultSticky.CAT5_GAMING,
+          parsedSticky.CAT5_GAMING
+        ),
       },
     },
   };
