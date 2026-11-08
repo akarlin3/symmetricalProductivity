@@ -240,7 +240,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
           <AveryCorpEmblem
             size={42}
             variant="image"
-            cropMode="mark-only"
+            cropMode="full-seal"
             ariaLabel="AveryCorp End-of-Shift Seal"
           />
           <div>

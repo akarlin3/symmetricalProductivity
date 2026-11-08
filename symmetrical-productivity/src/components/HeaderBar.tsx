@@ -175,26 +175,35 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
     <>
       <header className="sticky top-0 z-30 pointer-events-none">
         <div
-          className={`w-full h-10 px-3 pointer-events-auto rounded-full border backdrop-blur-2xl flex items-center justify-between gap-1.5 transition-all duration-500 ${
+          className={`w-full min-h-10 px-3 py-1 pointer-events-auto rounded-2xl sm:rounded-full border backdrop-blur-2xl flex flex-wrap items-center justify-between gap-1.5 transition-all duration-500 ${
             isEveningTheme
               ? 'bg-[#090706]/85 border-white/[0.05] text-amber-50 shadow-[inset_0_1px_0_0_rgba(255,251,235,0.06),0_12px_28px_-14px_rgba(0,0,0,0.85)]'
               : 'bg-[#06080d]/85 border-white/[0.05] text-slate-100 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.07),0_12px_28px_-14px_rgba(0,0,0,0.85)]'
           }`}
         >
-          {/* 1. LEFT: 26px (w-6.5 h-6.5) Circular Emblem + Compact [Xh YYm left] Pill */}
-          <div className="flex items-center gap-1.5 min-w-0 shrink-0">
+          {/* 1. LEFT: 26px Small Square Emblem + Full Title + Compact [Xh YYm left] Pill */}
+          <div className="flex items-center gap-1.5 shrink-0">
             <AveryCorpEmblem
               id="header-brand-prism-trigger"
               size={26}
               variant="image"
-              cropMode="mark-only"
+              cropMode="full-seal"
               isTimerActive={isWorkTimerRunning}
               architectUnlocked={architectModeUnlocked}
               showPreviewPopover
               onClick={handleBrandPrismTap}
-              className="w-6.5 h-6.5"
               ariaLabel="AveryCorp Institute Header Emblem (5-Tap Architect Trigger)"
             />
+
+            <h1
+              id="header-app-title-trigger"
+              onClick={handleBrandPrismTap}
+              className={`text-[11px] font-medium tracking-tight cursor-pointer select-none whitespace-nowrap shrink-0 transition-opacity duration-500 ${
+                isCinemaReceding ? 'opacity-20 hover:opacity-100' : ''
+              } ${isEveningTheme ? 'text-amber-100/90' : 'text-slate-200'}`}
+            >
+              Symmetry Productivity
+            </h1>
 
             {/* Compact Duration-Only Pill (Remains sharp during Cinema Focus) */}
             <div

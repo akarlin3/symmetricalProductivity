@@ -204,7 +204,7 @@ export const AveryCorpVectorSvg: React.FC<{
 export const AveryCorpEmblem: React.FC<AveryCorpEmblemProps> = ({
   size = 28,
   variant = 'image',
-  cropMode = 'mark-only',
+  cropMode = 'full-seal',
   isTimerActive = false,
   architectUnlocked = false,
   showPreviewPopover = false,
@@ -241,9 +241,9 @@ export const AveryCorpEmblem: React.FC<AveryCorpEmblemProps> = ({
   };
 
   const imgTransformClass =
-    cropMode === 'mark-only'
-      ? 'w-full h-full object-cover scale-[1.65] -translate-y-[8%]'
-      : 'w-full h-full object-cover scale-[1.08]';
+    cropMode === 'full-seal'
+      ? 'w-full h-full object-contain'
+      : 'w-full h-full object-contain';
 
   const interactiveRingClasses = architectUnlocked
     ? 'ring-1 ring-amber-400/50 shadow-[0_0_15px_rgba(212,175,55,0.25)] border-amber-400/60'
@@ -271,7 +271,7 @@ export const AveryCorpEmblem: React.FC<AveryCorpEmblemProps> = ({
 
       <span
         style={dimensionStyle}
-        className={`w-7 h-7 rounded-[3px] overflow-hidden bg-[#121b2d] flex items-center justify-center relative aspect-square border transition-all duration-300 ${interactiveRingClasses} ${className}`}
+        className={`rounded-[3px] overflow-hidden bg-[#121b2d] flex items-center justify-center relative aspect-square border transition-all duration-300 ${interactiveRingClasses} ${className}`}
       >
         {variant === 'svg' ? (
           <AveryCorpVectorSvg
@@ -280,7 +280,7 @@ export const AveryCorpEmblem: React.FC<AveryCorpEmblemProps> = ({
           />
         ) : (
           <img
-            src="/averycorp-emblem.jpeg"
+            src="/averycorp-emblem-512.png"
             alt="AveryCorp Institute Interlocked Rings & Chains Emblem"
             className={imgTransformClass}
             draggable={false}
@@ -333,9 +333,9 @@ export const AveryCorpEmblem: React.FC<AveryCorpEmblemProps> = ({
         >
           <div className="w-full aspect-square rounded-md overflow-hidden bg-[#121b2d] border border-amber-400/50 shadow-inner flex items-center justify-center mx-auto">
             <img
-              src="/averycorp-emblem.jpeg"
+              src="/averycorp-emblem-512.png"
               alt="AveryCorp Institute Full Crest"
-              className="w-full h-full object-cover scale-[1.08]"
+              className="w-full h-full object-contain"
             />
           </div>
           <div className="mt-2.5 text-center space-y-0.5">
