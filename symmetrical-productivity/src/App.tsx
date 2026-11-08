@@ -3859,10 +3859,10 @@ export function App() {
 
         {/* Status Toast Notice */}
         {statusNotice && (
-          <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-3">
+          <div className="max-w-3xl mx-auto px-4 pt-2">
             <div
               id="status-toast-banner"
-              className={`px-4 py-2.5 rounded-2xl border backdrop-blur-xl text-xs font-mono flex items-center justify-between ${
+              className={`px-3.5 py-2 rounded-xl border backdrop-blur-xl text-xs font-mono flex items-center justify-between ${
                 isEveningTheme
                   ? 'bg-amber-950/80 border-amber-500/40 text-amber-200'
                   : 'bg-cyan-950/80 border-cyan-500/40 text-cyan-200'
@@ -3881,7 +3881,7 @@ export function App() {
         )}
 
         {/* Active Tab Viewport */}
-        <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+        <main className="max-w-3xl mx-auto px-4 py-3">
           {activeTab === 'PIPELINE' && (
             <Tab1Pipeline
               state={state}
@@ -5005,7 +5005,7 @@ export function App() {
 
       {/* Footer */}
       <footer
-        className={`max-w-5xl w-full mx-auto px-4 sm:px-6 py-5 border-t border-white/[0.05] text-[11px] font-mono tabular-nums flex flex-wrap items-center justify-between gap-2 transition-colors duration-500 ${
+        className={`max-w-3xl w-full mx-auto px-4 py-2 border-t border-white/[0.05] text-[11px] font-mono tabular-nums flex flex-wrap items-center justify-between gap-2 transition-colors duration-500 ${
           isEveningTheme ? 'text-stone-400' : 'text-slate-400'
         }`}
       >

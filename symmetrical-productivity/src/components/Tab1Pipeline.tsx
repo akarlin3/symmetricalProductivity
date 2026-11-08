@@ -564,19 +564,19 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
       : 0;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 sm:space-y-8 animate-tab-enter pb-10">
+    <div className="max-w-3xl mx-auto flex flex-col gap-3 animate-tab-enter pb-3">
       {/* Contextual State-Machine Alerts (Only when active) */}
       {metrics.isZeroWorkLeft && (
         <div
           id="end-of-shift-lock-banner"
-          className="p-5 rounded-3xl bento-hero-border-evening text-amber-100 flex flex-wrap items-center justify-between gap-4"
+          className="p-3.5 rounded-2xl bento-hero-border-evening text-amber-100 flex flex-wrap items-center justify-between gap-3"
         >
-          <div className="flex items-center gap-3.5">
-            <div className="w-9 h-9 rounded-full bg-amber-500/15 border border-amber-400/35 flex items-center justify-center">
-              <Lock className="w-4 h-4 text-amber-300 shrink-0" />
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-full bg-amber-500/15 border border-amber-400/35 flex items-center justify-center">
+              <Lock className="w-3.5 h-3.5 text-amber-300 shrink-0" />
             </div>
             <div>
-              <h2 className="font-serif text-xl sm:text-2xl text-amber-50 font-medium tracking-tight">
+              <h2 className="font-serif text-lg sm:text-xl leading-snug text-amber-50 font-medium tracking-tight">
                 End-of-Shift Lock Engaged • [0m work left]
               </h2>
               <p className="text-xs text-amber-100/75">
@@ -590,7 +590,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               triggerHaptic([20]);
               onGoToRecharge();
             }}
-            className="px-4 py-2 rounded-full bg-amber-400 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs cursor-pointer"
+            className="px-3.5 py-1.5 rounded-full bg-amber-400 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs cursor-pointer"
           >
             Enter Evening Recharge →
           </button>
@@ -600,12 +600,12 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
       {isSurgeMidDayResetRequired && !metrics.isZeroWorkLeft && (
         <div
           id="surge-midday-reset-alert"
-          className="p-5 rounded-3xl bento-surface border-amber-400/35 text-amber-100 flex flex-wrap items-center justify-between gap-4"
+          className="p-3.5 rounded-2xl bento-surface border-amber-400/35 text-amber-100 flex flex-wrap items-center justify-between gap-3"
         >
-          <div className="flex items-center gap-3">
-            <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0" />
+          <div className="flex items-center gap-2.5">
+            <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0" />
             <div>
-              <h2 className="font-serif text-xl text-amber-50 font-medium">
+              <h2 className="font-serif text-lg leading-snug text-amber-50 font-medium">
                 Mandatory 60–120m Mid-Day Reset Required
               </h2>
               <p className="text-xs text-amber-100/75">
@@ -617,7 +617,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
             id="btn-start-surge-midday-reset"
             type="button"
             onClick={onTriggerMidDayReset}
-            className="px-4 py-2 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-medium text-xs font-mono cursor-pointer"
+            className="px-3.5 py-1.5 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-medium text-xs font-mono cursor-pointer"
           >
             Start {timer.l3DurationMinutes}m Mid-Day Reset
           </button>
@@ -626,52 +626,21 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
 
       {/* =====================================================================
           VISUAL GROUP 1: CENTERPIECE CHRONOGRAPH & ACTIVE "UP NEXT" ACTION
-          Unified, spacious focal stage (p-8 to p-10, max-w-4xl mx-auto)
+          Compact horizontal split card (grid-cols-1 md:grid-cols-[180px_1fr] gap-4 items-center p-4)
          ===================================================================== */}
       <section
         id="focal-chronograph-stage"
         aria-label="Centerpiece Chronograph and Active Up Next Stage"
-        className={`rounded-3xl bento-surface p-8 sm:p-10 transition-all duration-500 space-y-8 ${
+        className={`rounded-2xl bento-surface p-4 transition-all duration-500 space-y-3 ${
           isCinemaReceding
-            ? 'border-sky-400/30 shadow-[0_0_60px_-15px_rgba(56,189,248,0.22)]'
+            ? 'border-sky-400/30 shadow-[0_0_50px_-15px_rgba(56,189,248,0.22)]'
             : ''
         }`}
       >
-        {/* Top Row of Focal Stage: Single Status Pill + Subtle "Options" Pill */}
-        <div className="flex items-center justify-between gap-3">
-          <span className="px-3 py-1 rounded-full bg-white/[0.03] border border-white/[0.05] font-mono text-[11px] text-slate-300 tracking-tight tabular-nums">
-            {metrics.durationPrefix}
-          </span>
-
-          <div className="flex items-center gap-2">
-            <button
-              id="btn-focal-stage-options"
-              type="button"
-              onClick={() => {
-                triggerHaptic([8]);
-                setStageOptionsOpen((prev) => !prev);
-              }}
-              className={`px-3 py-1 rounded-full border text-xs font-mono flex items-center gap-1.5 cursor-pointer transition ${
-                stageOptionsOpen
-                  ? 'bg-white/[0.09] border-white/[0.15] text-white'
-                  : 'bg-white/[0.025] hover:bg-white/[0.06] border-white/[0.05] text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Sliders className="w-3 h-3" />
-              <span>Options</span>
-              {stageOptionsOpen ? (
-                <ChevronUp className="w-3 h-3" />
-              ) : (
-                <ChevronDown className="w-3 h-3" />
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Unified Centerpiece Grid: Left = Chronograph Dial, Right = Active & Up Next Action */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-center">
-          {/* Left 5 Cols: Chronograph Dial + Primary Transport */}
-          <div className="lg:col-span-5 flex flex-col items-center space-y-5">
+        {/* Compact Horizontal Split Grid: Left = 168px Chronograph Dial, Right = Active Task + 5m Startup Script + Action Controls */}
+        <div className="grid grid-cols-1 md:grid-cols-[180px_1fr] gap-4 items-center">
+          {/* Left 180px Column: Chronograph Timer Dial */}
+          <div className="flex flex-col items-center justify-center">
             <DualRingTimerSvg
               timer={timer}
               isEveningTheme={metrics.isZeroWorkLeft}
@@ -691,176 +660,200 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               startupSeconds={activeDurations.startupSeconds}
               momentumSeconds={activeDurations.momentumSeconds}
             />
-
-            {/* Sleek Transport Bar */}
-            <div className="flex items-center justify-center gap-2.5 w-full max-w-[280px]">
-              <button
-                id="btn-hud-timer-start-pause"
-                type="button"
-                onClick={() => {
-                  triggerHaptic([15]);
-                  onToggleTimerRun();
-                }}
-                className={`flex-1 py-2.5 px-5 rounded-full font-mono font-medium text-xs flex items-center justify-center gap-2 cursor-pointer transition ${
-                  timer.isRunning
-                    ? 'bg-amber-400 hover:bg-amber-300 text-slate-950'
-                    : 'bg-cyan-400 hover:bg-cyan-300 text-slate-950'
-                }`}
-              >
-                {timer.isRunning ? (
-                  <>
-                    <Pause className="w-3.5 h-3.5 fill-current" />
-                    <span>Pause</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-3.5 h-3.5 fill-current" />
-                    <span>
-                      {timer.mode === 'WORK_20M' && timer.workStage === 'IGNITION_5M'
-                        ? `Start ${activeDurations.startupMinutes}m`
-                        : 'Start'}
-                    </span>
-                  </>
-                )}
-              </button>
-
-              <button
-                id="btn-hud-timer-skip-stage"
-                type="button"
-                onClick={() => {
-                  triggerHaptic([15]);
-                  onFastForwardCurrentStage();
-                }}
-                className="p-2.5 rounded-full bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.05] text-slate-300 hover:text-white cursor-pointer"
-                title="Skip stage [S]"
-                aria-label="Skip current stage"
-              >
-                <FastForward className="w-3.5 h-3.5" />
-              </button>
-
-              <button
-                id="btn-hud-timer-reset"
-                type="button"
-                onClick={() => {
-                  triggerHaptic([10]);
-                  onResetCurrentStage();
-                }}
-                className="p-2.5 rounded-full bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.05] text-slate-400 hover:text-slate-200 cursor-pointer"
-                title="Reset current stage [R]"
-                aria-label="Reset current stage"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-              </button>
-            </div>
           </div>
 
-          {/* Right 7 Cols: Active Task + 5m Startup Script + "Up Next" Action */}
-          <div className="lg:col-span-7 flex flex-col justify-between space-y-6">
-            {/* Active Task Section */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-2">
-                <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-400/25 font-mono text-[10px] uppercase tracking-widest text-cyan-200">
+          {/* Right Column: Active Task Header, 5m Startup Script, Primary Transport + Up Next Action */}
+          <div className="flex flex-col justify-between space-y-2.5 min-w-0">
+            {/* Top Meta Row: Task Type Badge, Duration-Only Pill, Options Button */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="px-2 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-400/25 font-mono text-[11px] uppercase tracking-wider text-cyan-200">
                   {timer.activeTaskType}
+                </span>
+                <span className="px-2 py-0.5 rounded-full bg-white/[0.03] border border-white/[0.05] font-mono text-[11px] text-slate-300 tracking-tight tabular-nums">
+                  {metrics.durationPrefix}
                 </span>
               </div>
 
-              <h2 className="font-serif text-3xl sm:text-4xl font-medium tracking-tight text-white leading-tight">
-                {timer.activeTaskTitle}
-              </h2>
-
-              {/* 5m Startup Step Prompt */}
-              <div
-                id="hud-active-startup-script"
-                className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.05] space-y-1.5"
+              <button
+                id="btn-focal-stage-options"
+                type="button"
+                onClick={() => {
+                  triggerHaptic([8]);
+                  setStageOptionsOpen((prev) => !prev);
+                }}
+                className={`px-2.5 py-0.5 rounded-full border text-[11px] font-mono flex items-center gap-1 cursor-pointer transition ${
+                  stageOptionsOpen
+                    ? 'bg-white/[0.09] border-white/[0.15] text-white'
+                    : 'bg-white/[0.025] hover:bg-white/[0.06] border-white/[0.05] text-slate-400 hover:text-slate-200'
+                }`}
               >
-                <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-widest text-amber-300/90">
-                  <span className="flex items-center gap-1.5">
-                    <Flame className="w-3 h-3 text-amber-400" />
-                    <span>
-                      {shrinkLevel === 1
-                        ? `${activeDurations.startupMinutes}m Startup Step`
-                        : shrinkLevel === 2
-                        ? 'Level 2 • Micro-Setup'
-                        : 'Level 3 • Zero-Pressure Entry'}
-                    </span>
-                  </span>
-                </div>
-                <p
-                  id="hud-startup-script-text"
-                  className="text-xs sm:text-sm text-slate-200 leading-relaxed font-normal"
-                >
-                  “{activeDisplayedStartupPrompt}”
-                </p>
-              </div>
+                <Sliders className="w-3 h-3" />
+                <span>Options</span>
+                {stageOptionsOpen ? (
+                  <ChevronUp className="w-3 h-3" />
+                ) : (
+                  <ChevronDown className="w-3 h-3" />
+                )}
+              </button>
             </div>
 
-            {/* Unified "Up Next" Queue Action Bar */}
-            <motion.div
-              id="bento-up-next-hero"
-              drag="x"
-              dragConstraints={{ left: 0, right: 0 }}
-              dragElastic={0.2}
-              onDragEnd={(_, info) => {
-                if (metrics.isZeroWorkLeft || isSurgeMidDayResetRequired) return;
-                if (info.offset.x > 65 || info.velocity.x > 340) {
-                  triggerHaptic([15]);
-                  soundEngine.playTactileClick('MODE_TOGGLE');
-                  onLaunchBlockInTimer(
-                    upNextBlock.sourceId,
-                    upNextBlock.title,
-                    upNextBlock.taskType,
-                    upNextBlock.startupStep
-                  );
-                } else if (
-                  (info.offset.x < -65 || info.velocity.x < -340) &&
-                  upNextBlock.taskType === 'FLASHCARDS'
-                ) {
-                  triggerHaptic([15]);
-                  soundEngine.playTactileClick('MODE_TOGGLE');
-                  onToggleEarlyClearance();
-                }
-              }}
-              className="p-4 sm:p-5 rounded-2xl bg-white/[0.025] border border-white/[0.05] flex flex-wrap items-center justify-between gap-4 cursor-grab active:cursor-grabbing"
-              title="Swipe Right to launch 5m Startup Step"
+            {/* Active Task Title in Cormorant Garamond (text-lg / text-xl leading-snug) */}
+            <h2 className="font-serif text-lg sm:text-xl leading-snug font-medium tracking-tight text-white truncate">
+              {timer.activeTaskTitle}
+            </h2>
+
+            {/* Compact 5m Startup Step Script Box */}
+            <div
+              id="hud-active-startup-script"
+              className="px-3 py-2 rounded-xl bg-white/[0.02] border border-white/[0.05] space-y-0.5"
             >
-              <div className="space-y-1 min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400">
-                    Up Next • {upNextBlock.badge}
+              <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-wider text-amber-300/90">
+                <span className="flex items-center gap-1">
+                  <Flame className="w-3 h-3 text-amber-400 shrink-0" />
+                  <span>
+                    {shrinkLevel === 1
+                      ? `${activeDurations.startupMinutes}m Startup Step`
+                      : shrinkLevel === 2
+                      ? 'Level 2 • Micro-Setup'
+                      : 'Level 3 • Zero-Pressure Entry'}
                   </span>
-                </div>
-                <div className="font-serif text-xl sm:text-2xl font-medium text-slate-100 truncate">
-                  {upNextBlock.title}
-                </div>
-                <div className="text-xs text-slate-400 truncate">
-                  {upNextBlock.startupStep}
-                </div>
+                </span>
+              </div>
+              <p
+                id="hud-startup-script-text"
+                className="text-xs sm:text-sm text-slate-200 leading-snug font-normal"
+              >
+                “{activeDisplayedStartupPrompt}”
+              </p>
+            </div>
+
+            {/* Primary Transport & Inline "Up Next" Queue Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+              {/* Primary Timer Controls */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  id="btn-hud-timer-start-pause"
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic([15]);
+                    onToggleTimerRun();
+                  }}
+                  className={`py-1.5 px-4 rounded-full font-mono font-medium text-xs flex items-center justify-center gap-1.5 cursor-pointer transition ${
+                    timer.isRunning
+                      ? 'bg-amber-400 hover:bg-amber-300 text-slate-950'
+                      : 'bg-cyan-400 hover:bg-cyan-300 text-slate-950'
+                  }`}
+                >
+                  {timer.isRunning ? (
+                    <>
+                      <Pause className="w-3 h-3 fill-current" />
+                      <span>Pause</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-3 h-3 fill-current" />
+                      <span>
+                        {timer.mode === 'WORK_20M' && timer.workStage === 'IGNITION_5M'
+                          ? `Start ${activeDurations.startupMinutes}m`
+                          : 'Start'}
+                      </span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  id="btn-hud-timer-skip-stage"
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic([15]);
+                    onFastForwardCurrentStage();
+                  }}
+                  className="p-1.5 rounded-full bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.05] text-slate-300 hover:text-white cursor-pointer"
+                  title="Skip stage [S]"
+                  aria-label="Skip current stage"
+                >
+                  <FastForward className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  id="btn-hud-timer-reset"
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic([10]);
+                    onResetCurrentStage();
+                  }}
+                  className="p-1.5 rounded-full bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.05] text-slate-400 hover:text-slate-200 cursor-pointer"
+                  title="Reset current stage [R]"
+                  aria-label="Reset current stage"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                </button>
               </div>
 
-              <button
-                id="btn-up-next-launch"
-                type="button"
-                disabled={metrics.isZeroWorkLeft || isSurgeMidDayResetRequired}
-                onClick={() => {
-                  triggerHaptic([15]);
-                  soundEngine.playTactileClick('MODE_TOGGLE');
-                  onLaunchBlockInTimer(
-                    upNextBlock.sourceId,
-                    upNextBlock.title,
-                    upNextBlock.taskType,
-                    upNextBlock.startupStep
-                  );
+              {/* Compact Inline "Up Next" Queue Pill Bar */}
+              <motion.div
+                id="bento-up-next-hero"
+                drag="x"
+                dragConstraints={{ left: 0, right: 0 }}
+                dragElastic={0.2}
+                onDragEnd={(_, info) => {
+                  if (metrics.isZeroWorkLeft || isSurgeMidDayResetRequired) return;
+                  if (info.offset.x > 65 || info.velocity.x > 340) {
+                    triggerHaptic([15]);
+                    soundEngine.playTactileClick('MODE_TOGGLE');
+                    onLaunchBlockInTimer(
+                      upNextBlock.sourceId,
+                      upNextBlock.title,
+                      upNextBlock.taskType,
+                      upNextBlock.startupStep
+                    );
+                  } else if (
+                    (info.offset.x < -65 || info.velocity.x < -340) &&
+                    upNextBlock.taskType === 'FLASHCARDS'
+                  ) {
+                    triggerHaptic([15]);
+                    soundEngine.playTactileClick('MODE_TOGGLE');
+                    onToggleEarlyClearance();
+                  }
                 }}
-                className="px-4 py-2.5 rounded-full bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.08] disabled:opacity-40 text-white font-mono text-xs font-medium flex items-center gap-2 cursor-pointer shrink-0 transition"
+                className="flex-1 min-w-[200px] px-3 py-1.5 rounded-xl bg-white/[0.025] border border-white/[0.05] flex items-center justify-between gap-2 cursor-grab active:cursor-grabbing"
+                title={`Up Next: ${upNextBlock.title} — ${upNextBlock.startupStep}`}
               >
-                <Play className="w-3 h-3 fill-current text-cyan-300" />
-                <span>Queue {activeDurations.startupMinutes}m</span>
-              </button>
-            </motion.div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[11px] font-mono text-slate-400 truncate">
+                    <span className="uppercase text-cyan-300/90">Up Next:</span>{' '}
+                    <span className="font-serif text-sm text-slate-100 font-medium">
+                      {upNextBlock.title}
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  id="btn-up-next-launch"
+                  type="button"
+                  disabled={metrics.isZeroWorkLeft || isSurgeMidDayResetRequired}
+                  onClick={() => {
+                    triggerHaptic([15]);
+                    soundEngine.playTactileClick('MODE_TOGGLE');
+                    onLaunchBlockInTimer(
+                      upNextBlock.sourceId,
+                      upNextBlock.title,
+                      upNextBlock.taskType,
+                      upNextBlock.startupStep
+                    );
+                  }}
+                  className="px-2.5 py-1 rounded-full bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.08] disabled:opacity-40 text-white font-mono text-[11px] font-medium flex items-center gap-1 cursor-pointer shrink-0 transition"
+                >
+                  <Play className="w-2.5 h-2.5 fill-current text-cyan-300" />
+                  <span>Queue {activeDurations.startupMinutes}m</span>
+                </button>
+              </motion.div>
+            </div>
 
             {/* Active Stress Reset 4-7-8 Visualizer or Post-Reset 5m Flashcard Ramp */}
             {timer.mode === 'STRESS_RESET' && (
-              <div className="space-y-3 pt-2 border-t border-white/[0.05]">
+              <div className="space-y-2 pt-2 border-t border-white/[0.05]">
                 <BreathingVisualizer478
                   id="hud-breathing-478"
                   isActiveContext={true}
@@ -871,7 +864,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 <button
                   type="button"
                   onClick={onCompleteStressResetInto5mFlashcards}
-                  className="w-full py-2.5 px-4 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-mono font-medium text-xs cursor-pointer"
+                  className="w-full py-1.5 px-3 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-mono font-medium text-xs cursor-pointer"
                 >
                   Finish Reset → Queue 5m Flashcard Ramp
                 </button>
@@ -881,28 +874,28 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
             {timer.queuedRecoveryFlashcard5m && (
               <div
                 id="hud-queued-5m-flashcard"
-                className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-400/30 text-emerald-100 flex flex-wrap items-center justify-between gap-3"
+                className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-400/30 text-emerald-100 flex flex-wrap items-center justify-between gap-2"
               >
-                <div className="space-y-0.5">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-300">
-                    Post-Reset 5m Flashcard Ramp
-                  </span>
-                  <div className="font-mono text-lg font-light tabular-nums text-emerald-100">
-                    {formatMMSS(timer.recoveryFlashcardSecondsLeft)}
-                  </div>
-                </div>
                 <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-mono uppercase tracking-wider text-emerald-300">
+                    5m Flashcard Ramp:
+                  </span>
+                  <span className="font-mono text-sm font-normal tabular-nums text-emerald-100">
+                    {formatMMSS(timer.recoveryFlashcardSecondsLeft)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     onClick={onToggleRecoveryFlashcardTimer}
-                    className="py-1.5 px-3.5 rounded-full bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-mono font-medium text-xs cursor-pointer"
+                    className="py-1 px-2.5 rounded-full bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-mono font-medium text-xs cursor-pointer"
                   >
                     {timer.recoveryFlashcardRunning ? 'Pause 5m' : 'Start 5m'}
                   </button>
                   <button
                     type="button"
                     onClick={onCompleteRecoveryFlashcard5m}
-                    className="py-1.5 px-3.5 rounded-full bg-white/[0.06] hover:bg-white/[0.12] text-emerald-100 font-mono text-xs cursor-pointer"
+                    className="py-1 px-2.5 rounded-full bg-white/[0.06] hover:bg-white/[0.12] text-emerald-100 font-mono text-xs cursor-pointer"
                   >
                     Complete
                   </button>
@@ -919,16 +912,16 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="overflow-hidden pt-6 border-t border-white/[0.05] space-y-5"
+              className="overflow-hidden pt-3 border-t border-white/[0.05] space-y-3"
             >
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
                 {/* 1. Shrink Startup Step (3-Tier De-Escalator) */}
-                <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.05] space-y-2.5">
+                <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05] space-y-2">
                   <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
                     <span>Startup Step Friction</span>
                     <span className="text-amber-300">Tier {shrinkLevel}/3</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-1.5">
+                  <div className="grid grid-cols-3 gap-1">
                     {([1, 2, 3] as StartupShrinkLevel[]).map((lvl) => (
                       <button
                         key={lvl}
@@ -937,7 +930,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                           triggerHaptic([10]);
                           onShrinkStartupStep(lvl);
                         }}
-                        className={`py-1.5 rounded-xl font-mono text-xs border cursor-pointer ${
+                        className={`py-1 rounded-lg font-mono text-xs border cursor-pointer ${
                           shrinkLevel === lvl
                             ? 'bg-amber-400/20 border-amber-400/50 text-amber-100 font-medium'
                             : 'bg-white/[0.02] border-white/[0.05] text-slate-400 hover:text-slate-200'
@@ -954,7 +947,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       triggerHaptic([12]);
                       onShrinkStartupStep();
                     }}
-                    className="w-full py-1.5 px-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-400/25 text-[11px] font-mono text-amber-200 cursor-pointer"
+                    className="w-full py-1 px-2 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-400/25 text-[11px] font-mono text-amber-200 cursor-pointer"
                   >
                     {shrinkLevel < 3
                       ? 'Shrink Startup Step →'
@@ -965,13 +958,13 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 {/* 2. Elastic Block Multiplier (0.5x / 1.0x / 2.0x) */}
                 <div
                   id="hud-elastic-block-accordion"
-                  className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.05] space-y-2.5"
+                  className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05] space-y-2"
                 >
                   <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
                     <span>Elastic Block Size</span>
                     <span className="text-cyan-300">{elasticMult.toFixed(1)}x</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-1.5">
+                  <div className="grid grid-cols-3 gap-1">
                     {(
                       [
                         { mult: 0.5 as ElasticBlockMultiplier, label: '0.5x (10m)' },
@@ -989,7 +982,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                             triggerHaptic([12]);
                             onSelectElasticMultiplier(opt.mult);
                           }}
-                          className={`py-1.5 px-2 rounded-xl border font-mono text-[11px] transition cursor-pointer ${
+                          className={`py-1 px-1.5 rounded-lg border font-mono text-[11px] transition cursor-pointer ${
                             isSelected
                               ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-100 font-medium'
                               : 'bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.05] text-slate-400'
@@ -1000,7 +993,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       );
                     })}
                   </div>
-                  <p className="text-[10px] font-mono text-slate-500">
+                  <p className="text-[11px] font-mono text-slate-500">
                     {activeDurations.startupMinutes}m startup + {activeDurations.momentumMinutes}m momentum
                   </p>
                 </div>
@@ -1008,13 +1001,13 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 {/* 3. Energy Bandwidth Router (Sharp | Steady | Low/Foggy) */}
                 <div
                   id="energy-bandwidth-switcher"
-                  className="p-4 rounded-2xl bg-white/[0.02] border border-white/[0.05] space-y-2.5"
+                  className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.05] space-y-2"
                 >
                   <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
                     <span>Bandwidth Router</span>
                     <span className="text-slate-300">{energyBandwidth}</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-1.5">
+                  <div className="grid grid-cols-3 gap-1">
                     {(
                       [
                         { id: 'SHARP' as EnergyBandwidthState, label: 'Sharp' },
@@ -1030,7 +1023,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                           triggerHaptic([12]);
                           onSetEnergyBandwidth(bw.id);
                         }}
-                        className={`py-1.5 px-2 rounded-xl font-mono text-[11px] border transition cursor-pointer ${
+                        className={`py-1 px-1.5 rounded-lg font-mono text-[11px] border transition cursor-pointer ${
                           energyBandwidth === bw.id
                             ? 'bg-white/[0.1] border-white/[0.2] text-white font-medium'
                             : 'bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.05] text-slate-400'
@@ -1040,14 +1033,14 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       </button>
                     ))}
                   </div>
-                  <p className="text-[10px] font-mono text-slate-500">
+                  <p className="text-[11px] font-mono text-slate-500">
                     Auto-routes Up Next to match cognitive energy
                   </p>
                 </div>
               </div>
 
               {/* Load Mode & Recalibrate Bar inside Options */}
-              <div className="pt-3 border-t border-white/[0.05] flex flex-wrap items-center justify-between gap-3">
+              <div className="pt-2.5 border-t border-white/[0.05] flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-1.5">
                   {(
                     [
@@ -1072,7 +1065,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                         type="button"
                         disabled={surgeLocked}
                         onClick={() => onSelectLoadMode(item.mode, item.defaultBlocks, false)}
-                        className={`px-3 py-1 rounded-full font-mono text-[11px] border transition cursor-pointer ${
+                        className={`px-2.5 py-1 rounded-full font-mono text-[11px] border transition cursor-pointer ${
                           active
                             ? 'bg-cyan-500/15 border-cyan-400/40 text-cyan-100 font-medium'
                             : surgeLocked
@@ -1092,23 +1085,23 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       triggerHaptic([15]);
                       onTogglePreExamTaper();
                     }}
-                    className={`px-3 py-1 rounded-full font-mono text-[11px] border transition cursor-pointer flex items-center gap-1.5 ${
+                    className={`px-2.5 py-1 rounded-full font-mono text-[11px] border transition cursor-pointer flex items-center gap-1 ${
                       state.preExamTaperActive
                         ? 'bg-indigo-500/20 border-indigo-400/50 text-indigo-100 font-medium'
                         : 'bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.05] text-slate-400'
                     }`}
                   >
-                    <GraduationCap className="w-3.5 h-3.5 text-indigo-300" />
+                    <GraduationCap className="w-3 h-3 text-indigo-300" />
                     <span>Pre-Exam Taper{state.preExamTaperActive ? ' (ON)' : ''}</span>
                   </button>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <select
                     id="select-fixed-event"
                     value={state.fixedEvent}
                     onChange={(e) => onSetFixedEvent(e.target.value as FixedEventType)}
-                    className="bg-black/40 border border-white/[0.07] rounded-full px-3 py-1 text-[11px] font-mono text-slate-300"
+                    className="bg-black/40 border border-white/[0.07] rounded-full px-2.5 py-1 text-[11px] font-mono text-slate-300"
                   >
                     <option value="NONE">Fixed Event: None</option>
                     <option value="LAB_2H">09:00–11:00 AM Lab (~2h)</option>
@@ -1125,7 +1118,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       triggerHaptic([12]);
                       setRecalibrateWizardOpen(!recalibrateWizardOpen);
                     }}
-                    className="px-3 py-1 rounded-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-400/30 text-amber-200 font-mono text-[11px] flex items-center gap-1.5 cursor-pointer"
+                    className="px-2.5 py-1 rounded-full bg-amber-500/10 hover:bg-amber-500/20 border border-amber-400/30 text-amber-200 font-mono text-[11px] flex items-center gap-1 cursor-pointer"
                   >
                     <RefreshCw className="w-3 h-3" />
                     <span>Shock Absorber / Recalibrate</span>
@@ -1137,7 +1130,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               {recalibrateWizardOpen && (
                 <div
                   id="recalibrate-day-wizard"
-                  className="p-4 rounded-2xl bg-black/40 border border-amber-400/30 space-y-3"
+                  className="p-3 rounded-xl bg-black/40 border border-amber-400/30 space-y-2.5"
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-mono text-amber-200 font-medium">
@@ -1176,7 +1169,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                           setShockAbsorberSelection(opt.mode);
                           setShockAbsorberSliderBlocks(opt.defaultCap);
                         }}
-                        className={`p-2.5 rounded-xl border text-left font-mono text-xs cursor-pointer ${
+                        className={`p-2 rounded-lg border text-left font-mono text-xs cursor-pointer ${
                           shockAbsorberSelection === opt.mode
                             ? 'bg-amber-400/15 border-amber-400/50 text-amber-100'
                             : 'bg-white/[0.02] border-white/[0.05] text-slate-300'
@@ -1188,7 +1181,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                   </div>
 
                   <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
                       <button
                         id="btn-recalibrate-option-a"
                         type="button"
@@ -1196,7 +1189,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                           onRecalibrateStepDownTier();
                           setRecalibrateWizardOpen(false);
                         }}
-                        className="px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] font-mono text-[11px] text-slate-200 cursor-pointer"
+                        className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] font-mono text-[11px] text-slate-200 cursor-pointer"
                       >
                         Step Down 1 Tier
                       </button>
@@ -1209,7 +1202,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                           setSequentialViewOpen(true);
                           setRecalibrateWizardOpen(false);
                         }}
-                        className="px-3 py-1.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] font-mono text-[11px] text-cyan-200 cursor-pointer"
+                        className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] font-mono text-[11px] text-cyan-200 cursor-pointer"
                       >
                         Re-Sequence Now
                       </button>
@@ -1227,7 +1220,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                         );
                         setRecalibrateWizardOpen(false);
                       }}
-                      className="px-4 py-1.5 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-mono font-medium text-xs cursor-pointer"
+                      className="px-3 py-1 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 font-mono font-medium text-xs cursor-pointer"
                     >
                       Apply Ceiling ({shockAbsorberSelection === 'FULL_SHIFT' ? 12 : shockAbsorberSliderBlocks}b)
                     </button>
@@ -1247,7 +1240,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
       <section
         id="minimalist-progress-strip-section"
         aria-label="Daily Baseline and Focus #1 Progress"
-        className={`rounded-3xl bento-surface transition-all duration-500 overflow-hidden ${
+        className={`rounded-2xl bento-surface transition-all duration-500 overflow-hidden ${
           isCinemaReceding
             ? 'opacity-15 blur-[2px] hover:opacity-100 hover:blur-0'
             : ''
@@ -1261,10 +1254,10 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
             setProgressChecklistOpen((prev) => !prev);
           }}
           aria-expanded={progressChecklistOpen}
-          className="w-full px-6 sm:px-8 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-left cursor-pointer hover:bg-white/[0.015] transition"
+          className="w-full px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-left cursor-pointer hover:bg-white/[0.015] transition"
         >
-          <div className="flex flex-wrap items-center gap-3 sm:gap-4 min-w-0">
-            <span className="font-mono text-xs sm:text-sm text-slate-200 tracking-tight tabular-nums">
+          <div className="flex flex-wrap items-center gap-2.5 min-w-0">
+            <span className="font-mono text-xs text-slate-200 tracking-tight tabular-nums">
               Baseline{' '}
               <span className="text-cyan-300 font-medium">
                 {metrics.completedBaselineCount}/{state.baselineBlocks.length}
@@ -1273,9 +1266,9 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
 
             <span className="text-slate-600">•</span>
 
-            <span className="font-mono text-xs sm:text-sm text-slate-200 tracking-tight tabular-nums truncate">
+            <span className="font-mono text-xs text-slate-200 tracking-tight tabular-nums truncate">
               Focus #{primaryProject?.slot || 1}:{' '}
-              <span className="font-serif text-base sm:text-lg text-white font-medium">
+              <span className="font-serif text-lg leading-snug text-white font-medium">
                 {primaryProject?.title || 'None'}
               </span>{' '}
               <span className="text-emerald-300 font-medium">
@@ -1286,20 +1279,20 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-4 shrink-0">
-            <div className="w-28 sm:w-36 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="w-24 sm:w-32 h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
               <div
                 className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400 transition-all duration-500"
                 style={{ width: `${totalProgressPct}%` }}
               />
             </div>
 
-            <span className="text-xs font-mono text-slate-400 flex items-center gap-1">
+            <span className="text-[11px] font-mono text-slate-400 flex items-center gap-1">
               <span>{progressChecklistOpen ? 'Collapse' : 'Checklist'}</span>
               {progressChecklistOpen ? (
-                <ChevronUp className="w-3.5 h-3.5" />
+                <ChevronUp className="w-3 h-3" />
               ) : (
-                <ChevronDown className="w-3.5 h-3.5" />
+                <ChevronDown className="w-3 h-3" />
               )}
             </span>
           </div>
@@ -1312,21 +1305,21 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="px-6 sm:px-8 pb-8 pt-4 border-t border-white/[0.05] space-y-6"
+              className="px-4 pb-4 pt-3 border-t border-white/[0.05] space-y-3"
             >
               {/* Two-Column Expanded Baseline & Focus #1 Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {/* Left Column: 7-Block Daily Core Baseline */}
                 <div
                   id="bento-baseline-card"
-                  className="p-5 rounded-2xl bg-white/[0.015] border border-white/[0.05] space-y-4"
+                  className="p-3.5 rounded-xl bg-white/[0.015] border border-white/[0.05] space-y-3"
                 >
                   <div className="flex items-center justify-between">
                     <div>
-                      <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400">
+                      <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
                         Daily Core Baseline
                       </span>
-                      <h3 className="font-serif text-2xl font-medium text-white">
+                      <h3 className="font-serif text-lg leading-snug font-medium text-white">
                         {state.baselineBlocks.length}-Block Floor
                       </h3>
                     </div>
@@ -1492,13 +1485,13 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 {/* Right Column: Locked Focus #1 Deliverable */}
                 <div
                   id="bento-project-lock-card"
-                  className="p-5 rounded-2xl bg-white/[0.015] border border-white/[0.05] flex flex-col justify-between space-y-4"
+                  className="p-3.5 rounded-xl bg-white/[0.015] border border-white/[0.05] flex flex-col justify-between space-y-3"
                 >
                   {primaryProject ? (
-                    <div id="project-card-slot-1" className="space-y-4">
+                    <div id="project-card-slot-1" className="space-y-3">
                       {isDualSlotEnabled && (
-                        <div className="flex items-center justify-between gap-2 pb-2 border-b border-white/[0.05]">
-                          <span className="text-[10px] font-mono uppercase text-indigo-300">
+                        <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-white/[0.05]">
+                          <span className="text-[11px] font-mono uppercase text-indigo-300">
                             Dual-Slot Mode
                           </span>
                           <div className="flex items-center gap-1">
@@ -1513,7 +1506,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                                   id={`btn-dual-slot-${slotNum}`}
                                   type="button"
                                   onClick={() => onSetActiveDualSlotNumber(slotNum)}
-                                  className={`px-2 py-0.5 rounded-full font-mono text-[10px] border cursor-pointer ${
+                                  className={`px-2 py-0.5 rounded-full font-mono text-[11px] border cursor-pointer ${
                                     activeDualSlotNum === slotNum
                                       ? 'bg-indigo-400/20 border-indigo-400/50 text-indigo-100'
                                       : 'bg-white/[0.02] border-white/[0.05] text-slate-400'
@@ -1529,22 +1522,22 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
 
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-300/90 flex items-center gap-1">
+                          <span className="text-[11px] font-mono uppercase tracking-wider text-emerald-300/90 flex items-center gap-1">
                             <Unlock className="w-3 h-3" />
                             <span>Locked Focus #{primaryProject.slot}</span>
                           </span>
-                          <h3 className="font-serif text-2xl font-medium text-white mt-0.5">
+                          <h3 className="font-serif text-lg leading-snug font-medium text-white mt-0.5">
                             {primaryProject.title}
                           </h3>
                         </div>
-                        <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-400/30 font-mono text-xs tabular-nums text-emerald-200">
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-400/30 font-mono text-xs tabular-nums text-emerald-200">
                           {primaryProject.completedBlocks}/{primaryProject.totalBlocks}
                         </span>
                       </div>
 
                       {/* Segmented Blocks */}
                       <div
-                        className="grid gap-1.5"
+                        className="grid gap-1"
                         style={{
                           gridTemplateColumns: `repeat(${Math.min(
                             12,
@@ -1566,7 +1559,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                                   triggerHaptic([10]);
                                   onIncrementProjectBlock(primaryProject.id);
                                 }}
-                                className={`h-7 rounded-lg border font-mono text-[10px] flex items-center justify-center transition cursor-pointer ${
+                                className={`h-6 rounded-md border font-mono text-[10px] flex items-center justify-center transition cursor-pointer ${
                                   filled
                                     ? 'bg-emerald-400/25 border-emerald-400/50 text-emerald-100'
                                     : 'bg-white/[0.02] hover:bg-white/[0.06] border-white/[0.05] text-slate-500'
@@ -1579,7 +1572,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                         )}
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                         <button
                           id="btn-launch-project-1"
                           type="button"
@@ -1593,7 +1586,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                               primaryProject.startupStep
                             );
                           }}
-                          className="flex-1 py-2 px-3 rounded-full bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-mono font-medium text-xs cursor-pointer"
+                          className="flex-1 py-1.5 px-2.5 rounded-full bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-mono font-medium text-xs cursor-pointer"
                         >
                           Start {activeDurations.startupMinutes}m
                         </button>
@@ -1601,7 +1594,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                           id="btn-log-project-1-block"
                           type="button"
                           onClick={() => onIncrementProjectBlock(primaryProject.id)}
-                          className="py-2 px-3 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.05] text-slate-200 font-mono text-xs cursor-pointer"
+                          className="py-1.5 px-2.5 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.05] text-slate-200 font-mono text-xs cursor-pointer"
                         >
                           +1 Block
                         </button>
@@ -1609,9 +1602,9 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                           id="btn-complete-project-1"
                           type="button"
                           onClick={onCompleteProjectItem1}
-                          className="py-2 px-3 rounded-full bg-emerald-400/20 hover:bg-emerald-400/30 border border-emerald-400/40 text-emerald-100 font-mono text-xs flex items-center gap-1 cursor-pointer"
+                          className="py-1.5 px-2.5 rounded-full bg-emerald-400/20 hover:bg-emerald-400/30 border border-emerald-400/40 text-emerald-100 font-mono text-xs flex items-center gap-1 cursor-pointer"
                         >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <CheckCircle2 className="w-3 h-3" />
                           <span>Complete</span>
                         </button>
                       </div>
@@ -1623,12 +1616,12 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                   )}
 
                   {/* Secondary Accordions inside Checklist Drawer: Locked Queue #2/#3, Smart Intake, Sequential Checklist, 7-Day Table */}
-                  <div className="pt-3 border-t border-white/[0.05] flex flex-wrap items-center gap-2">
+                  <div className="pt-2.5 border-t border-white/[0.05] flex flex-wrap items-center gap-1.5">
                     <button
                       id="btn-toggle-locked-projects-drawer"
                       type="button"
                       onClick={() => setLockedDrawerOpen(!lockedDrawerOpen)}
-                      className="px-2.5 py-1 rounded-full bg-white/[0.025] hover:bg-white/[0.06] border border-white/[0.05] text-[11px] font-mono text-slate-400 flex items-center gap-1.5 cursor-pointer"
+                      className="px-2 py-0.5 rounded-full bg-white/[0.025] hover:bg-white/[0.06] border border-white/[0.05] text-[11px] font-mono text-slate-400 flex items-center gap-1 cursor-pointer"
                     >
                       <Lock className="w-3 h-3" />
                       <span>
@@ -1640,19 +1633,19 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       id="btn-bounded-curiosity-sandbox"
                       type="button"
                       onClick={onLaunchBoundedCuriosityBlock}
-                      className="px-2.5 py-1 rounded-full bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-400/25 text-[11px] font-mono text-indigo-200 cursor-pointer"
+                      className="px-2 py-0.5 rounded-full bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-400/25 text-[11px] font-mono text-indigo-200 cursor-pointer"
                     >
                       Curiosity Sandbox Block
                     </button>
                   </div>
 
                   {lockedDrawerOpen && (
-                    <div className="space-y-2 pt-2">
+                    <div className="space-y-1.5 pt-1.5">
                       {lockedSecondaryProjects.map((proj) => (
                         <div
                           key={proj.id}
                           id={`project-card-slot-${proj.slot}`}
-                          className="p-2.5 rounded-xl bg-black/30 border border-white/[0.05] flex items-center justify-between text-xs"
+                          className="p-2 rounded-lg bg-black/30 border border-white/[0.05] flex items-center justify-between text-xs"
                         >
                           <span className="text-slate-300 truncate">
                             #{proj.slot} {proj.title}
@@ -1666,7 +1659,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       {/* Add Deliverable Form */}
                       <form
                         onSubmit={handleAddProjectSubmit}
-                        className="p-2.5 rounded-xl bg-black/25 border border-white/[0.05] space-y-2"
+                        className="p-2 rounded-lg bg-black/25 border border-white/[0.05] space-y-1.5"
                       >
                         <div className="flex flex-wrap gap-1.5">
                           <input
@@ -1675,7 +1668,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                             value={newProjTitle}
                             onChange={(e) => setNewProjTitle(e.target.value)}
                             placeholder="Add deliverable..."
-                            className="flex-1 min-w-[130px] bg-slate-950 border border-white/[0.07] rounded-lg px-2.5 py-1 text-xs text-slate-100"
+                            className="flex-1 min-w-[130px] bg-slate-950 border border-white/[0.07] rounded-lg px-2 py-1 text-xs text-slate-100"
                           />
                           <select
                             id="select-new-project-preset"
@@ -1702,12 +1695,12 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       {pendingIntakeTriage && (
                         <div
                           id="smart-intake-triage-prompt"
-                          className="p-3 rounded-xl bg-amber-950/40 border border-amber-400/40 space-y-2"
+                          className="p-2.5 rounded-xl bg-amber-950/40 border border-amber-400/40 space-y-1.5"
                         >
                           <p className="text-xs text-amber-100">
                             {pendingIntakeTriage.reason}
                           </p>
-                          <div className="flex flex-wrap gap-2">
+                          <div className="flex flex-wrap gap-1.5">
                             <button
                               id="btn-intake-option-a"
                               type="button"
@@ -1722,7 +1715,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                                 setPendingIntakeTriage(null);
                                 setNewProjTitle('');
                               }}
-                              className="px-3 py-1 rounded-lg bg-amber-400 text-slate-950 font-mono text-xs cursor-pointer"
+                              className="px-2.5 py-1 rounded-lg bg-amber-400 text-slate-950 font-mono text-xs cursor-pointer"
                             >
                               Option A: Promote + Surge
                             </button>
@@ -1740,7 +1733,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                                 setPendingIntakeTriage(null);
                                 setNewProjTitle('');
                               }}
-                              className="px-3 py-1 rounded-lg bg-white/[0.06] text-cyan-100 font-mono text-xs cursor-pointer"
+                              className="px-2.5 py-1 rounded-lg bg-white/[0.06] text-cyan-100 font-mono text-xs cursor-pointer"
                             >
                               Option B: Open Backlog
                             </button>
@@ -1753,50 +1746,50 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               </div>
 
               {/* On-Demand Collapsible Accordions for Sequential Checklist, Smart Intake, and 7-Day Table */}
-              <div className="pt-3 border-t border-white/[0.05] flex flex-wrap items-center gap-2">
+              <div className="pt-2.5 border-t border-white/[0.05] flex flex-wrap items-center gap-1.5">
                 <button
                   id="btn-toggle-sequential-checklist"
                   type="button"
                   onClick={() => setSequentialViewOpen(!sequentialViewOpen)}
-                  className={`px-3 py-1.5 rounded-full border font-mono text-xs flex items-center gap-1.5 cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-full border font-mono text-[11px] flex items-center gap-1 cursor-pointer ${
                     sequentialViewOpen
                       ? 'bg-cyan-400/20 border-cyan-400/50 text-cyan-100'
                       : 'bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.05] text-slate-400'
                   }`}
                 >
-                  <ListOrdered className="w-3.5 h-3.5" />
+                  <ListOrdered className="w-3 h-3" />
                   <span>Sequential 20m Checklist</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setIntakeDrawerOpen(!intakeDrawerOpen)}
-                  className={`px-3 py-1.5 rounded-full border font-mono text-xs flex items-center gap-1.5 cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-full border font-mono text-[11px] flex items-center gap-1 cursor-pointer ${
                     intakeDrawerOpen
                       ? 'bg-cyan-400/20 border-cyan-400/50 text-cyan-100'
                       : 'bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.05] text-slate-400'
                   }`}
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
+                  <Sparkles className="w-3 h-3" />
                   <span>Smart Intake Planner</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setSevenDayAccordionOpen(!sevenDayAccordionOpen)}
-                  className={`px-3 py-1.5 rounded-full border font-mono text-xs flex items-center gap-1.5 cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-full border font-mono text-[11px] flex items-center gap-1 cursor-pointer ${
                     sevenDayAccordionOpen
                       ? 'bg-cyan-400/20 border-cyan-400/50 text-cyan-100'
                       : 'bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.05] text-slate-400'
                   }`}
                 >
-                  <Calendar className="w-3.5 h-3.5" />
+                  <Calendar className="w-3 h-3" />
                   <span>7-Day Pipeline Table</span>
                 </button>
               </div>
 
               {intakeDrawerOpen && (
-                <div className="pt-2">
+                <div className="pt-1.5">
                   <SmartIntakeBar
                     state={state}
                     contextVariant="FOCUS_PIPELINE"
@@ -1816,14 +1809,14 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               {sequentialViewOpen && (
                 <div
                   id="sequential-checklist-view"
-                  className="p-4 rounded-2xl bg-black/25 border border-white/[0.05] space-y-2 max-h-96 overflow-y-auto"
+                  className="p-3 rounded-xl bg-black/25 border border-white/[0.05] space-y-1.5 max-h-80 overflow-y-auto"
                 >
                   {sequentialSteps.map((step) => (
                     <div
                       key={step.id}
                       id={`seq-row-${step.id}`}
                       onClick={() => handleClickSequentialStep(step)}
-                      className={`p-3 rounded-xl border transition cursor-pointer flex items-center justify-between gap-3 ${
+                      className={`p-2 rounded-lg border transition cursor-pointer flex items-center justify-between gap-2 ${
                         step.isCurrentNext
                           ? 'bg-cyan-500/10 border-cyan-400/40'
                           : step.completed || step.banked
@@ -1850,7 +1843,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               {sevenDayAccordionOpen && (
                 <div
                   id="bento-interactive-7day-pipeline"
-                  className="p-4 rounded-2xl bg-black/25 border border-white/[0.05] space-y-3"
+                  className="p-3 rounded-xl bg-black/25 border border-white/[0.05] space-y-2"
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-mono text-slate-300">
@@ -1884,13 +1877,13 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
       <section
         id="bento-quick-triage-dock"
         aria-label="Quiet Single-Line Triage Bar"
-        className={`rounded-full bento-surface px-5 py-3 flex flex-wrap items-center justify-between gap-3 transition-all duration-500 ${
+        className={`rounded-full bento-surface px-3.5 py-2 flex flex-wrap items-center justify-between gap-2 transition-all duration-500 ${
           isCinemaReceding
             ? 'opacity-15 blur-[2px] hover:opacity-100 hover:blur-0'
             : ''
         }`}
       >
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
           <button
             type="button"
             disabled={timer.chainedBlocksCount >= 2}
@@ -1898,7 +1891,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               triggerHaptic([10]);
               onSelectL1Minutes(5);
             }}
-            className={`px-3.5 py-1.5 rounded-full font-mono text-xs border transition cursor-pointer disabled:opacity-40 ${
+            className={`px-2.5 py-1 rounded-full font-mono text-xs border transition cursor-pointer disabled:opacity-40 ${
               timer.mode === 'BREAK_L1'
                 ? 'bg-cyan-500/15 border-cyan-400/40 text-cyan-100'
                 : 'bg-white/[0.025] hover:bg-white/[0.06] border-white/[0.05] text-slate-300'
@@ -1915,7 +1908,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               triggerHaptic([10]);
               onSelectL2Minutes(15);
             }}
-            className={`px-3.5 py-1.5 rounded-full font-mono text-xs border transition cursor-pointer ${
+            className={`px-2.5 py-1 rounded-full font-mono text-xs border transition cursor-pointer ${
               timer.mode === 'BREAK_L2'
                 ? 'bg-indigo-500/15 border-indigo-400/40 text-indigo-100'
                 : 'bg-white/[0.025] hover:bg-white/[0.06] border-white/[0.05] text-slate-300'
@@ -1933,13 +1926,13 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               triggerHaptic([20, 40, 20]);
               onTriggerStressReset('BREATHING_478', 15);
             }}
-            className={`px-3.5 py-1.5 rounded-full font-mono text-xs border flex items-center gap-1.5 transition cursor-pointer ${
+            className={`px-2.5 py-1 rounded-full font-mono text-xs border flex items-center gap-1 transition cursor-pointer ${
               timer.mode === 'STRESS_RESET'
                 ? 'bg-amber-500/20 border-amber-400/50 text-amber-100'
                 : 'bg-amber-500/[0.06] hover:bg-amber-500/15 border-amber-400/20 text-amber-200/90'
             }`}
           >
-            <Wind className="w-3.5 h-3.5 text-amber-400" />
+            <Wind className="w-3 h-3 text-amber-400" />
             <span>Stress Reset</span>
           </button>
         </div>
@@ -1947,7 +1940,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
         <button
           type="button"
           onClick={() => setTriageDetailsOpen((prev) => !prev)}
-          className="px-3 py-1 rounded-full text-[11px] font-mono text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer"
+          className="px-2.5 py-0.5 rounded-full text-[11px] font-mono text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer"
         >
           <span>Protocols</span>
           {triageDetailsOpen ? (
@@ -1965,20 +1958,20 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: 'auto' }}
             exit={{ opacity: 0, height: 0 }}
-            className="rounded-3xl bento-surface p-6 grid grid-cols-1 sm:grid-cols-3 gap-4 overflow-hidden"
+            className="rounded-2xl bento-surface p-3.5 grid grid-cols-1 sm:grid-cols-3 gap-3 overflow-hidden"
           >
-            <div className="space-y-2">
-              <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400">
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
                 Same-Task Micro-Reset (Max 2 Chained)
               </span>
-              <div className="flex gap-2">
+              <div className="flex gap-1.5">
                 {([3, 5] as const).map((m) => (
                   <button
                     key={m}
                     type="button"
                     disabled={timer.chainedBlocksCount >= 2}
                     onClick={() => onSelectL1Minutes(m)}
-                    className={`flex-1 py-1.5 rounded-xl font-mono text-xs border cursor-pointer disabled:opacity-40 ${
+                    className={`flex-1 py-1 rounded-lg font-mono text-xs border cursor-pointer disabled:opacity-40 ${
                       timer.mode === 'BREAK_L1' && timer.l1DurationMinutes === m
                         ? 'bg-cyan-400/20 border-cyan-400/50 text-cyan-100'
                         : 'bg-white/[0.02] border-white/[0.05] text-slate-300'
@@ -1990,11 +1983,11 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               </div>
             </div>
 
-            <div className="space-y-2">
-              <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400">
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
                 Task-Switch Buffer (10–15m)
               </span>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-1">
                 {(
                   [
                     {
@@ -2018,7 +2011,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     key={p.id}
                     type="button"
                     onClick={() => onSelectL2Protocol(p.id)}
-                    className={`px-2.5 py-1 rounded-xl font-mono text-[11px] border cursor-pointer ${
+                    className={`px-2 py-0.5 rounded-lg font-mono text-[11px] border cursor-pointer ${
                       timer.l2Protocol === p.id
                         ? 'bg-indigo-400/20 border-indigo-400/50 text-indigo-100'
                         : 'bg-white/[0.02] border-white/[0.05] text-slate-300'
@@ -2030,8 +2023,8 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               </div>
             </div>
 
-            <div className="space-y-2">
-              <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400">
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
                 Split-Shift Mid-Day Reset (60–120m)
               </span>
               <div className="flex gap-1.5">
@@ -2040,7 +2033,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     key={m}
                     type="button"
                     onClick={() => onSelectL3Minutes(m)}
-                    className={`flex-1 py-1.5 rounded-xl font-mono text-xs border cursor-pointer ${
+                    className={`flex-1 py-1 rounded-lg font-mono text-xs border cursor-pointer ${
                       timer.mode === 'BREAK_L3' && timer.l3DurationMinutes === m
                         ? 'bg-emerald-400/20 border-emerald-400/50 text-emerald-100'
                         : 'bg-white/[0.02] border-white/[0.05] text-slate-300'

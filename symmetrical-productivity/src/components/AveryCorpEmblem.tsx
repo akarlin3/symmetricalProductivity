@@ -200,7 +200,7 @@ export const AveryCorpVectorSvg: React.FC<{
 };
 
 export const AveryCorpEmblem: React.FC<AveryCorpEmblemProps> = ({
-  size = 36,
+  size = 28,
   variant = 'image',
   cropMode = 'mark-only',
   isTimerActive = false,
@@ -269,7 +269,7 @@ export const AveryCorpEmblem: React.FC<AveryCorpEmblemProps> = ({
 
       <span
         style={dimensionStyle}
-        className={`w-9 h-9 rounded-full overflow-hidden bg-[#121b2d] flex items-center justify-center relative aspect-square border transition-all duration-300 ${interactiveRingClasses} ${className}`}
+        className={`w-7 h-7 rounded-full overflow-hidden bg-[#121b2d] flex items-center justify-center relative aspect-square border transition-all duration-300 ${interactiveRingClasses} ${className}`}
       >
         {variant === 'svg' ? (
           <AveryCorpVectorSvg
