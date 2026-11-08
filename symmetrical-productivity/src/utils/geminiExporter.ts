@@ -1231,3 +1231,15 @@ export function parseGeminiResponseToState(
     appliedChanges,
   };
 }
+
+export {
+  parseGeminiResponseToStatePatch,
+  encodeGeminiSyncPayloadToBase64Url,
+  decodeGeminiSyncBase64Url,
+  extractGeminiSyncParamFromLocation,
+  buildGeminiSyncDeepLinkUrl,
+  type GeminiDetectedFormat,
+  type GeminiDetectedHighlights,
+  type GeminiStatePatchResult,
+} from './geminiImporter';
+

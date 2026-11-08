@@ -116,6 +116,10 @@ import { KeyboardShortcutModal } from './components/KeyboardShortcutModal';
 import { MobileBottomSheet } from './components/MobileBottomSheet';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { GeminiBridgeModal } from './components/GeminiBridgeModal';
+import {
+  extractGeminiSyncParamFromLocation,
+  parseGeminiResponseToStatePatch,
+} from './utils/geminiImporter';
 import { OnboardingWizardModal } from './components/OnboardingWizardModal';
 import { PipelineDrawer } from './components/PipelineDrawer';
 import { PlanningAssistantDrawer } from './components/PlanningAssistantDrawer';
@@ -237,6 +241,15 @@ export function App() {
   const [assistantDrawerOpen, setAssistantDrawerOpen] = useState(false);
   const [stateModalOpen, setStateModalOpen] = useState(false);
   const [geminiBridgeOpen, setGeminiBridgeOpen] = useState(false);
+  const [geminiBridgeInitialTab, setGeminiBridgeInitialTab] = useState<
+    'EXPORT' | 'IMPORT'
+  >('EXPORT');
+  const [geminiBridgeInitialImportText, setGeminiBridgeInitialImportText] =
+    useState<string>('');
+  const [geminiBridgeSourceLabel, setGeminiBridgeSourceLabel] = useState<
+    string | null
+  >(null);
+  const [isGlobalFileDragOver, setIsGlobalFileDragOver] = useState(false);
   const [onboardingWizardOpen, setOnboardingWizardOpen] = useState(false);
   const [isFirstVisitOnboarding, setIsFirstVisitOnboarding] = useState(false);
   const [insightsModalOpen, setInsightsModalOpen] = useState(false);
@@ -345,6 +358,28 @@ export function App() {
     }
 
     if (typeof window !== 'undefined') {
+      // Method 3: Deep-Link URL Importer (?geminiSync=<base64> or #geminiSync=<base64>)
+      const deepLinkSync = extractGeminiSyncParamFromLocation();
+      if (deepLinkSync) {
+        window.history.replaceState({}, document.title, deepLinkSync.cleanUrl);
+        setGeminiBridgeInitialImportText(deepLinkSync.decodedText);
+        setGeminiBridgeSourceLabel('Deep-Link URL (?geminiSync=)');
+        setGeminiBridgeInitialTab('IMPORT');
+        setGeminiBridgeOpen(true);
+        try {
+          const preview = parseGeminiResponseToStatePatch(
+            deepLinkSync.decodedText,
+            state
+          );
+          showNotice(preview.diffSummaryBanner);
+        } catch {
+          showNotice(
+            'Loaded ?geminiSync= payload into Gemini Bridge — review and click Apply.'
+          );
+        }
+        return;
+      }
+
       const params = new URLSearchParams(window.location.search);
       const shortcutAction = params.get('action');
       const now = Date.now();
@@ -405,6 +440,117 @@ export function App() {
       }
     }
   }, [initialUnlockInfo.triggeredViaUrl, initialUnlockInfo.unlocked]);
+
+  // Method 2: One-Tap "Read from Clipboard" & Global Paste (Cmd/Ctrl + Shift + V)
+  const handleOneTapSyncFromClipboard = useCallback(async () => {
+    triggerHaptic([14]);
+    soundEngine.playTactileClick('MODE_TOGGLE');
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.readText) {
+        const clipText = await navigator.clipboard.readText();
+        if (clipText && clipText.trim()) {
+          setGeminiBridgeInitialImportText(clipText);
+          setGeminiBridgeSourceLabel('1-Tap Clipboard Sync (Cmd/Ctrl+Shift+V)');
+          setGeminiBridgeInitialTab('IMPORT');
+          setGeminiBridgeOpen(true);
+          try {
+            const preview = parseGeminiResponseToStatePatch(clipText, state);
+            showNotice(preview.diffSummaryBanner);
+          } catch {
+            showNotice(
+              'Read clipboard into Gemini Sync Hub — review or paste Gemini response.'
+            );
+          }
+          return;
+        }
+      }
+    } catch {
+      // Clipboard read permission denied or unavailable; open modal on IMPORT tab for manual Cmd+V
+    }
+    setGeminiBridgeSourceLabel('Paste from Clipboard');
+    setGeminiBridgeInitialTab('IMPORT');
+    setGeminiBridgeOpen(true);
+    showNotice(
+      'Opened Gemini Reverse Bridge — press Cmd/Ctrl+V to paste and preview changes.'
+    );
+  }, [state]);
+
+  // Method 4: Global Window Drag-and-Drop state.md / .json File Zone
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let dragCounter = 0;
+
+    const hasFiles = (e: DragEvent) =>
+      Boolean(
+        e.dataTransfer?.types &&
+          Array.from(e.dataTransfer.types).includes('Files')
+      );
+
+    const onDragEnter = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragCounter++;
+      setIsGlobalFileDragOver(true);
+    };
+
+    const onDragOver = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = 'copy';
+      }
+      setIsGlobalFileDragOver(true);
+    };
+
+    const onDragLeave = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragCounter = Math.max(0, dragCounter - 1);
+      if (dragCounter === 0) {
+        setIsGlobalFileDragOver(false);
+      }
+    };
+
+    const onDrop = async (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragCounter = 0;
+      setIsGlobalFileDragOver(false);
+      const file = e.dataTransfer?.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        if (!text.trim()) return;
+        triggerHaptic([15, 30]);
+        soundEngine.playTactileClick('MODE_TOGGLE');
+        setGeminiBridgeInitialImportText(text);
+        setGeminiBridgeSourceLabel(`Dropped File: ${file.name}`);
+        setGeminiBridgeInitialTab('IMPORT');
+        setGeminiBridgeOpen(true);
+        try {
+          const preview = parseGeminiResponseToStatePatch(text, state);
+          showNotice(preview.diffSummaryBanner);
+        } catch {
+          showNotice(
+            `Loaded "${file.name}" into Gemini Sync Hub — review and click Apply.`
+          );
+        }
+      } catch {
+        showNotice(`Could not read dropped file "${file.name}".`);
+      }
+    };
+
+    window.addEventListener('dragenter', onDragEnter);
+    window.addEventListener('dragover', onDragOver);
+    window.addEventListener('dragleave', onDragLeave);
+    window.addEventListener('drop', onDrop);
+    return () => {
+      window.removeEventListener('dragenter', onDragEnter);
+      window.removeEventListener('dragover', onDragOver);
+      window.removeEventListener('dragleave', onDragLeave);
+      window.removeEventListener('drop', onDrop);
+    };
+  }, [state]);
 
   const handleUnlockArchitectMode = useCallback(
     (sourceLabel = 'Secret Trigger') => {
@@ -986,13 +1132,20 @@ export function App() {
     return () => window.clearInterval(id);
   }, [undoToast]);
 
-  // Global Keyboard Shortcuts: Cmd/Ctrl+G (Gemini Sync Hub), ? (Cheat-Sheet), Cmd+K (Command Bar), F (Cinema Focus Mode), R (Break), S (Stress Reset), Cmd+/ (AI Assistant), Cmd+J (Smart Intake), Cmd+Z (Undo), Space (Start/Pause)
+  // Global Keyboard Shortcuts: Cmd/Ctrl+G (Gemini Sync Hub), Cmd/Ctrl+Shift+V (1-Tap Sync from Clipboard), ? (Cheat-Sheet), Cmd+K (Command Bar), F (Cinema Focus Mode), R (Break), S (Stress Reset), Cmd+/ (AI Assistant), Cmd+J (Smart Intake), Cmd+Z (Undo), Space (Start/Pause)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'v') {
+        e.preventDefault();
+        void handleOneTapSyncFromClipboard();
+        return;
+      }
+
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'g') {
         e.preventDefault();
         triggerHaptic([12]);
         soundEngine.playTactileClick('MODE_TOGGLE');
+        setGeminiBridgeInitialTab('EXPORT');
         setGeminiBridgeOpen((prev) => !prev);
         return;
       }
@@ -1199,6 +1352,7 @@ export function App() {
     pipelineDrawerOpen,
     commandDockOpen,
     geminiBridgeOpen,
+    handleOneTapSyncFromClipboard,
     handleTriggerUndo,
     cinemaFocusMode,
     shortcutsModalOpen,
@@ -3688,7 +3842,13 @@ export function App() {
           }}
           isEveningTheme={isEveningTheme}
           onOpenCommandDock={() => setCommandDockOpen(true)}
-          onOpenGeminiBridgeModal={() => setGeminiBridgeOpen(true)}
+          onOpenGeminiBridgeModal={() => {
+            setGeminiBridgeInitialTab('EXPORT');
+            setGeminiBridgeOpen(true);
+          }}
+          onOneTapSyncFromClipboard={() => {
+            void handleOneTapSyncFromClipboard();
+          }}
           cinemaFocusMode={cinemaFocusMode}
           onToggleCinemaFocusMode={() =>
             setCinemaFocusMode((prev) => !prev)
@@ -6017,15 +6177,48 @@ export function App() {
         onUnlockArchitectMode={handleUnlockArchitectMode}
       />
 
-      {/* Export to Gemini & Bidirectional Sync Hub (Cmd/Ctrl + G) */}
+      {/* Global Window Drag-and-Drop state.md / .json Overlay */}
+      {isGlobalFileDragOver && (
+        <div
+          id="global-gemini-file-drop-overlay"
+          className="fixed inset-0 z-[70] bg-slate-950/85 backdrop-blur-md border-4 border-dashed border-emerald-400 flex items-center justify-center p-6 pointer-events-none"
+        >
+          <div className="max-w-lg w-full p-6 rounded-3xl bg-emerald-950/60 border border-emerald-400/50 text-center space-y-2 shadow-[0_0_50px_rgba(52,211,153,0.35)]">
+            <Upload className="w-10 h-10 text-emerald-300 mx-auto" />
+            <div className="text-lg font-mono font-bold text-emerald-100">
+              Drop <code className="text-emerald-300">state.md</code> or{' '}
+              <code className="text-emerald-300">.json</code> to Preview &amp; Sync from Gemini
+            </div>
+            <p className="text-xs font-mono text-emerald-200/80">
+              Automatically parses Format A (JSON), Format B (state.md), or Format C (Conversational Plan) with 1-tap Undo protection.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Export to Gemini & Bidirectional Sync Hub (Cmd/Ctrl + G or Cmd/Ctrl + Shift + V) */}
       <GeminiBridgeModal
         isOpen={geminiBridgeOpen}
         onClose={() => setGeminiBridgeOpen(false)}
         state={state}
+        initialTab={geminiBridgeInitialTab}
+        initialImportText={geminiBridgeInitialImportText}
+        initialImportSourceLabel={geminiBridgeSourceLabel}
         onApplyImportedState={(nextState, summary) => {
           setState((prev) => {
-            pushUndoSnapshot(prev, `Synced from Gemini (${summary})`);
-            return nextState;
+            const updatedBackups = pushStateBackup(
+              prev,
+              'JSON_IMPORT',
+              `Before Gemini Sync (${summary})`
+            );
+            pushUndoSnapshot(
+              prev,
+              `Gemini Sync Applied (${summary.replace(' — Apply?', '')}) — Press Cmd/Ctrl+Z to revert`
+            );
+            return {
+              ...nextState,
+              stateBackups: updatedBackups,
+            };
           });
         }}
         onChangeBandwidth={(bandwidth) =>

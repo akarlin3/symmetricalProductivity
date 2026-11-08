@@ -4,6 +4,7 @@ import {
   BarChart3,
   Bot,
   Calendar,
+  ClipboardPaste,
   Clock,
   Command,
   Download,
@@ -57,6 +58,7 @@ interface HeaderBarProps {
   isEveningTheme: boolean;
   onOpenCommandDock?: () => void;
   onOpenGeminiBridgeModal?: () => void;
+  onOneTapSyncFromClipboard?: () => void;
   cinemaFocusMode?: boolean;
   onToggleCinemaFocusMode?: () => void;
   architectModeUnlocked?: boolean;
@@ -87,6 +89,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   isEveningTheme,
   onOpenCommandDock,
   onOpenGeminiBridgeModal,
+  onOneTapSyncFromClipboard,
   cinemaFocusMode = false,
   onToggleCinemaFocusMode,
   architectModeUnlocked = false,
@@ -364,6 +367,30 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                 <span>Sync with Gemini</span>
                 <kbd className="px-1 py-0.5 rounded bg-black/45 border border-white/15 text-[9px] font-mono text-sky-200">
                   ⌘G
+                </kbd>
+              </button>
+            )}
+
+            {onOneTapSyncFromClipboard && (
+              <button
+                id="btn-one-tap-sync-clipboard"
+                type="button"
+                onClick={() => {
+                  triggerHaptic([14]);
+                  soundEngine.playTactileClick('UI_TAP');
+                  onOneTapSyncFromClipboard();
+                }}
+                className={`px-3 py-1.5 rounded-xl border text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer transition shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18)] ${
+                  isEveningTheme
+                    ? 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-400/50 text-emerald-100'
+                    : 'bg-gradient-to-r from-emerald-500/25 to-teal-500/20 hover:from-emerald-500/35 hover:to-teal-500/30 border-emerald-400/50 text-emerald-100 shadow-[0_0_15px_rgba(52,211,153,0.18)]'
+                }`}
+                title="1-Tap Sync from Clipboard — Reads clipboard, previews Gemini changes, and saves Undo snapshot (Cmd/Ctrl + Shift + V)"
+              >
+                <ClipboardPaste className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+                <span>1-Tap Sync from Clipboard</span>
+                <kbd className="px-1 py-0.5 rounded bg-black/45 border border-white/15 text-[9px] font-mono text-emerald-200">
+                  ⌘⇧V
                 </kbd>
               </button>
             )}
