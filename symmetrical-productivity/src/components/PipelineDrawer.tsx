@@ -1,12 +1,26 @@
 import React from 'react';
 import { AlertTriangle, Calendar, CheckCircle2, X } from 'lucide-react';
-import { FixedEventType, LoadMode, PipelineDay, SymmetryState } from '../types/symmetry';
+import {
+  FixedEventType,
+  LoadMode,
+  PipelineDay,
+  SmartIntakePlanResult,
+  SymmetryState,
+} from '../types/symmetry';
+import { SmartIntakeBar } from './SmartIntakeBar';
 
 interface PipelineDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   state: SymmetryState;
   onUpdateDay: (dayIndex: number, patch: Partial<PipelineDay>) => void;
+  smartIntakeText: string;
+  onChangeSmartIntakeText: (val: string) => void;
+  smartIntakePreview: SmartIntakePlanResult | null;
+  onSetSmartIntakePreview: (plan: SmartIntakePlanResult | null) => void;
+  onApplySmartIntakePlan: (plan: SmartIntakePlanResult) => void;
+  onOpenStateModal: () => void;
+  apiKeyVersion: number;
 }
 
 export const PipelineDrawer: React.FC<PipelineDrawerProps> = ({
@@ -14,6 +28,13 @@ export const PipelineDrawer: React.FC<PipelineDrawerProps> = ({
   onClose,
   state,
   onUpdateDay,
+  smartIntakeText,
+  onChangeSmartIntakeText,
+  smartIntakePreview,
+  onSetSmartIntakePreview,
+  onApplySmartIntakePlan,
+  onOpenStateModal,
+  apiKeyVersion,
 }) => {
   if (!isOpen) return null;
 
@@ -51,8 +72,8 @@ export const PipelineDrawer: React.FC<PipelineDrawerProps> = ({
       id="pipeline-drawer-backdrop"
       className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex justify-end"
     >
-      <div className="w-full max-w-3xl bg-slate-900 border-l border-slate-800 h-full flex flex-col justify-between overflow-y-auto p-4 sm:p-6">
-        <div className="space-y-5">
+      <div className="w-full max-w-4xl bg-slate-900 border-l border-slate-800 h-full flex flex-col justify-between overflow-y-auto p-4 sm:p-6">
+        <div className="space-y-4">
           <div className="flex items-center justify-between border-b border-slate-800 pb-4">
             <div>
               <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
@@ -72,6 +93,19 @@ export const PipelineDrawer: React.FC<PipelineDrawerProps> = ({
               <X className="w-4 h-4" />
             </button>
           </div>
+
+          {/* Smart Intake & Week Planner Bar at top of 7-Day Pipeline View */}
+          <SmartIntakeBar
+            state={state}
+            contextVariant="DRAWER_7DAY"
+            inputText={smartIntakeText}
+            onChangeInputText={onChangeSmartIntakeText}
+            previewPlan={smartIntakePreview}
+            onSetPreviewPlan={onSetSmartIntakePreview}
+            onApplyPlan={onApplySmartIntakePlan}
+            onOpenSettingsModal={onOpenStateModal}
+            apiKeyVersion={apiKeyVersion}
+          />
 
           {/* Circuit Breaker Rule Notice */}
           <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-start gap-3 text-xs text-slate-300">
@@ -93,9 +127,9 @@ export const PipelineDrawer: React.FC<PipelineDrawerProps> = ({
                 <tr className="bg-slate-950 text-slate-400 border-b border-slate-800 font-mono uppercase text-[11px]">
                   <th className="py-2.5 px-3">Day</th>
                   <th className="py-2.5 px-3">Load Mode</th>
-                  <th className="py-2.5 px-3">Net Target</th>
+                  <th className="py-2.5 px-3">Net Target &amp; Project Blocks</th>
                   <th className="py-2.5 px-3">Fixed Event (Wall-Clock)</th>
-                  <th className="py-2.5 px-3">Morning Anchor</th>
+                  <th className="py-2.5 px-3">Morning Anchor / Evening Bridge</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/80">
@@ -146,13 +180,25 @@ export const PipelineDrawer: React.FC<PipelineDrawerProps> = ({
                         </div>
                       </td>
                       <td className="py-3 px-3 font-mono">
-                        <span className="font-bold text-slate-100">
-                          {netTarget} blks
-                        </span>{' '}
-                        <span className="text-slate-400">
-                          ({Math.floor((netTarget * 20) / 60)}h{' '}
-                          {String((netTarget * 20) % 60).padStart(2, '0')}m)
-                        </span>
+                        <div>
+                          <span className="font-bold text-slate-100">
+                            {netTarget} blks
+                          </span>{' '}
+                          <span className="text-slate-400">
+                            ({Math.floor((netTarget * 20) / 60)}h{' '}
+                            {String((netTarget * 20) % 60).padStart(2, '0')}m)
+                          </span>
+                        </div>
+                        {day.projectBlocksSummary && (
+                          <div className="text-[11px] text-cyan-300 mt-0.5">
+                            {day.projectBlocksSummary}
+                          </div>
+                        )}
+                        {day.deliverablesCompleted && (
+                          <div className="text-[10px] text-emerald-300 mt-0.5">
+                            {day.deliverablesCompleted}
+                          </div>
+                        )}
                         {day.deductedBlocksFromExtension > 0 && (
                           <div className="text-[11px] text-amber-300 mt-0.5">
                             -{day.deductedBlocksFromExtension} blk Flow Ext deduction
@@ -175,8 +221,13 @@ export const PipelineDrawer: React.FC<PipelineDrawerProps> = ({
                           <option value="VOLUNTEER">Volunteer Shift</option>
                           <option value="EVENING_OUTING_6PM">6:00 PM Evening Outing</option>
                         </select>
+                        {day.fixedEventTimeLabel && (
+                          <div className="text-[10px] font-mono text-amber-200/80 mt-1">
+                            {day.fixedEventTimeLabel}
+                          </div>
+                        )}
                       </td>
-                      <td className="py-3 px-3">
+                      <td className="py-3 px-3 space-y-1">
                         <button
                           type="button"
                           onClick={() =>
@@ -195,6 +246,11 @@ export const PipelineDrawer: React.FC<PipelineDrawerProps> = ({
                             {day.earlyMorningAnchor ? 'Early Lab/Anchor' : 'Zero Early Anchor'}
                           </span>
                         </button>
+                        {day.eveningBridge && (
+                          <div className="text-[10px] font-mono text-slate-400">
+                            {day.eveningBridge}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );

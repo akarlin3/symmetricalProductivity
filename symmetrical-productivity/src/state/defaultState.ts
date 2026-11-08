@@ -1,4 +1,4 @@
-import { SymmetryState } from '../types/symmetry';
+import { SymmetryState, TodayBlockLogEntry } from '../types/symmetry';
 
 export const STORAGE_KEY = 'symmetry_manager_state_v1';
 
@@ -21,9 +21,55 @@ export function isPre4amRolloverWindow(date: Date = new Date()): boolean {
   return date.getHours() < 4;
 }
 
+export function createLogTimestamp(date: Date = new Date()): string {
+  return date.toISOString();
+}
+
+const initialLogicalDay = getLogicalDayKey();
+
+export const DEFAULT_TODAY_BLOCK_LOG: TodayBlockLogEntry[] = [
+  {
+    id: 'log_init_fc_anat_1',
+    timestamp: '2026-11-07T09:15:00.000Z',
+    logicalDate: initialLogicalDay,
+    category: 'FLOOR_ANATOMY',
+    title: 'Anatomy Flashcards — Block 1/1',
+    durationMinutes: 20,
+    roadmapTrack: 'science',
+    stroke: 'INPUT',
+    sourceBlockId: 'fc_anat_1',
+    rungNumber: 1,
+  },
+  {
+    id: 'log_init_fc_comp_1',
+    timestamp: '2026-11-07T09:40:00.000Z',
+    logicalDate: initialLogicalDay,
+    category: 'FLOOR_COMP',
+    title: 'Comp Flashcards — Block 1/3',
+    durationMinutes: 20,
+    roadmapTrack: 'science',
+    stroke: 'INPUT',
+    sourceBlockId: 'fc_comp_1',
+    rungNumber: 1,
+  },
+  {
+    id: 'log_init_hc_read_1',
+    timestamp: '2026-11-07T10:15:00.000Z',
+    logicalDate: initialLogicalDay,
+    category: 'FLOOR_READING',
+    title: 'Half-Chapter Reading / Equations — Block 1/2',
+    durationMinutes: 20,
+    roadmapTrack: 'science',
+    stroke: 'INPUT',
+    sourceBlockId: 'hc_read_1',
+    rungNumber: 1,
+  },
+];
+
 export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
   version: '1.0.0',
-  logicalDayKey: getLogicalDayKey(),
+  logicalDayKey: initialLogicalDay,
+  todayBlockLog: DEFAULT_TODAY_BLOCK_LOG,
   upcomingMilestones: ['Nov 12: Anatomy Exam', 'Dec 8–9: Comp Exam'],
   loadMode: 'CRUISE',
   cruisePlus: false,
@@ -1038,6 +1084,14 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
     '',
     '---',
     '',
+    '## Today\'s Block Log (`todayBlockLog`)',
+    ...(state.todayBlockLog?.length
+      ? state.todayBlockLog.map(
+          (e) =>
+            `- \`[${e.logicalDate}]\` **${e.title}** (${e.category} • ${e.durationMinutes}m • ${e.roadmapTrack} / ${e.stroke})`
+        )
+      : ['- No blocks logged yet today.']),
+    '',
     '## Machine-Readable State Payload',
     '```json',
     JSON.stringify(state, null, 2),
@@ -1050,7 +1104,6 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
 export function parseFromStateInput(rawText: string): SymmetryState {
   const trimmed = rawText.trim();
   const jsonBlockMatch = trimmed.match(/```json\s*([\s\S]*?)```/);
-
   let baseState: SymmetryState = DEFAULT_SYMMETRY_STATE;
   let parsedJsonSuccessfully = false;
 
@@ -1063,6 +1116,9 @@ export function parseFromStateInput(rawText: string): SymmetryState {
     baseState = {
       ...DEFAULT_SYMMETRY_STATE,
       ...parsed,
+      todayBlockLog: Array.isArray(parsed.todayBlockLog)
+        ? parsed.todayBlockLog
+        : DEFAULT_SYMMETRY_STATE.todayBlockLog,
       upcomingMilestones:
         Array.isArray(parsed.upcomingMilestones) && parsed.upcomingMilestones.length > 0
           ? parsed.upcomingMilestones

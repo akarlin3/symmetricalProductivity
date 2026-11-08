@@ -46,6 +46,57 @@ export interface PipelineDay {
   fixedEventTimeLabel?: string;
   earlyMorningAnchor: boolean;
   isToday: boolean;
+  modeAndAnchors?: string;
+  projectBlocksSummary?: string;
+  deliverablesCompleted?: string;
+  eveningBridge?: string;
+}
+
+export type SmartIntakeLoadMode = 'CRUISE' | 'SURGE' | 'TAPER_LAB';
+
+export type SmartIntakeRoadmapTrack =
+  | 'SCIENCE'
+  | 'WRITING'
+  | 'HOME'
+  | 'CODING_MAKER'
+  | 'MUSIC';
+
+export interface SmartIntakeFixedEvent {
+  day: string;
+  title: string;
+  durationMinutes: number;
+  earlyShutdown6PM: boolean;
+}
+
+export interface SmartIntakeClosedListItem {
+  title: string;
+  blocksTotal: number;
+  startupStep5m: string;
+  roadmapTrack: SmartIntakeRoadmapTrack;
+}
+
+export interface SmartIntakeBacklogItem {
+  title: string;
+  blocksTotal: number;
+  startupStep5m: string;
+  roadmapTrack: SmartIntakeRoadmapTrack;
+}
+
+export interface SmartIntakePipelineRow {
+  day: string;
+  modeAndAnchors: string;
+  projectBlocks: string;
+  deliverablesCompleted: string;
+  eveningBridge: string;
+}
+
+export interface SmartIntakePlanResult {
+  todayLoadMode: SmartIntakeLoadMode;
+  fixedEvents: SmartIntakeFixedEvent[];
+  closedListUpdates: SmartIntakeClosedListItem[];
+  openListBacklog: (SmartIntakeBacklogItem | string)[];
+  sevenDayPipeline: SmartIntakePipelineRow[];
+  source?: 'GEMINI_2_5_FLASH' | 'LOCAL_FALLBACK';
 }
 
 export type TimerRunMode = 'WORK_20M' | 'BREAK_L1' | 'BREAK_L2' | 'BREAK_L3' | 'STRESS_RESET';
@@ -190,9 +241,33 @@ export interface RoadmapTrack {
   rungs: RoadmapRung[];
 }
 
+export type TodayBlockLogCategory =
+  | 'FLOOR_ANATOMY'
+  | 'FLOOR_COMP'
+  | 'FLOOR_READING'
+  | 'FLOOR_SYNTHESIS'
+  | 'PROJECT_FOCUS_1'
+  | 'FLOW_EXTENSION'
+  | 'EVENING_RECHARGE';
+
+export interface TodayBlockLogEntry {
+  id: string;
+  timestamp: string;
+  logicalDate: string;
+  category: TodayBlockLogCategory;
+  title: string;
+  durationMinutes: number;
+  roadmapTrack: string;
+  stroke: 'INPUT' | 'OUTPUT';
+  sourceBlockId?: string;
+  stickyKey?: StickyKey;
+  rungNumber?: 1 | 2 | 3 | 4;
+}
+
 export interface SymmetryState {
   version: string;
   logicalDayKey?: string; // 4:00 AM boundary day key (hours < 4 counts as previous day)
+  todayBlockLog: TodayBlockLogEntry[];
   upcomingMilestones: string[];
   loadMode: LoadMode;
   cruisePlus: boolean;
