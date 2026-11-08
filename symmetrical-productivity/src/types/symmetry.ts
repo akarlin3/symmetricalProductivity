@@ -164,6 +164,7 @@ export interface RoadmapTrack {
 
 export interface SymmetryState {
   version: string;
+  logicalDayKey?: string; // 4:00 AM boundary day key (hours < 4 counts as previous day)
   upcomingMilestones: string[];
   loadMode: LoadMode;
   cruisePlus: boolean;

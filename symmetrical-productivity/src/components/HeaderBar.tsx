@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Calendar,
+  Clock,
   Download,
   Lock,
   Moon,
@@ -10,7 +11,11 @@ import {
   Zap,
 } from 'lucide-react';
 import { FixedEventType, SymmetryState, TabId } from '../types/symmetry';
-import { computeShiftMetrics } from '../state/defaultState';
+import {
+  computeShiftMetrics,
+  getLogicalDayKey,
+  isPre4amRolloverWindow,
+} from '../state/defaultState';
 import { triggerHaptic } from '../utils/haptics';
 
 interface HeaderBarProps {
@@ -43,6 +48,8 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
 }) => {
   const metrics = computeShiftMetrics(state);
   const fixedEventDisplay = FIXED_EVENT_LABELS[state.fixedEvent];
+  const logicalDay = state.logicalDayKey || getLogicalDayKey();
+  const isLateShiftPre4am = isPre4amRolloverWindow();
 
   const tabs: { id: TabId; label: string; shortLabel: string; badge?: string }[] = [
     {
@@ -73,60 +80,72 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
 
   return (
     <header
-      className={`sticky top-0 z-30 border-b transition-colors duration-500 ${
+      className={`sticky top-0 z-30 border-b backdrop-blur-xl transition-colors duration-500 ${
         isEveningTheme
-          ? 'bg-[#0c0a09]/90 border-amber-900/40 text-amber-50'
-          : 'bg-[#090d16]/90 border-slate-800 text-slate-100'
-      } backdrop-blur-md`}
+          ? 'bg-[#0a0807]/85 border-amber-500/20 text-amber-50 shadow-[inset_0_-1px_0_0_rgba(245,158,11,0.12)]'
+          : 'bg-[#060911]/80 border-white/[0.08] text-slate-100 shadow-[inset_0_-1px_0_0_rgba(255,255,255,0.05)]'
+      }`}
     >
-      <div className="max-w-6xl mx-auto px-3 sm:px-6 py-3">
-        {/* Top Row: App Brand, Duration-Only Counter, Action Controls */}
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 py-2.5">
+        {/* Top Row: Brand, Duration-Only Counter, Milestones, Action Controls */}
         <div className="flex flex-wrap items-center justify-between gap-2.5">
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-3">
             <div
-              className={`w-9 h-9 rounded-xl flex items-center justify-center border font-mono font-bold text-sm transition-colors duration-500 ${
+              className={`w-9 h-9 rounded-xl flex items-center justify-center border font-mono font-bold text-xs tracking-tighter transition-all duration-500 ${
                 isEveningTheme
-                  ? 'bg-amber-950/70 border-amber-700/50 text-amber-300'
-                  : 'bg-cyan-950/60 border-cyan-500/40 text-cyan-300'
+                  ? 'bg-amber-500/15 border-amber-400/40 text-amber-200 shadow-[inset_0_1px_0_0_rgba(255,251,235,0.2)]'
+                  : 'bg-cyan-500/15 border-cyan-400/40 text-cyan-300 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18)]'
               }`}
             >
               SM
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-bold tracking-tight">
-                  SymmetryManager
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1
+                  className={`font-bold tracking-tight ${
+                    isEveningTheme
+                      ? 'font-serif text-xl sm:text-2xl text-amber-50 font-normal tracking-normal'
+                      : 'text-base sm:text-lg text-white'
+                  }`}
+                >
+                  {isEveningTheme ? 'Evening Recharge Sanctuary' : 'SymmetryManager'}
                 </h1>
                 <span
-                  className={`text-[11px] font-mono uppercase px-2 py-0.5 rounded-md border transition-colors duration-500 ${
+                  className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded-full border transition-colors duration-500 ${
                     isEveningTheme
-                      ? 'bg-amber-900/35 border-amber-700/50 text-amber-200'
-                      : 'bg-slate-900 border-slate-800 text-cyan-200'
+                      ? 'bg-amber-500/15 border-amber-500/40 text-amber-200'
+                      : 'bg-white/[0.04] border-white/[0.12] text-cyan-300'
                   }`}
                 >
                   {isEveningTheme
                     ? 'End-of-Shift Lock'
                     : `${state.loadMode}${state.cruisePlus ? '+' : ''} Mode`}
                 </span>
+                <span
+                  className={`hidden lg:inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full border ${
+                    isEveningTheme
+                      ? 'bg-stone-900/70 border-amber-900/50 text-amber-200/80'
+                      : 'bg-white/[0.03] border-white/[0.08] text-slate-400'
+                  }`}
+                  title="4:00 AM Day-Rollover Boundary (hours < 4 count as previous shift day)"
+                >
+                  <Clock className="w-3 h-3" />
+                  <span>
+                    Shift {logicalDay} {isLateShiftPre4am ? '(Pre-4AM Window)' : '(4AM Rollover)'}
+                  </span>
+                </span>
               </div>
-              <p
-                className={`text-xs hidden sm:block ${
-                  isEveningTheme ? 'text-stone-400' : 'text-slate-400'
-                }`}
-              >
-                Duration-Only Focus Pipeline &amp; Deterministic State Machine
-              </p>
             </div>
           </div>
 
-          {/* Center / Primary Duration-Only Readout (Rule 1) */}
+          {/* Center / Primary Duration-Only Readout (Rule 1) + Milestones */}
           <div className="flex flex-wrap items-center gap-2">
             <div
               id="duration-only-header-badge"
-              className={`px-3 py-1.5 rounded-xl border font-mono tabular-nums text-xs sm:text-sm font-bold tracking-tight flex items-center gap-2 shadow-inner transition-colors duration-500 ${
+              className={`px-3 py-1.5 rounded-xl border font-mono tabular-nums text-xs sm:text-sm font-bold tracking-tight flex items-center gap-2 transition-colors duration-500 ${
                 metrics.isZeroWorkLeft || isEveningTheme
-                  ? 'bg-amber-950/75 border-amber-600/60 text-amber-200'
-                  : 'bg-slate-900/95 border-cyan-500/50 text-cyan-200'
+                  ? 'bg-amber-500/15 border-amber-500/45 text-amber-200 shadow-[inset_0_1px_0_0_rgba(255,251,235,0.14)]'
+                  : 'bg-cyan-500/10 border-cyan-400/40 text-cyan-200 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]'
               }`}
               title="Duration-Only Display (No wall-clock timestamps unless Fixed Event logged)"
             >
@@ -145,12 +164,34 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             {fixedEventDisplay && (
               <div
                 id="fixed-event-timestamp-pill"
-                className="px-2.5 py-1.5 rounded-xl bg-amber-950/50 border border-amber-700/50 text-amber-200 font-mono tabular-nums text-xs flex items-center gap-1.5"
+                className="px-2.5 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-200 font-mono tabular-nums text-xs flex items-center gap-1.5"
               >
                 <Calendar className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                 <span>{fixedEventDisplay}</span>
               </div>
             )}
+
+            {/* Compact Upcoming Milestones Pills */}
+            <div
+              id="upcoming-milestones-banner"
+              className="hidden xl:flex items-center gap-1.5"
+            >
+              {(state.upcomingMilestones?.length
+                ? state.upcomingMilestones
+                : ['Nov 12: Anatomy Exam', 'Dec 8–9: Comp Exam']
+              ).map((milestone, idx) => (
+                <span
+                  key={idx}
+                  className={`px-2.5 py-1 rounded-lg font-mono text-[11px] font-semibold border ${
+                    isEveningTheme
+                      ? 'bg-white/[0.03] border-amber-500/25 text-amber-200/90'
+                      : 'bg-white/[0.03] border-white/[0.08] text-slate-300'
+                  }`}
+                >
+                  {milestone}
+                </span>
+              ))}
+            </div>
           </div>
 
           {/* Utility Buttons: 7-Day Pipeline Drawer, Simulate 0m Work Left, State.md Import/Export */}
@@ -159,10 +200,10 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               id="btn-open-pipeline-drawer"
               type="button"
               onClick={onOpenPipelineDrawer}
-              className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${
+              className={`px-2.5 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1.5 cursor-pointer ${
                 isEveningTheme
-                  ? 'bg-stone-900 hover:bg-stone-800 border-amber-800/50 text-amber-100'
-                  : 'bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-200'
+                  ? 'bg-white/[0.04] hover:bg-white/[0.08] border-amber-500/25 text-amber-100'
+                  : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.09] text-slate-200'
               }`}
             >
               <Sliders className="w-3.5 h-3.5" />
@@ -176,10 +217,10 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                 triggerHaptic([15]);
                 onToggleZeroWorkSimulation();
               }}
-              className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${
+              className={`px-2.5 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1.5 cursor-pointer ${
                 metrics.isZeroWorkLeft
-                  ? 'bg-cyan-950/80 hover:bg-cyan-900 border-cyan-700 text-cyan-200'
-                  : 'bg-amber-950/70 hover:bg-amber-900/80 border-amber-700/60 text-amber-200'
+                  ? 'bg-cyan-500/15 hover:bg-cyan-500/25 border-cyan-400/45 text-cyan-200'
+                  : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/45 text-amber-200'
               }`}
               title="Toggle between On-Duty remaining blocks and 0m work left (End-of-Shift Lock)"
             >
@@ -200,25 +241,25 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               id="btn-open-state-io"
               type="button"
               onClick={onOpenStateModal}
-              className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${
+              className={`px-2.5 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1.5 cursor-pointer ${
                 isEveningTheme
-                  ? 'bg-stone-900 hover:bg-stone-800 border-amber-800/50 text-amber-100'
-                  : 'bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-200'
+                  ? 'bg-white/[0.04] hover:bg-white/[0.08] border-amber-500/25 text-amber-100'
+                  : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.09] text-slate-200'
               }`}
               title="Open State Sync modal (Copy State JSON / Markdown, Import State JSON, New Day Reset)"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>State Sync</span>
+              <span className="hidden sm:inline">State Sync</span>
             </button>
 
             <button
               id="btn-reset-default-state"
               type="button"
               onClick={onResetDefault}
-              className={`p-1.5 rounded-lg border transition cursor-pointer ${
+              className={`p-1.5 rounded-xl border cursor-pointer ${
                 isEveningTheme
-                  ? 'border-stone-800 bg-stone-900/70 hover:bg-stone-800 text-stone-400 hover:text-amber-200'
-                  : 'border-slate-800 bg-slate-900/70 hover:bg-slate-800 text-slate-400 hover:text-slate-200'
+                  ? 'border-amber-500/20 bg-white/[0.03] hover:bg-white/[0.08] text-amber-300/70 hover:text-amber-200'
+                  : 'border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.07] text-slate-400 hover:text-slate-200'
               }`}
               title="Reset to default state"
             >
@@ -227,52 +268,14 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
           </div>
         </div>
 
-        {/* Upcoming Milestones Banner */}
-        <div
-          id="upcoming-milestones-banner"
-          className={`mt-2.5 px-3 py-1.5 rounded-xl border text-xs font-mono tabular-nums flex flex-wrap items-center justify-between gap-2 transition-colors duration-500 ${
-            isEveningTheme
-              ? 'bg-stone-900/80 border-amber-800/40 text-amber-200'
-              : 'bg-slate-900/90 border-slate-800 text-cyan-200'
-          }`}
-        >
-          <div className="flex items-center gap-2">
-            <Calendar
-              className={`w-3.5 h-3.5 shrink-0 ${
-                isEveningTheme ? 'text-amber-400' : 'text-cyan-400'
-              }`}
-            />
-            <span
-              className={`uppercase font-bold tracking-wider text-[11px] ${
-                isEveningTheme ? 'text-stone-300' : 'text-slate-300'
-              }`}
-            >
-              Upcoming Milestones:
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {(state.upcomingMilestones?.length
-              ? state.upcomingMilestones
-              : ['Nov 12: Anatomy Exam', 'Dec 8–9: Comp Exam']
-            ).map((milestone, idx) => (
-              <span
-                key={idx}
-                className={`px-2.5 py-0.5 rounded-md font-bold text-xs border ${
-                  isEveningTheme
-                    ? 'bg-amber-950/70 border-amber-700/50 text-amber-200'
-                    : 'bg-indigo-950/70 border-indigo-500/40 text-cyan-200'
-                }`}
-              >
-                {milestone}
-              </span>
-            ))}
-          </div>
-        </div>
-
-        {/* Bottom Row: 4-Tab Navigation Bar */}
+        {/* Bottom Row: Segmented Glassmorphic 4-Tab Bar */}
         <nav
           aria-label="Primary Tabs"
-          className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-1.5"
+          className={`mt-2.5 p-1 rounded-2xl border grid grid-cols-2 sm:grid-cols-4 gap-1 ${
+            isEveningTheme
+              ? 'bg-black/40 border-amber-500/20'
+              : 'bg-white/[0.02] border-white/[0.07]'
+          }`}
         >
           {tabs.map((t) => {
             const isActive = activeTab === t.id;
@@ -282,14 +285,14 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                 id={`tab-nav-${t.id.toLowerCase()}`}
                 type="button"
                 onClick={() => onSelectTab(t.id)}
-                className={`px-3 py-2 rounded-xl border text-xs sm:text-sm font-semibold flex items-center justify-between gap-1.5 transition cursor-pointer ${
+                className={`px-3 py-1.5 rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-between gap-1.5 transition cursor-pointer ${
                   isActive
                     ? isEveningTheme
-                      ? 'bg-amber-900/45 border-amber-500/75 text-amber-100 shadow-sm'
-                      : 'bg-cyan-950/80 border-cyan-500/70 text-cyan-100 shadow-sm'
+                      ? 'bg-amber-500/20 border border-amber-400/50 text-amber-100 shadow-[inset_0_1px_0_0_rgba(255,251,235,0.18)]'
+                      : 'bg-cyan-500/15 border border-cyan-400/45 text-cyan-100 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.15)]'
                     : isEveningTheme
-                    ? 'bg-stone-900/60 hover:bg-stone-900 border-stone-800/90 text-stone-400'
-                    : 'bg-slate-900/60 hover:bg-slate-900 border-slate-800 text-slate-400'
+                    ? 'border border-transparent hover:bg-white/[0.04] text-stone-400 hover:text-amber-100'
+                    : 'border border-transparent hover:bg-white/[0.04] text-slate-400 hover:text-slate-200'
                 }`}
               >
                 <span className="truncate">
@@ -298,14 +301,14 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                 </span>
                 {t.badge && (
                   <span
-                    className={`text-[10px] font-mono tabular-nums px-1.5 py-0.5 rounded ${
+                    className={`text-[10px] font-mono tabular-nums px-1.5 py-0.5 rounded-md ${
                       isActive
                         ? isEveningTheme
-                          ? 'bg-amber-800/80 text-amber-100'
-                          : 'bg-cyan-800/80 text-cyan-100'
+                          ? 'bg-amber-500/30 text-amber-100'
+                          : 'bg-cyan-500/25 text-cyan-100'
                         : isEveningTheme
-                        ? 'bg-stone-800 text-stone-400'
-                        : 'bg-slate-800 text-slate-400'
+                        ? 'bg-white/[0.05] text-stone-400'
+                        : 'bg-white/[0.05] text-slate-400'
                     }`}
                   >
                     {t.badge}

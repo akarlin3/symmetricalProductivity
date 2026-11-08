@@ -30,6 +30,7 @@ import {
 import {
   computeShiftMetrics,
   DEFAULT_SYMMETRY_STATE,
+  getLogicalDayKey,
   parseFromStateInput,
   serializeToStateMarkdown,
   STORAGE_KEY,
@@ -238,13 +239,176 @@ export function App() {
   // Dual-Theme State Shift: Sync body background and theme-color meta tag smoothly
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    const bgHex = isEveningTheme ? '#0c0a09' : '#090d16';
+    const bgHex = isEveningTheme ? '#0a0807' : '#060911';
     document.body.style.backgroundColor = bgHex;
     const metaTheme = document.querySelector('meta[name="theme-color"]');
     if (metaTheme) {
       metaTheme.setAttribute('content', bgHex);
     }
   }, [isEveningTheme]);
+
+  // 4:00 AM Day-Rollover Boundary Check (hours < 4 counts as the previous logical shift day)
+  useEffect(() => {
+    const checkFourAmRollover = () => {
+      const currentLogicalDay = getLogicalDayKey(new Date());
+      setState((prev) => {
+        if (!prev.logicalDayKey) {
+          return { ...prev, logicalDayKey: currentLogicalDay };
+        }
+        if (prev.logicalDayKey === currentLogicalDay) {
+          return prev;
+        }
+        // Crossed 4:00 AM boundary into a new logical day
+        const tomorrowDay = prev.pipelineDays[1];
+        const appliedDeduction =
+          prev.recharge.flowExtensionBlocksLoggedToday >= 3
+            ? 2
+            : prev.recharge.flowExtensionBlocksLoggedToday >= 2
+            ? 1
+            : tomorrowDay?.deductedBlocksFromExtension ?? 0;
+        const baseCeiling =
+          tomorrowDay?.baseTargetBlocks ??
+          (prev.loadMode === 'SURGE'
+            ? 14
+            : prev.loadMode === 'TAPER'
+            ? 8
+            : prev.cruisePlus
+            ? 13
+            : 12);
+        const newCeiling = Math.max(7, baseCeiling - appliedDeduction);
+        const preservedStickySlots = Object.fromEntries(
+          Object.entries(prev.recharge.stickySlots).map(([k, slot]) => [
+            k,
+            {
+              ...slot,
+              fiveMinStarts: slot.fiveMinStarts,
+              unlockedViaCheckIn: false,
+            },
+          ])
+        ) as SymmetryState['recharge']['stickySlots'];
+        const primaryProject = prev.projectQueue[0];
+
+        return {
+          ...prev,
+          logicalDayKey: currentLogicalDay,
+          customModeBlockAdjustment: newCeiling,
+          midDayResetCompletedToday: false,
+          flashcardsReviewedCount: 0,
+          earlyClearanceEnabled: false,
+          discretionaryBlocksCompletedToday: 0,
+          baselineBlocks: prev.baselineBlocks.map((b) => ({
+            ...b,
+            completed: false,
+            bankedViaEarlyClearance: false,
+          })),
+          pipelineDays: prev.pipelineDays.map((d, idx) =>
+            idx === 0
+              ? {
+                  ...d,
+                  baseTargetBlocks: newCeiling,
+                  completedBlocks: 0,
+                  deductedBlocksFromExtension: appliedDeduction,
+                }
+              : idx === 1
+              ? { ...d, deductedBlocksFromExtension: 0 }
+              : d
+          ),
+          timer: {
+            ...prev.timer,
+            mode: 'WORK_20M',
+            workStage: 'IGNITION_5M',
+            secondsLeft: 300,
+            targetEndTimeMs: null,
+            isRunning: false,
+            chainedBlocksCount: 0,
+            activeBlockSourceId: primaryProject?.id || 'fc_anat_1',
+            activeTaskTitle:
+              primaryProject?.title || 'Anatomy Flashcards — Block 1/1',
+            activeTaskType: primaryProject ? 'PROJECT' : 'FLASHCARDS',
+            activeStartupPrompt:
+              primaryProject?.startupStep || 'Open deck + clear first 15 cards',
+            queuedRecoveryFlashcard5m: false,
+            recoveryFlashcardRunning: false,
+            recoveryFlashcardSecondsLeft: 300,
+            recoveryFlashcardTargetEndTimeMs: null,
+          },
+          recharge: {
+            ...prev.recharge,
+            endOfShiftLocked: false,
+            manualEveningPreview: false,
+            flowExtensionPromptOpen: false,
+            flowExtensionActive: false,
+            flowExtensionRunning: false,
+            flowExtensionElapsedSeconds: 0,
+            flowExtensionStartTimeMs: null,
+            flowExtensionBlocksLoggedToday: 0,
+            option0Running: false,
+            option0SecondsLeft: 1200,
+            option0TargetEndTimeMs: null,
+            option0ConsecutiveWindows: 0,
+            forkCheckModalOpen: false,
+            activeCategory: 'NONE',
+            pacingStage: 'STARTUP_5M',
+            categorySecondsLeft: 300,
+            categoryTargetEndTimeMs: null,
+            categoryElapsedMinutes: 0,
+            categoryRunning: false,
+            checkInModalOpen: false,
+            stickySlots: preservedStickySlots,
+          },
+        };
+      });
+    };
+
+    checkFourAmRollover();
+    const id = window.setInterval(checkFourAmRollover, 60_000);
+    window.addEventListener('focus', checkFourAmRollover);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener('focus', checkFourAmRollover);
+    };
+  }, []);
+
+  // Global Spacebar shortcut to start/pause the centerpiece Dual-Ring Timer
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || e.repeat) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.tagName === 'BUTTON' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      e.preventDefault();
+      triggerHaptic([15]);
+      const now = Date.now();
+      setState((prev) => {
+        const nextRunning = !prev.timer.isRunning;
+        const currentSecondsLeft =
+          prev.timer.isRunning && prev.timer.targetEndTimeMs
+            ? Math.max(0, Math.ceil((prev.timer.targetEndTimeMs - now) / 1000))
+            : prev.timer.secondsLeft;
+        return {
+          ...prev,
+          timer: {
+            ...prev.timer,
+            isRunning: nextRunning,
+            secondsLeft: currentSecondsLeft,
+            targetEndTimeMs: nextRunning
+              ? now + currentSecondsLeft * 1000
+              : null,
+          },
+        };
+      });
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   // Dynamic browser document.title update while any timer is running
   useEffect(() => {
@@ -1139,10 +1303,10 @@ export function App() {
 
   return (
     <div
-      className={`min-h-screen flex flex-col justify-between transition-colors duration-300 ${
+      className={`min-h-screen flex flex-col justify-between transition-colors duration-500 ${
         isEveningTheme
-          ? 'bg-stone-950 text-amber-50'
-          : 'bg-slate-950 text-slate-100'
+          ? 'theme-evening text-amber-50'
+          : 'theme-on-duty text-slate-100'
       }`}
     >
       <div>
@@ -1165,13 +1329,13 @@ export function App() {
 
         {/* Status Toast Notice */}
         {statusNotice && (
-          <div className="max-w-6xl mx-auto px-3 sm:px-6 pt-3">
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-3">
             <div
               id="status-toast-banner"
-              className={`px-3.5 py-2 rounded-xl border text-xs font-mono flex items-center justify-between ${
+              className={`px-3.5 py-2 rounded-2xl border backdrop-blur-xl text-xs font-mono flex items-center justify-between ${
                 isEveningTheme
-                  ? 'bg-amber-950/90 border-amber-600/70 text-amber-200'
-                  : 'bg-sky-950/90 border-sky-600/70 text-sky-200'
+                  ? 'bg-amber-950/80 border-amber-500/50 text-amber-200'
+                  : 'bg-cyan-950/80 border-cyan-500/50 text-cyan-200'
               }`}
             >
               <span>{statusNotice}</span>
@@ -1187,7 +1351,7 @@ export function App() {
         )}
 
         {/* Active Tab Viewport */}
-        <main className="max-w-6xl mx-auto px-3 sm:px-6 py-5">
+        <main className="max-w-7xl mx-auto px-3 sm:px-6 py-5">
           {activeTab === 'PIPELINE' && (
             <Tab1Pipeline
               state={state}
@@ -1235,9 +1399,225 @@ export function App() {
                     },
                   };
                 });
-                setActiveTab('TIMER');
                 showNotice('Started mandatory 60–120m Surge Mid-Day Reset.');
               }}
+              onToggleTimerRun={() => {
+                const now = Date.now();
+                setState((prev) => {
+                  const nextRunning = !prev.timer.isRunning;
+                  const currentSecondsLeft =
+                    prev.timer.isRunning && prev.timer.targetEndTimeMs
+                      ? Math.max(
+                          0,
+                          Math.ceil((prev.timer.targetEndTimeMs - now) / 1000)
+                        )
+                      : prev.timer.secondsLeft;
+                  return {
+                    ...prev,
+                    timer: {
+                      ...prev.timer,
+                      isRunning: nextRunning,
+                      secondsLeft: currentSecondsLeft,
+                      targetEndTimeMs: nextRunning
+                        ? now + currentSecondsLeft * 1000
+                        : null,
+                    },
+                  };
+                });
+              }}
+              onResetCurrentStage={() =>
+                setState((prev) => ({
+                  ...prev,
+                  timer: {
+                    ...prev.timer,
+                    isRunning: false,
+                    targetEndTimeMs: null,
+                    secondsLeft:
+                      prev.timer.mode === 'WORK_20M'
+                        ? prev.timer.workStage === 'IGNITION_5M'
+                          ? 300
+                          : 900
+                        : prev.timer.mode === 'BREAK_L1'
+                        ? prev.timer.l1DurationMinutes * 60
+                        : prev.timer.mode === 'BREAK_L2'
+                        ? prev.timer.l2DurationMinutes * 60
+                        : prev.timer.mode === 'BREAK_L3'
+                        ? prev.timer.l3DurationMinutes * 60
+                        : prev.timer.stressDurationMinutes * 60,
+                  },
+                }))
+              }
+              onFastForwardCurrentStage={handleFastForwardTimerStage}
+              onSwitchTimerMode={(mode: TimerRunMode) =>
+                setState((prev) => ({
+                  ...prev,
+                  timer: {
+                    ...prev.timer,
+                    mode,
+                    isRunning: false,
+                    targetEndTimeMs: null,
+                    workStage: 'IGNITION_5M',
+                    secondsLeft:
+                      mode === 'WORK_20M'
+                        ? 300
+                        : mode === 'BREAK_L1'
+                        ? prev.timer.l1DurationMinutes * 60
+                        : mode === 'BREAK_L2'
+                        ? prev.timer.l2DurationMinutes * 60
+                        : mode === 'BREAK_L3'
+                        ? prev.timer.l3DurationMinutes * 60
+                        : prev.timer.stressDurationMinutes * 60,
+                  },
+                }))
+              }
+              onSelectL1Minutes={(mins) =>
+                setState((prev) => ({
+                  ...prev,
+                  timer: {
+                    ...prev.timer,
+                    mode: 'BREAK_L1',
+                    l1DurationMinutes: mins,
+                    secondsLeft: mins * 60,
+                    targetEndTimeMs: null,
+                    isRunning: false,
+                  },
+                }))
+              }
+              onSelectL2Minutes={(mins) =>
+                setState((prev) => ({
+                  ...prev,
+                  timer: {
+                    ...prev.timer,
+                    mode: 'BREAK_L2',
+                    l2DurationMinutes: mins,
+                    secondsLeft: mins * 60,
+                    targetEndTimeMs: null,
+                    isRunning: false,
+                  },
+                }))
+              }
+              onSelectL2Protocol={(protocol: Level2BreakProtocol) =>
+                setState((prev) => ({
+                  ...prev,
+                  timer: {
+                    ...prev.timer,
+                    mode: 'BREAK_L2',
+                    l2Protocol: protocol,
+                    secondsLeft: prev.timer.l2DurationMinutes * 60,
+                    targetEndTimeMs: null,
+                    isRunning: false,
+                  },
+                }))
+              }
+              onSelectL3Minutes={(mins) =>
+                setState((prev) => ({
+                  ...prev,
+                  timer: {
+                    ...prev.timer,
+                    mode: 'BREAK_L3',
+                    l3DurationMinutes: mins,
+                    secondsLeft: mins * 60,
+                    targetEndTimeMs: null,
+                    isRunning: false,
+                  },
+                }))
+              }
+              onTriggerStressReset={(
+                protocol: StressResetProtocol = 'BREATHING_478',
+                mins: 15 | 20 = 15
+              ) => {
+                const now = Date.now();
+                setState((prev) => ({
+                  ...prev,
+                  timer: {
+                    ...prev.timer,
+                    mode: 'STRESS_RESET',
+                    stressProtocol: protocol,
+                    stressDurationMinutes: mins,
+                    secondsLeft: mins * 60,
+                    targetEndTimeMs: now + mins * 60 * 1000,
+                    isRunning: true,
+                  },
+                }));
+                showNotice(
+                  'Suspended heavy reading/writing → Started 15–20m Stress / Fatigue Reset.'
+                );
+              }}
+              onCompleteStressResetInto5mFlashcards={() => {
+                const now = Date.now();
+                dispatchLockScreenAlert(
+                  'STRESS_RESET_COMPLETE',
+                  'Stress / Fatigue Reset Complete',
+                  '5m Flashcard recovery block queued.'
+                );
+                setState((prev) => ({
+                  ...prev,
+                  timer: {
+                    ...prev.timer,
+                    isRunning: false,
+                    targetEndTimeMs: null,
+                    queuedRecoveryFlashcard5m: true,
+                    recoveryFlashcardSecondsLeft: 300,
+                    recoveryFlashcardTargetEndTimeMs: now + 300 * 1000,
+                    recoveryFlashcardRunning: true,
+                  },
+                }));
+                showNotice('Physical reset finished → Queued 5m Flashcard block.');
+              }}
+              onToggleRecoveryFlashcardTimer={() => {
+                const now = Date.now();
+                setState((prev) => {
+                  const nextRunning = !prev.timer.recoveryFlashcardRunning;
+                  const currentSec =
+                    prev.timer.recoveryFlashcardRunning &&
+                    prev.timer.recoveryFlashcardTargetEndTimeMs
+                      ? Math.max(
+                          0,
+                          Math.ceil(
+                            (prev.timer.recoveryFlashcardTargetEndTimeMs - now) /
+                              1000
+                          )
+                        )
+                      : prev.timer.recoveryFlashcardSecondsLeft;
+                  return {
+                    ...prev,
+                    timer: {
+                      ...prev.timer,
+                      recoveryFlashcardRunning: nextRunning,
+                      recoveryFlashcardSecondsLeft: currentSec,
+                      recoveryFlashcardTargetEndTimeMs: nextRunning
+                        ? now + currentSec * 1000
+                        : null,
+                    },
+                  };
+                });
+              }}
+              onCompleteRecoveryFlashcard5m={() => {
+                triggerHaptic([15]);
+                dispatchLockScreenAlert(
+                  'WORK_BLOCK_COMPLETE',
+                  '5m Flashcard Recovery Block Complete',
+                  'Completed 5-minute Flashcard recovery ramp.'
+                );
+                setState((prev) => ({
+                  ...prev,
+                  roadmapTracks: creditRoadmapTrack(
+                    prev.roadmapTracks,
+                    'science',
+                    'INPUT',
+                    1
+                  ),
+                  timer: {
+                    ...prev.timer,
+                    queuedRecoveryFlashcard5m: false,
+                    recoveryFlashcardRunning: false,
+                    recoveryFlashcardSecondsLeft: 300,
+                    recoveryFlashcardTargetEndTimeMs: null,
+                  },
+                }));
+                showNotice('Completed 5m Flashcard recovery block.');
+              }}
+              onGoToRecharge={() => setActiveTab('RECHARGE')}
             />
           )}
 
@@ -2078,6 +2458,7 @@ export function App() {
 
                   const nextState: SymmetryState = {
                     ...state,
+                    logicalDayKey: getLogicalDayKey(),
                     // Preserve consecutive Surge day counts & 4-Rung Roadmap totals
                     surgeConsecutiveDays: state.surgeConsecutiveDays,
                     roadmapTracks: state.roadmapTracks,

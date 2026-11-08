@@ -2,8 +2,28 @@ import { SymmetryState } from '../types/symmetry';
 
 export const STORAGE_KEY = 'symmetry_manager_state_v1';
 
+/**
+ * 4:00 AM Day-Rollover Boundary:
+ * Any local hour < 4 (00:00 – 03:59 AM) counts as part of the previous logical day.
+ */
+export function getLogicalDayKey(date: Date = new Date()): string {
+  const shifted = new Date(date.getTime());
+  if (shifted.getHours() < 4) {
+    shifted.setDate(shifted.getDate() - 1);
+  }
+  const y = shifted.getFullYear();
+  const m = String(shifted.getMonth() + 1).padStart(2, '0');
+  const d = String(shifted.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+export function isPre4amRolloverWindow(date: Date = new Date()): boolean {
+  return date.getHours() < 4;
+}
+
 export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
   version: '1.0.0',
+  logicalDayKey: getLogicalDayKey(),
   upcomingMilestones: ['Nov 12: Anatomy Exam', 'Dec 8–9: Comp Exam'],
   loadMode: 'CRUISE',
   cruisePlus: false,

@@ -35,6 +35,10 @@ try {
   process.exit(1);
 }
 
+const googleFontsLinks = `<link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet" />`;
+
 const safeSwScript = `<script>
   try {
     if ('serviceWorker' in navigator && navigator.serviceWorker && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
@@ -54,15 +58,16 @@ const selfContainedDistHtml = `<!doctype html>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#060911" />
     <meta
       name="description"
-      content="Symmetrical Productivity — Mobile-first focus pipeline, two-stage 20m work timers, break triage router, evening recharge menu, and 4-rung roadmap ledger."
+      content="Symmetrical Productivity — Split-Screen Dual-Ring HUD, Bento Focus Pipeline, Break Triage Dock, Evening Recharge Sanctuary, and 4-Rung Roadmap."
     />
     <title>Symmetrical Productivity</title>
+    ${googleFontsLinks}
     <style>${cssContent}</style>
   </head>
-  <body class="bg-slate-950 text-slate-100 antialiased selection:bg-sky-500/30 selection:text-sky-200">
+  <body class="bg-[#060911] text-slate-100 antialiased selection:bg-cyan-500/30 selection:text-cyan-200">
     <div id="root">${ssrHtml}</div>
     <script type="module">${jsContent}</script>
     ${safeSwScript}
@@ -76,18 +81,17 @@ const sourceIndexHtml = `<!doctype html>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#060911" />
     <meta
       name="description"
-      content="Symmetrical Productivity — Mobile-first focus pipeline, two-stage 20m work timers, break triage router, evening recharge menu, and 4-rung roadmap ledger."
+      content="Symmetrical Productivity — Split-Screen Dual-Ring HUD, Bento Focus Pipeline, Break Triage Dock, Evening Recharge Sanctuary, and 4-Rung Roadmap."
     />
     <title>Symmetrical Productivity</title>
-    <!-- INLINE_FALLBACK_STYLE_START --><style>${cssContent}</style><!-- INLINE_FALLBACK_STYLE_END -->
+    ${googleFontsLinks}
   </head>
-  <body class="bg-slate-950 text-slate-100 antialiased selection:bg-sky-500/30 selection:text-sky-200">
-    <div id="root"><!-- INLINE_FALLBACK_ROOT_START -->${ssrHtml}<!-- INLINE_FALLBACK_ROOT_END --></div>
+  <body class="bg-[#060911] text-slate-100 antialiased selection:bg-cyan-500/30 selection:text-cyan-200">
+    <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <!-- INLINE_FALLBACK_SCRIPT_START --><script type="module">${jsContent}</script><!-- INLINE_FALLBACK_SCRIPT_END -->
   </body>
 </html>
 `;

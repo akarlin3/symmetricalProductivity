@@ -1,24 +1,42 @@
 import React, { useState } from 'react';
 import {
+  Activity,
   AlertTriangle,
+  Check,
   CheckCircle2,
-  Circle,
+  ChevronDown,
+  ChevronUp,
+  Coffee,
+  FastForward,
+  Flame,
   Lock,
+  Music,
+  Pause,
   Play,
   Plus,
+  RotateCcw,
   ShieldAlert,
   Sliders,
+  Sparkles,
   Unlock,
+  Wind,
+  Zap,
 } from 'lucide-react';
 import {
   BaselineBlock,
   FixedEventType,
+  Level2BreakProtocol,
   LoadMode,
   ProjectPresetType,
+  StressResetProtocol,
   SymmetryState,
+  TimerRunMode,
   TrackId,
 } from '../types/symmetry';
 import { computeShiftMetrics } from '../state/defaultState';
+import { DualRingTimerSvg } from './DualRingTimerSvg';
+import { BreathingVisualizer478 } from './BreathingVisualizer478';
+import { triggerHaptic } from '../utils/haptics';
 
 interface Tab1PipelineProps {
   state: SymmetryState;
@@ -46,6 +64,20 @@ interface Tab1PipelineProps {
   ) => void;
   onOpenPipelineDrawer: () => void;
   onTriggerMidDayReset: () => void;
+  // Timer HUD & Quick Triage Dock handlers
+  onToggleTimerRun: () => void;
+  onResetCurrentStage: () => void;
+  onFastForwardCurrentStage: () => void;
+  onSwitchTimerMode: (mode: TimerRunMode) => void;
+  onSelectL1Minutes: (mins: 3 | 5) => void;
+  onSelectL2Minutes: (mins: 10 | 15) => void;
+  onSelectL2Protocol: (protocol: Level2BreakProtocol) => void;
+  onSelectL3Minutes: (mins: 60 | 90 | 120) => void;
+  onTriggerStressReset: (protocol?: StressResetProtocol, mins?: 15 | 20) => void;
+  onCompleteStressResetInto5mFlashcards: () => void;
+  onToggleRecoveryFlashcardTimer: () => void;
+  onCompleteRecoveryFlashcard5m: () => void;
+  onGoToRecharge: () => void;
 }
 
 export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
@@ -63,8 +95,30 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   onAddProjectToQueue,
   onOpenPipelineDrawer,
   onTriggerMidDayReset,
+  onToggleTimerRun,
+  onResetCurrentStage,
+  onFastForwardCurrentStage,
+  onSwitchTimerMode,
+  onSelectL1Minutes,
+  onSelectL2Minutes,
+  onSelectL2Protocol,
+  onSelectL3Minutes,
+  onTriggerStressReset,
+  onCompleteStressResetInto5mFlashcards,
+  onToggleRecoveryFlashcardTimer,
+  onCompleteRecoveryFlashcard5m,
+  onGoToRecharge,
 }) => {
   const metrics = computeShiftMetrics(state);
+  const { timer } = state;
+
+  const [lockedDrawerOpen, setLockedDrawerOpen] = useState(false);
+  const [loadConfigExpanded, setLoadConfigExpanded] = useState(false);
+  const [selectedBaselineId, setSelectedBaselineId] = useState<string>(
+    state.baselineBlocks.find((b) => !b.completed && !b.bankedViaEarlyClearance)?.id ||
+      state.baselineBlocks[0]?.id ||
+      'fc_anat_1'
+  );
   const [newProjTitle, setNewProjTitle] = useState('');
   const [newProjPreset, setNewProjPreset] = useState<ProjectPresetType>('PAPER_8');
   const [newProjCustomBlocks, setNewProjCustomBlocks] = useState(4);
@@ -84,6 +138,66 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
 
   const isFlashcardBlock = (b: BaselineBlock) =>
     b.category === 'FLASHCARDS_ANATOMY' || b.category === 'FLASHCARDS_COMP';
+
+  const formatMMSS = (totalSec: number) => {
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
+  // Auto-Router: compute the exact "Up Next" recommended block
+  const nextEligibleBaseline = state.baselineBlocks.find((b) => {
+    if (b.completed || b.bankedViaEarlyClearance) return false;
+    if (isFinalBlockOfNight && isFlashcardBlock(b)) return false;
+    return true;
+  });
+  const primaryProject = state.projectQueue[0];
+
+  const upNextBlock = nextEligibleBaseline
+    ? {
+        sourceId: nextEligibleBaseline.id,
+        title: nextEligibleBaseline.title,
+        badge: isFlashcardBlock(nextEligibleBaseline)
+          ? 'CORE FLOOR • FLASHCARDS'
+          : nextEligibleBaseline.category === 'SYNTHESIS'
+          ? 'CORE FLOOR • SYNTHESIS'
+          : 'CORE FLOOR • HALF-CHAPTER',
+        taskType: (isFlashcardBlock(nextEligibleBaseline)
+          ? 'FLASHCARDS'
+          : nextEligibleBaseline.category === 'SYNTHESIS'
+          ? 'SYNTHESIS'
+          : 'READING') as 'FLASHCARDS' | 'READING' | 'SYNTHESIS' | 'PROJECT',
+        startupStep: nextEligibleBaseline.startupStep,
+      }
+    : {
+        sourceId: primaryProject?.id || 'proj_1',
+        title: primaryProject?.title || 'Anatomy & Comp Exam Prep Sprint',
+        badge: 'LOCKED FOCUS #1 • DISCRETIONARY',
+        taskType: 'PROJECT' as const,
+        startupStep:
+          primaryProject?.startupStep || 'Open deck + clear first 15 cards',
+      };
+
+  const flashcardBlocks = state.baselineBlocks.filter(isFlashcardBlock);
+  const halfChapterBlocks = state.baselineBlocks.filter((b) => !isFlashcardBlock(b));
+  const selectedBaseline =
+    state.baselineBlocks.find((b) => b.id === selectedBaselineId) ||
+    state.baselineBlocks[0];
+
+  const lockedSecondaryProjects = state.projectQueue.slice(1);
+
+  const stageBadgeText =
+    timer.mode === 'WORK_20M'
+      ? timer.workStage === 'IGNITION_5M'
+        ? '5m Startup Step (IGNITION_5M)'
+        : '15m Momentum (MOMENTUM_15M)'
+      : timer.mode === 'BREAK_L1'
+      ? `Level 1 Same-Task Micro-Reset (${timer.l1DurationMinutes}m)`
+      : timer.mode === 'BREAK_L2'
+      ? `Level 2 Task-Switch Buffer (${timer.l2DurationMinutes}m)`
+      : timer.mode === 'BREAK_L3'
+      ? `Level 3 Mid-Day Reset (${timer.l3DurationMinutes}m)`
+      : `Stress / Fatigue Reset (${timer.stressDurationMinutes}m)`;
 
   const handleAddProjectSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,755 +219,1244 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 animate-tab-enter">
       {/* End-of-Shift Lock Banner when 0m work left */}
       {metrics.isZeroWorkLeft && (
         <div
           id="end-of-shift-lock-banner"
-          className="p-4 rounded-2xl bg-amber-950/60 border border-amber-600/70 text-amber-100 flex flex-wrap items-center justify-between gap-3"
+          className="p-4 rounded-2xl bento-hero-border-evening text-amber-100 flex flex-wrap items-center justify-between gap-3"
         >
           <div className="flex items-center gap-3">
-            <Lock className="w-5 h-5 text-amber-400 shrink-0" />
-            <div>
-              <h2 className="text-sm font-bold uppercase tracking-wide font-mono text-amber-300">
-                End-of-Shift Lock Active ([0m work left])
-              </h2>
-              <p className="text-xs text-amber-200/90 mt-0.5">
-                Daily work quota reached. On-duty checklist is locked and Evening Recharge Menu is unlocked in Tab 3.
-              </p>
+            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/50 flex items-center justify-center">
+              <Lock className="w-5 h-5 text-amber-300 shrink-0" />
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Surge Mode 7-Block Mandatory Mid-Day Reset Alert */}
-      {isSurgeMidDayResetRequired && (
-        <div
-          id="surge-midday-reset-banner"
-          className="p-4 rounded-2xl bg-amber-950/80 border border-amber-500 text-amber-100 flex flex-wrap items-center justify-between gap-3"
-        >
-          <div className="flex items-start gap-3">
-            <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
             <div>
-              <div className="text-sm font-bold">
-                Circuit Breaker: Mandatory 60–120m Mid-Day Reset Required (7 Blocks Reached)
-              </div>
-              <p className="text-xs text-amber-200/90 mt-0.5">
-                Surge Mode enforces a 60–120m Mid-Day Reset after 7 completed blocks before continuing block #8.
+              <h2 className="text-sm font-bold uppercase tracking-wider font-mono text-amber-200">
+                End-of-Shift Lock Engaged • [0m work left]
+              </h2>
+              <p className="text-xs text-amber-100/80">
+                Daily work quota reached. Pipeline is locked—transition to the Evening Recharge Sanctuary or open Flow Extension.
               </p>
             </div>
           </div>
           <button
-            id="btn-start-midday-reset"
             type="button"
-            onClick={onTriggerMidDayReset}
-            className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs cursor-pointer shrink-0"
+            onClick={() => {
+              triggerHaptic([20]);
+              onGoToRecharge();
+            }}
+            className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-stone-950 font-mono font-bold text-xs cursor-pointer shadow-lg shadow-amber-500/20"
           >
-            Launch 60–120m Mid-Day Reset
+            Enter Evening Recharge Sanctuary →
           </button>
         </div>
       )}
 
-      {/* Section 1: Duration-Only Status & Load Mode Selector */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Load Mode & Circuit Breaker Card */}
-        <section
-          aria-labelledby="load-mode-heading"
-          className="lg:col-span-7 p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4"
+      {/* Surge Mode Mandatory Mid-Day Reset Alert (Rule 5) */}
+      {isSurgeMidDayResetRequired && !metrics.isZeroWorkLeft && (
+        <div
+          id="surge-midday-reset-alert"
+          className="p-4 rounded-2xl backdrop-blur-xl bg-amber-500/10 border border-amber-400/50 shadow-[inset_0_1px_0_0_rgba(255,251,235,0.12)] text-amber-100 flex flex-wrap items-center justify-between gap-3"
         >
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-3">
+            <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0" />
             <div>
-              <h2
-                id="load-mode-heading"
-                className="text-sm font-bold uppercase tracking-wider text-slate-200 font-mono"
-              >
-                Load Modes &amp; Circuit Breakers
+              <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wide font-mono text-amber-300">
+                Surge Circuit Breaker: Mandatory 60–120m Mid-Day Reset Required
               </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Select daily block capacity. Surge Mode caps at 2 consecutive days.
+              <p className="text-xs text-amber-100/85">
+                7 blocks completed in Surge Mode. Complete a 60–120m physical reset before unlocking blocks 8–{state.customModeBlockAdjustment}.
               </p>
             </div>
+          </div>
+          <button
+            id="btn-start-surge-midday-reset"
+            type="button"
+            onClick={onTriggerMidDayReset}
+            className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs font-mono cursor-pointer"
+          >
+            Start {timer.l3DurationMinutes}m Mid-Day Reset
+          </button>
+        </div>
+      )}
+
+      {/* SPLIT-SCREEN 12-COLUMN BENTO HUD */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* =====================================================================
+            LEFT COLUMN (5 COLS, STICKY): CENTERPIECE 280x280 DUAL-RING TIMER HUD
+           ===================================================================== */}
+        <aside
+          aria-label="Centerpiece Dual-Ring Timer HUD"
+          className="lg:col-span-5 lg:sticky lg:top-24 rounded-3xl bento-surface p-5 sm:p-6 flex flex-col justify-between space-y-5"
+        >
+          {/* Top HUD Status Bar */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_#22d3ee]" />
+              <span className="text-[11px] font-mono uppercase tracking-widest text-slate-300 font-semibold">
+                TWO-STAGE 20M ENGINE
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1">
+              {(['WORK_20M', 'BREAK_L1', 'BREAK_L2', 'STRESS_RESET'] as TimerRunMode[]).map(
+                (m) => {
+                  const active = timer.mode === m;
+                  const shortLabel =
+                    m === 'WORK_20M'
+                      ? '20m'
+                      : m === 'BREAK_L1'
+                      ? 'L1'
+                      : m === 'BREAK_L2'
+                      ? 'L2'
+                      : '4-7-8';
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic([10]);
+                        onSwitchTimerMode(m);
+                      }}
+                      className={`px-2 py-0.5 rounded-lg font-mono text-[10px] font-bold border cursor-pointer ${
+                        active
+                          ? m === 'STRESS_RESET'
+                            ? 'bg-amber-500/20 border-amber-400/60 text-amber-200'
+                            : 'bg-cyan-500/20 border-cyan-400/60 text-cyan-200'
+                          : 'bg-white/[0.02] border-white/[0.08] text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {shortLabel}
+                    </button>
+                  );
+                }
+              )}
+            </div>
+          </div>
+
+          {/* Centerpiece 280x280 Dual-Ring SVG Timer with Radial Ambient Glow */}
+          <div className="py-1 flex items-center justify-center">
+            <DualRingTimerSvg
+              timer={timer}
+              isEveningTheme={metrics.isZeroWorkLeft}
+              formattedTime={formatMMSS(timer.secondsLeft)}
+              stageBadgeText={stageBadgeText}
+              onToggleRun={() => {
+                triggerHaptic([15]);
+                onToggleTimerRun();
+              }}
+            />
+          </div>
+
+          {/* Primary Play / Pause / Skip / Reset Controls */}
+          <div className="grid grid-cols-12 gap-2">
             <button
+              id="btn-hud-timer-start-pause"
               type="button"
-              onClick={onOpenPipelineDrawer}
-              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium flex items-center gap-1.5 cursor-pointer"
+              onClick={() => {
+                triggerHaptic([15]);
+                onToggleTimerRun();
+              }}
+              className={`col-span-7 py-3 px-4 rounded-2xl font-mono font-bold text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg transition ${
+                timer.isRunning
+                  ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 shadow-amber-500/20'
+                  : 'bg-cyan-400 hover:bg-cyan-300 text-slate-950 shadow-cyan-500/25'
+              }`}
             >
-              <Sliders className="w-3.5 h-3.5 text-sky-400" />
-              <span>7-Day Pipeline Drawer</span>
+              {timer.isRunning ? (
+                <>
+                  <Pause className="w-4 h-4 fill-current" />
+                  <span>Pause</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>
+                    {timer.mode === 'WORK_20M' && timer.workStage === 'IGNITION_5M'
+                      ? 'Start 5m Ignition'
+                      : 'Start Timer'}
+                  </span>
+                </>
+              )}
+              <kbd className="ml-1 px-1.5 py-0.5 rounded bg-slate-950/25 text-[10px] font-mono">
+                Space
+              </kbd>
+            </button>
+
+            <button
+              id="btn-hud-timer-skip-stage"
+              type="button"
+              onClick={() => {
+                triggerHaptic([15]);
+                onFastForwardCurrentStage();
+              }}
+              className="col-span-3 py-3 px-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.1] text-cyan-200 font-mono font-semibold text-xs flex items-center justify-center gap-1 cursor-pointer"
+              title="Skip to next stage (5m Startup → 15m Momentum → Break Router)"
+            >
+              <FastForward className="w-3.5 h-3.5" />
+              <span>Skip</span>
+            </button>
+
+            <button
+              id="btn-hud-timer-reset"
+              type="button"
+              onClick={() => {
+                triggerHaptic([10]);
+                onResetCurrentStage();
+              }}
+              className="col-span-2 py-3 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] text-slate-300 flex items-center justify-center cursor-pointer"
+              title="Reset current stage timer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {/* 3 Load Mode Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-            {/* Cruise Mode */}
-            <div
-              className={`p-3.5 rounded-xl border transition ${
-                state.loadMode === 'CRUISE'
-                  ? 'bg-sky-950/50 border-sky-500/80 text-slate-100'
-                  : 'bg-slate-950/70 border-slate-800 text-slate-300'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs font-bold uppercase text-sky-300">
-                  Cruise Mode
-                </span>
-                <span className="font-mono text-xs text-slate-400">11–13 blks</span>
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1">
-                Standard sustainable shift (11–12 blocks, or 13 for Cruise+).
-              </p>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {[11, 12, 13].map((blk) => {
-                  const isCruisePlus = blk === 13;
-                  const active =
-                    state.loadMode === 'CRUISE' &&
-                    state.customModeBlockAdjustment === blk;
-                  return (
-                    <button
-                      key={blk}
-                      id={`btn-mode-cruise-${blk}`}
-                      type="button"
-                      onClick={() => onSelectLoadMode('CRUISE', blk, isCruisePlus)}
-                      className={`px-2.5 py-1 rounded-lg font-mono text-xs transition cursor-pointer ${
-                        active
-                          ? 'bg-sky-500 text-slate-950 font-bold'
-                          : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700'
-                      }`}
-                    >
-                      {isCruisePlus ? '13 (Cruise+)' : `${blk} blks`}
-                    </button>
-                  );
-                })}
-              </div>
+          {/* Active 5-Minute Startup Micro-Script Card Right Below Play Button */}
+          <div
+            id="hud-active-startup-script"
+            className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.09] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] space-y-2"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-mono uppercase tracking-widest text-amber-300 font-bold flex items-center gap-1.5">
+                <Flame className="w-3.5 h-3.5 text-amber-400" />
+                <span>ACTIVE 5M STARTUP MICRO-SCRIPT</span>
+              </span>
+              <span className="px-2 py-0.5 rounded-md bg-white/[0.05] border border-white/[0.08] font-mono text-[10px] text-cyan-200 uppercase">
+                {timer.activeTaskType}
+              </span>
             </div>
 
-            {/* Surge Mode */}
-            <div
-              className={`p-3.5 rounded-xl border transition ${
-                state.loadMode === 'SURGE'
-                  ? 'bg-amber-950/40 border-amber-500/80 text-slate-100'
-                  : 'bg-slate-950/70 border-slate-800 text-slate-300'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs font-bold uppercase text-amber-300">
-                  Surge Mode
-                </span>
-                <span className="font-mono text-xs text-slate-400">14–15 blks</span>
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1">
-                Max 2 consecutive days. Enforces 60–120m Mid-Day Reset at 7 blks.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {[14, 15].map((blk) => {
-                  const active =
-                    state.loadMode === 'SURGE' &&
-                    state.customModeBlockAdjustment === blk;
-                  const lockedByCap = state.surgeConsecutiveDays >= 2 && state.loadMode !== 'SURGE';
-                  return (
-                    <button
-                      key={blk}
-                      id={`btn-mode-surge-${blk}`}
-                      type="button"
-                      disabled={lockedByCap}
-                      onClick={() => onSelectLoadMode('SURGE', blk, false)}
-                      className={`px-2.5 py-1 rounded-lg font-mono text-xs transition ${
-                        lockedByCap
-                          ? 'bg-slate-900 text-slate-600 border border-slate-800 cursor-not-allowed'
-                          : active
-                          ? 'bg-amber-500 text-slate-950 font-bold cursor-pointer'
-                          : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 cursor-pointer'
-                      }`}
-                    >
-                      {blk} blks
-                    </button>
-                  );
-                })}
-              </div>
+            <div className="text-xs sm:text-sm font-semibold text-white truncate">
+              {timer.activeTaskTitle}
             </div>
 
-            {/* Taper / Lab Mode */}
-            <div
-              className={`p-3.5 rounded-xl border transition ${
-                state.loadMode === 'TAPER'
-                  ? 'bg-emerald-950/40 border-emerald-500/80 text-slate-100'
-                  : 'bg-slate-950/70 border-slate-800 text-slate-300'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs font-bold uppercase text-emerald-300">
-                  Taper / Lab
-                </span>
-                <span className="font-mono text-xs text-slate-400">7–9 blks</span>
-              </div>
-              <p className="text-[11px] text-slate-400 mt-1">
-                7–9 desk blocks + Fixed Event (~2h Lab shift logged).
-              </p>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {[7, 8, 9].map((blk) => {
-                  const active =
-                    state.loadMode === 'TAPER' &&
-                    state.customModeBlockAdjustment === blk;
-                  return (
-                    <button
-                      key={blk}
-                      id={`btn-mode-taper-${blk}`}
-                      type="button"
-                      onClick={() => onSelectLoadMode('TAPER', blk, false)}
-                      className={`px-2.5 py-1 rounded-lg font-mono text-xs transition cursor-pointer ${
-                        active
-                          ? 'bg-emerald-500 text-slate-950 font-bold'
-                          : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700'
-                      }`}
-                    >
-                      {blk} blks
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <p className="text-xs font-mono text-amber-200/95 bg-amber-500/10 border border-amber-400/30 rounded-xl px-3 py-2 leading-relaxed">
+              “{timer.activeStartupPrompt}”
+            </p>
           </div>
 
-          {/* Surge Consecutive Day Tracker & Mid-Day Reset Status */}
-          <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-2">
-              <span className="text-slate-400 font-mono">
-                Consecutive Surge Days:
-              </span>
-              <div className="inline-flex rounded-lg bg-slate-950 p-0.5 border border-slate-800">
-                {[0, 1, 2].map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    onClick={() => onSetSurgeConsecutiveDays(d)}
-                    className={`px-2 py-0.5 rounded font-mono text-xs cursor-pointer ${
-                      state.surgeConsecutiveDays === d
-                        ? 'bg-amber-600 text-slate-950 font-bold'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    {d}/2
-                  </button>
-                ))}
-              </div>
-              {state.surgeConsecutiveDays >= 2 && (
-                <span className="text-[11px] font-mono text-amber-400">
-                  (2-Day Cap Reached)
+          {/* Embedded 4-7-8 Breathing Visualizer when Stress Reset is active */}
+          {timer.mode === 'STRESS_RESET' && (
+            <div className="space-y-2.5">
+              <BreathingVisualizer478
+                id="hud-breathing-478"
+                isActiveContext={timer.mode === 'STRESS_RESET'}
+                defaultExpanded={true}
+                variant="slate"
+                compact={true}
+              />
+              <button
+                type="button"
+                onClick={onCompleteStressResetInto5mFlashcards}
+                className="w-full py-2.5 px-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-mono font-bold text-xs cursor-pointer"
+              >
+                Finish Reset → Queue 5m Flashcard Ramp
+              </button>
+            </div>
+          )}
+
+          {/* Post-Reset Queued 5m Flashcard Recovery Ramp */}
+          {timer.queuedRecoveryFlashcard5m && (
+            <div
+              id="hud-queued-5m-flashcard"
+              className="p-3.5 rounded-2xl bg-emerald-500/15 border border-emerald-400/50 text-emerald-100 space-y-2.5"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-emerald-300">
+                  POST-RESET 5M FLASHCARD RAMP
                 </span>
-              )}
-            </div>
-
-            <div className="font-mono text-slate-400">
-              Mid-Day Reset (at 7 blks):{' '}
-              <span
-                className={
-                  state.midDayResetCompletedToday
-                    ? 'text-emerald-400 font-bold'
-                    : state.loadMode === 'SURGE'
-                    ? 'text-amber-300 font-bold'
-                    : 'text-slate-500'
-                }
-              >
-                {state.midDayResetCompletedToday
-                  ? 'Completed'
-                  : state.loadMode === 'SURGE'
-                  ? `Pending (${metrics.totalCompletedBlocks}/7 blks)`
-                  : 'N/A (Cruise/Taper)'}
-              </span>
-            </div>
-          </div>
-        </section>
-
-        {/* Duration-Only Configuration & Fixed Event Card */}
-        <section
-          aria-labelledby="duration-config-heading"
-          className="lg:col-span-5 p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-col justify-between space-y-4"
-        >
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2
-                id="duration-config-heading"
-                className="text-sm font-bold uppercase tracking-wider text-slate-200 font-mono"
-              >
-                Duration-Only Pipeline Readout
-              </h2>
-              <span className="text-xs font-mono tabular-nums text-cyan-400">
-                {metrics.totalCompletedBlocks} / {metrics.totalTargetBlocks} blocks done
-              </span>
-            </div>
-
-            {/* Prominent Duration Display Box */}
-            <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
-              <div>
-                <div className="text-[11px] font-mono uppercase text-slate-400">
-                  Active Focus Pipeline Counter
-                </div>
-                <div
-                  id="pipeline-main-duration-readout"
-                  className="text-lg sm:text-xl font-mono tabular-nums font-bold text-cyan-300 mt-0.5"
+                <span className="font-mono font-bold text-sm tabular-nums text-emerald-200">
+                  {formatMMSS(timer.recoveryFlashcardSecondsLeft)}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onToggleRecoveryFlashcardTimer}
+                  className="flex-1 py-1.5 px-3 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-mono font-bold text-xs cursor-pointer"
                 >
-                  {metrics.durationPrefix}
-                </div>
+                  {timer.recoveryFlashcardRunning ? 'Pause 5m Ramp' : 'Start 5m Ramp'}
+                </button>
+                <button
+                  type="button"
+                  onClick={onCompleteRecoveryFlashcard5m}
+                  className="py-1.5 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] text-emerald-100 font-mono text-xs cursor-pointer"
+                >
+                  Complete
+                </button>
               </div>
-              <div className="flex flex-col items-end gap-1">
-                <span className="text-[10px] font-mono uppercase text-slate-400">
-                  Block Pairing
-                </span>
-                <div className="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-800">
-                  {([20, 40] as const).map((mins) => (
+            </div>
+          )}
+        </aside>
+
+        {/* =====================================================================
+            RIGHT COLUMN (7 COLS): 3-ROW BENTO GRID
+           ===================================================================== */}
+        <div className="lg:col-span-7 space-y-4">
+          {/* -------------------------------------------------------------------
+              TOP BENTO ROW: "UP NEXT" AUTO-ROUTER HERO CARD + LOAD MODE PILL
+             ------------------------------------------------------------------- */}
+          <section
+            id="bento-up-next-hero"
+            aria-label="Up Next Auto-Router and Load Mode"
+            className="rounded-3xl bento-hero-border p-5 space-y-4"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-cyan-400/20 border border-cyan-300/50 text-cyan-200 font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
+                    <Sparkles className="w-3 h-3 text-cyan-300" />
+                    <span>UP NEXT AUTO-ROUTER</span>
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-white/[0.05] border border-white/[0.1] font-mono text-[10px] text-slate-300">
+                    {upNextBlock.badge}
+                  </span>
+                  {isFinalBlockOfNight && (
+                    <span className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-400/50 font-mono text-[10px] text-amber-200">
+                      Final Block Guard: Flashcards Locked
+                    </span>
+                  )}
+                </div>
+
+                <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight pt-0.5">
+                  {upNextBlock.title}
+                </h2>
+                <p className="text-xs font-mono text-cyan-100/85">
+                  5m Startup: “{upNextBlock.startupStep}”
+                </p>
+              </div>
+
+              {/* One-Click Space Launch Button */}
+              <button
+                id="btn-up-next-launch"
+                type="button"
+                disabled={metrics.isZeroWorkLeft || isSurgeMidDayResetRequired}
+                onClick={() => {
+                  triggerHaptic([15]);
+                  onLaunchBlockInTimer(
+                    upNextBlock.sourceId,
+                    upNextBlock.title,
+                    upNextBlock.taskType,
+                    upNextBlock.startupStep
+                  );
+                }}
+                className="px-4 py-2.5 rounded-2xl bg-cyan-400 hover:bg-cyan-300 disabled:opacity-40 text-slate-950 font-mono font-bold text-xs flex items-center gap-2 cursor-pointer shadow-lg shadow-cyan-500/25 shrink-0"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>Launch 5m Startup</span>
+                <kbd className="px-1.5 py-0.5 rounded bg-slate-950/20 text-[10px] font-mono">
+                  Space
+                </kbd>
+              </button>
+            </div>
+
+            {/* Compact Load Mode & Duration-Only Countdown Bar */}
+            <div className="pt-3 border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {(
+                  [
+                    {
+                      mode: 'CRUISE' as LoadMode,
+                      label: 'Cruise (11–12)',
+                      defaultBlocks: 12,
+                    },
+                    {
+                      mode: 'SURGE' as LoadMode,
+                      label: `Surge (14–15 • ${state.surgeConsecutiveDays}/2d)`,
+                      defaultBlocks: 14,
+                    },
+                    {
+                      mode: 'TAPER' as LoadMode,
+                      label: 'Taper / Lab (7–9)',
+                      defaultBlocks: 8,
+                    },
+                  ] as const
+                ).map((item) => {
+                  const active = state.loadMode === item.mode;
+                  const surgeLocked =
+                    item.mode === 'SURGE' &&
+                    state.surgeConsecutiveDays >= 2 &&
+                    state.loadMode !== 'SURGE';
+                  return (
                     <button
-                      key={mins}
-                      id={`btn-pair-${mins}m`}
+                      key={item.mode}
+                      id={`mode-card-${item.mode.toLowerCase()}`}
                       type="button"
-                      onClick={() => onSetSessionDisplayDuration(mins)}
-                      className={`px-2 py-0.5 rounded font-mono text-xs cursor-pointer ${
-                        state.timer.sessionDisplayDurationMinutes === mins
-                          ? 'bg-sky-500 text-slate-950 font-bold'
-                          : 'text-slate-400 hover:text-slate-200'
+                      disabled={surgeLocked}
+                      onClick={() =>
+                        onSelectLoadMode(item.mode, item.defaultBlocks, false)
+                      }
+                      className={`px-2.5 py-1 rounded-xl font-mono text-[11px] font-semibold border transition cursor-pointer ${
+                        active
+                          ? 'bg-cyan-500/20 border-cyan-400/60 text-cyan-100'
+                          : surgeLocked
+                          ? 'bg-red-950/30 border-red-800/40 text-red-300/60 cursor-not-allowed'
+                          : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.08] text-slate-300'
                       }`}
                     >
-                      {mins}m
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-1 rounded-xl bg-black/40 border border-cyan-500/35 font-mono text-xs font-bold tabular-nums text-cyan-200">
+                  {metrics.durationPrefix}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={() => setLoadConfigExpanded(!loadConfigExpanded)}
+                  className="px-2.5 py-1 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.09] text-slate-300 font-mono text-[11px] flex items-center gap-1 cursor-pointer"
+                >
+                  <Sliders className="w-3 h-3" />
+                  <span>Tune</span>
+                  {loadConfigExpanded ? (
+                    <ChevronUp className="w-3 h-3" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* Expandable Fine-Tuning Tray (Target Blocks, Fixed Event, Session 20m/40m, Surge Day Sim) */}
+            {loadConfigExpanded && (
+              <div className="pt-3 border-t border-white/[0.08] grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs font-mono">
+                <div className="p-2.5 rounded-xl bg-black/30 border border-white/[0.07] space-y-1.5">
+                  <span className="text-[10px] uppercase text-slate-400 block">
+                    Target Blocks &amp; Display
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {state.loadMode === 'CRUISE' &&
+                      [11, 12, 13].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => onSelectLoadMode('CRUISE', n, n === 13)}
+                          className={`px-2 py-0.5 rounded border text-[11px] cursor-pointer ${
+                            state.customModeBlockAdjustment === n
+                              ? 'bg-cyan-400 text-slate-950 border-cyan-300 font-bold'
+                              : 'bg-white/[0.04] border-white/[0.08] text-slate-300'
+                          }`}
+                        >
+                          {n === 13 ? '13 (Cruise+)' : `${n} blks`}
+                        </button>
+                      ))}
+                    {state.loadMode === 'SURGE' &&
+                      [14, 15].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => onSelectLoadMode('SURGE', n, false)}
+                          className={`px-2 py-0.5 rounded border text-[11px] cursor-pointer ${
+                            state.customModeBlockAdjustment === n
+                              ? 'bg-amber-400 text-slate-950 border-amber-300 font-bold'
+                              : 'bg-white/[0.04] border-white/[0.08] text-slate-300'
+                          }`}
+                        >
+                          {n} blks
+                        </button>
+                      ))}
+                    {state.loadMode === 'TAPER' &&
+                      [7, 8, 9].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => onSelectLoadMode('TAPER', n, false)}
+                          className={`px-2 py-0.5 rounded border text-[11px] cursor-pointer ${
+                            state.customModeBlockAdjustment === n
+                              ? 'bg-emerald-400 text-slate-950 border-emerald-300 font-bold'
+                              : 'bg-white/[0.04] border-white/[0.08] text-slate-300'
+                          }`}
+                        >
+                          {n} blks
+                        </button>
+                      ))}
+                    {([20, 40] as const).map((mins) => (
+                      <button
+                        key={mins}
+                        type="button"
+                        onClick={() => onSetSessionDisplayDuration(mins)}
+                        className={`px-2 py-0.5 rounded border text-[11px] cursor-pointer ${
+                          timer.sessionDisplayDurationMinutes === mins
+                            ? 'bg-indigo-500/30 border-indigo-400 text-indigo-100 font-bold'
+                            : 'bg-white/[0.03] border-white/[0.08] text-slate-400'
+                        }`}
+                      >
+                        [{mins}m]
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-black/30 border border-white/[0.07] space-y-1.5">
+                  <span className="text-[10px] uppercase text-slate-400 block">
+                    Fixed Event Anchor
+                  </span>
+                  <select
+                    id="select-fixed-event"
+                    value={state.fixedEvent}
+                    onChange={(e) => onSetFixedEvent(e.target.value as FixedEventType)}
+                    className="w-full bg-slate-950 border border-white/[0.12] rounded-lg px-2 py-1 text-[11px] text-slate-200"
+                  >
+                    <option value="NONE">None (Duration-Only)</option>
+                    <option value="LAB_2H">Lab (~2h: 09:00–11:00 AM)</option>
+                    <option value="VOLUNTEER">Volunteer (01:00–03:00 PM)</option>
+                    <option value="EVENING_OUTING_6PM">6:00 PM Evening Outing</option>
+                  </select>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-black/30 border border-white/[0.07] space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase text-slate-400">
+                      Surge Consecutive Cap
+                    </span>
+                    <button
+                      type="button"
+                      onClick={onOpenPipelineDrawer}
+                      className="text-[10px] text-cyan-300 underline cursor-pointer"
+                    >
+                      7-Day Table
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {[0, 1, 2].map((d) => (
+                      <button
+                        key={d}
+                        type="button"
+                        onClick={() => onSetSurgeConsecutiveDays(d)}
+                        className={`flex-1 py-0.5 rounded border text-[11px] cursor-pointer ${
+                          state.surgeConsecutiveDays === d
+                            ? 'bg-amber-400 text-slate-950 border-amber-300 font-bold'
+                            : 'bg-white/[0.04] border-white/[0.08] text-slate-300'
+                        }`}
+                      >
+                        {d}/2d
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* -------------------------------------------------------------------
+              MIDDLE BENTO ROW (2 COLUMNS):
+              LEFT = 7-BLOCK DAILY CORE BASELINE (SEGMENTED PROGRESS PILLS)
+              RIGHT = LOCKED FOCUS #1 DELIVERABLE (8/4-BLOCK SEGMENTED BAR)
+             ------------------------------------------------------------------- */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* LEFT MIDDLE BENTO CARD: 7-BLOCK DAILY CORE BASELINE */}
+            <section
+              id="bento-baseline-card"
+              aria-labelledby="baseline-heading"
+              className="rounded-3xl bento-surface p-5 flex flex-col justify-between space-y-4"
+            >
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <span className="text-[10px] font-mono uppercase tracking-widest text-cyan-300 font-bold">
+                      DAILY CORE FLOOR • 7 BLOCKS
+                    </span>
+                    <h3
+                      id="baseline-heading"
+                      className="text-base font-bold text-white tracking-tight"
+                    >
+                      Segmented Baseline Pills
+                    </h3>
+                  </div>
+                  <span className="px-2.5 py-1 rounded-xl bg-white/[0.05] border border-white/[0.1] font-mono text-xs font-bold tabular-nums text-cyan-200">
+                    {metrics.completedBaselineCount} / 7
+                  </span>
+                </div>
+
+                {/* Group A: 4 Flashcard Segments (1 Anatomy + 3 Comp, 250-card cap) */}
+                <div className="p-3.5 rounded-2xl bg-black/25 border border-white/[0.07] space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-mono font-bold text-slate-200">
+                      4 Flashcard Blocks (1 Anat + 3 Comp)
+                    </span>
+                    <button
+                      id="btn-toggle-early-clearance"
+                      type="button"
+                      disabled={metrics.isZeroWorkLeft}
+                      onClick={() => {
+                        triggerHaptic([15]);
+                        onToggleEarlyClearance();
+                      }}
+                      className={`px-2.5 py-0.5 rounded-lg border font-mono text-[10px] font-bold transition cursor-pointer ${
+                        state.earlyClearanceEnabled
+                          ? 'bg-emerald-500/20 border-emerald-400/60 text-emerald-200'
+                          : 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.1] text-slate-300'
+                      }`}
+                    >
+                      {state.earlyClearanceEnabled
+                        ? '✓ Early Clearance Banked'
+                        : 'Early Clearance'}
+                    </button>
+                  </div>
+
+                  {/* 4 Tactile Flashcard Progress Pill Segments */}
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {flashcardBlocks.map((b, idx) => {
+                      const blockedAsFinal =
+                        isFinalBlockOfNight && !b.completed && !b.bankedViaEarlyClearance;
+                      const isSelected = selectedBaseline?.id === b.id;
+                      const shortTag = idx === 0 ? 'ANAT 1' : `COMP ${idx}`;
+                      return (
+                        <button
+                          key={b.id}
+                          id={`pill-segment-${b.id}`}
+                          type="button"
+                          disabled={metrics.isZeroWorkLeft || blockedAsFinal}
+                          onClick={() => {
+                            triggerHaptic([10]);
+                            setSelectedBaselineId(b.id);
+                            onToggleBaselineBlock(b.id);
+                          }}
+                          className={`p-2 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between min-h-[54px] ${
+                            b.completed
+                              ? 'bg-emerald-500/20 border-emerald-400/60 text-emerald-100 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.15)]'
+                              : b.bankedViaEarlyClearance
+                              ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-100'
+                              : blockedAsFinal
+                              ? 'bg-red-950/30 border-red-800/50 text-red-300/60 cursor-not-allowed'
+                              : isSelected
+                              ? 'bg-white/[0.08] border-cyan-400/60 text-white'
+                              : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.08] text-slate-300'
+                          }`}
+                          title={`${b.title} — Click to toggle complete`}
+                        >
+                          <div className="flex items-center justify-between w-full">
+                            <span className="font-mono text-[10px] font-bold">
+                              {shortTag}
+                            </span>
+                            {b.completed ? (
+                              <Check className="w-3 h-3 text-emerald-300" />
+                            ) : b.bankedViaEarlyClearance ? (
+                              <span className="text-[9px] font-mono text-cyan-300">
+                                BANK
+                              </span>
+                            ) : blockedAsFinal ? (
+                              <Lock className="w-3 h-3 text-red-400" />
+                            ) : null}
+                          </div>
+                          <div className="w-full h-1.5 rounded-full bg-black/40 overflow-hidden mt-1.5">
+                            <div
+                              className={`h-full rounded-full ${
+                                b.completed
+                                  ? 'w-full bg-emerald-400'
+                                  : b.bankedViaEarlyClearance
+                                  ? 'w-full bg-cyan-400'
+                                  : 'w-1/4 bg-slate-600'
+                              }`}
+                            />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* 250-Card Cap Compact Slider */}
+                  <div className="flex items-center justify-between gap-2 pt-1 text-[11px] font-mono text-slate-400">
+                    <span>Due Cap: {state.flashcardsReviewedCount}/250 cards</span>
+                    <input
+                      id="input-flashcard-count"
+                      type="range"
+                      min={0}
+                      max={state.flashcardsDailyCap}
+                      step={5}
+                      value={state.flashcardsReviewedCount}
+                      onChange={(e) => onUpdateFlashcardCount(Number(e.target.value))}
+                      className="w-28 accent-cyan-400 cursor-pointer"
+                    />
+                  </div>
+                </div>
+
+                {/* Group B: 3 Half-Chapter Segments (2 Reading/Equations + 1 Synthesis) */}
+                <div className="p-3.5 rounded-2xl bg-black/25 border border-white/[0.07] space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-mono font-bold text-slate-200">
+                      3 Half-Chapter Blocks (2 Read/Eq + 1 Synth)
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      In + Out
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {halfChapterBlocks.map((b, idx) => {
+                      const isSelected = selectedBaseline?.id === b.id;
+                      const shortTag =
+                        b.category === 'SYNTHESIS' ? 'SYNTH 1' : `READ ${idx + 1}`;
+                      return (
+                        <button
+                          key={b.id}
+                          id={`pill-segment-${b.id}`}
+                          type="button"
+                          disabled={metrics.isZeroWorkLeft}
+                          onClick={() => {
+                            triggerHaptic([10]);
+                            setSelectedBaselineId(b.id);
+                            onToggleBaselineBlock(b.id);
+                          }}
+                          className={`p-2.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between min-h-[54px] ${
+                            b.completed
+                              ? 'bg-emerald-500/20 border-emerald-400/60 text-emerald-100 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.15)]'
+                              : isSelected
+                              ? 'bg-white/[0.08] border-cyan-400/60 text-white'
+                              : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.08] text-slate-300'
+                          }`}
+                          title={`${b.title} — Click to toggle complete`}
+                        >
+                          <div className="flex items-center justify-between w-full">
+                            <span className="font-mono text-[10px] font-bold">
+                              {shortTag}
+                            </span>
+                            {b.completed && (
+                              <Check className="w-3 h-3 text-emerald-300" />
+                            )}
+                          </div>
+                          <div className="w-full h-1.5 rounded-full bg-black/40 overflow-hidden mt-1.5">
+                            <div
+                              className={`h-full rounded-full ${
+                                b.completed
+                                  ? 'w-full bg-emerald-400'
+                                  : 'w-1/4 bg-indigo-400/60'
+                              }`}
+                            />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Selected Baseline Segment Micro-Launcher */}
+              {selectedBaseline && (
+                <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-white truncate">
+                      {selectedBaseline.title}
+                    </div>
+                    <div className="text-[11px] font-mono text-slate-400 truncate">
+                      5m: {selectedBaseline.startupStep}
+                    </div>
+                  </div>
+                  <button
+                    id={`btn-launch-${selectedBaseline.id}`}
+                    type="button"
+                    disabled={
+                      metrics.isZeroWorkLeft ||
+                      isSurgeMidDayResetRequired ||
+                      (isFinalBlockOfNight &&
+                        isFlashcardBlock(selectedBaseline) &&
+                        !selectedBaseline.completed)
+                    }
+                    onClick={() => {
+                      triggerHaptic([15]);
+                      onLaunchBlockInTimer(
+                        selectedBaseline.id,
+                        selectedBaseline.title,
+                        isFlashcardBlock(selectedBaseline)
+                          ? 'FLASHCARDS'
+                          : selectedBaseline.category === 'SYNTHESIS'
+                          ? 'SYNTHESIS'
+                          : 'READING',
+                        selectedBaseline.startupStep
+                      );
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 disabled:opacity-40 text-slate-950 font-mono font-bold text-xs flex items-center gap-1 cursor-pointer shrink-0"
+                  >
+                    <Play className="w-3 h-3 fill-current" />
+                    <span>5m</span>
+                  </button>
+                </div>
+              )}
+            </section>
+
+            {/* RIGHT MIDDLE BENTO CARD: LOCKED FOCUS #1 DELIVERABLE + COLLAPSED DRAWER FOR #2 & #3 */}
+            <section
+              id="bento-project-lock-card"
+              aria-labelledby="project-lock-heading"
+              className="rounded-3xl bento-surface p-5 flex flex-col justify-between space-y-4"
+            >
+              {primaryProject ? (
+                <div
+                  id={`project-card-slot-1`}
+                  className="space-y-3.5"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-300 font-bold flex items-center gap-1">
+                        <Unlock className="w-3 h-3 text-emerald-400" />
+                        <span>LOCKED FOCUS #1 • 100% DISCRETIONARY</span>
+                      </span>
+                      <h3
+                        id="project-lock-heading"
+                        className="text-base font-bold text-white tracking-tight mt-0.5"
+                      >
+                        {primaryProject.title}
+                      </h3>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-400/40 font-mono text-xs font-bold tabular-nums text-emerald-200 shrink-0">
+                      [{primaryProject.completedBlocks}/{primaryProject.totalBlocks}]
+                    </span>
+                  </div>
+
+                  {/* 8-Block / 4-Block Tactile Segmented Progress Bar */}
+                  <div className="p-3.5 rounded-2xl bg-black/25 border border-white/[0.07] space-y-2">
+                    <div className="flex items-center justify-between text-[11px] font-mono text-slate-300">
+                      <span>
+                        {primaryProject.presetType === 'PAPER_8'
+                          ? '8-Block Paper Sprint'
+                          : primaryProject.presetType === 'SLIDES_4'
+                          ? '4-Block Slide Deck'
+                          : `${primaryProject.totalBlocks}-Block Deliverable`}
+                      </span>
+                      <span className="text-emerald-300 font-bold">
+                        {Math.round(
+                          (primaryProject.completedBlocks /
+                            Math.max(1, primaryProject.totalBlocks)) *
+                            100
+                        )}
+                        % Complete
+                      </span>
+                    </div>
+
+                    <div
+                      className="grid gap-1.5"
+                      style={{
+                        gridTemplateColumns: `repeat(${Math.min(
+                          12,
+                          Math.max(1, primaryProject.totalBlocks)
+                        )}, minmax(0, 1fr))`,
+                      }}
+                    >
+                      {Array.from({ length: primaryProject.totalBlocks }).map(
+                        (_, segIdx) => {
+                          const filled = segIdx < primaryProject.completedBlocks;
+                          const isNext = segIdx === primaryProject.completedBlocks;
+                          return (
+                            <button
+                              key={segIdx}
+                              type="button"
+                              disabled={
+                                metrics.isZeroWorkLeft || isSurgeMidDayResetRequired
+                              }
+                              onClick={() => {
+                                triggerHaptic([10]);
+                                onIncrementProjectBlock(primaryProject.id);
+                              }}
+                              className={`h-7 rounded-lg border font-mono text-[10px] font-bold flex items-center justify-center transition cursor-pointer ${
+                                filled
+                                  ? 'bg-emerald-400/30 border-emerald-400 text-emerald-100 shadow-[0_0_12px_rgba(52,211,153,0.25)]'
+                                  : isNext
+                                  ? 'bg-cyan-500/15 border-cyan-400/60 text-cyan-200 animate-pulse'
+                                  : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.08] text-slate-500'
+                              }`}
+                              title={`Block ${segIdx + 1} of ${primaryProject.totalBlocks} — Click to log +1 block`}
+                            >
+                              {segIdx + 1}
+                            </button>
+                          );
+                        }
+                      )}
+                    </div>
+
+                    <p className="text-[11px] font-mono text-slate-300 pt-1">
+                      5m Startup: <span className="text-cyan-200">“{primaryProject.startupStep}”</span>
+                    </p>
+                  </div>
+
+                  {/* Primary Action Row for Focus #1 */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      id="btn-launch-project-1"
+                      type="button"
+                      disabled={metrics.isZeroWorkLeft || isSurgeMidDayResetRequired}
+                      onClick={() => {
+                        triggerHaptic([15]);
+                        onLaunchBlockInTimer(
+                          primaryProject.id,
+                          primaryProject.title,
+                          'PROJECT',
+                          primaryProject.startupStep
+                        );
+                      }}
+                      className="flex-1 py-2 px-3 rounded-xl bg-cyan-400 hover:bg-cyan-300 disabled:opacity-40 text-slate-950 font-mono font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>Start 5m Step</span>
+                    </button>
+
+                    <button
+                      id="btn-log-project-1-block"
+                      type="button"
+                      disabled={metrics.isZeroWorkLeft || isSurgeMidDayResetRequired}
+                      onClick={() => {
+                        triggerHaptic([15]);
+                        onIncrementProjectBlock(primaryProject.id);
+                      }}
+                      className="py-2 px-3 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.1] text-slate-100 font-mono font-semibold text-xs cursor-pointer"
+                    >
+                      +1 Block
+                    </button>
+
+                    <button
+                      id="btn-complete-project-1"
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic([20]);
+                        onCompleteProjectItem1();
+                      }}
+                      className="py-2 px-3 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-mono font-bold text-xs flex items-center gap-1 cursor-pointer"
+                      title="Mark Item #1 Complete and promote Item #2 to Primary Target"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Done</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-xs font-mono text-slate-400">
+                  No active project in Slot #1.
+                </div>
+              )}
+
+              {/* Muted Collapsed Drawer for Items #2 & #3 */}
+              <div className="pt-2 border-t border-white/[0.08]">
+                <button
+                  id="btn-toggle-locked-projects-drawer"
+                  type="button"
+                  onClick={() => setLockedDrawerOpen(!lockedDrawerOpen)}
+                  className="w-full px-3 py-2 rounded-xl bg-white/[0.025] hover:bg-white/[0.06] border border-white/[0.07] text-xs font-mono text-slate-400 flex items-center justify-between cursor-pointer"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-slate-500" />
+                    <span>
+                      Locked Queue #2 &amp; #3 ({lockedSecondaryProjects.length} locked)
+                    </span>
+                  </span>
+                  {lockedDrawerOpen ? (
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  )}
+                </button>
+
+                {lockedDrawerOpen && (
+                  <div className="mt-2.5 space-y-2">
+                    {lockedSecondaryProjects.map((proj) => (
+                      <div
+                        key={proj.id}
+                        id={`project-card-slot-${proj.slot}`}
+                        className="p-3 rounded-xl bg-black/35 border border-white/[0.06] opacity-75 flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-400">
+                            <Lock className="w-3 h-3" />
+                            <span>SLOT #{proj.slot} • LOCKED TO #1</span>
+                          </div>
+                          <div className="text-xs font-semibold text-slate-200 truncate">
+                            {proj.title}
+                          </div>
+                        </div>
+                        <span className="font-mono text-[11px] text-slate-400 shrink-0">
+                          [{proj.completedBlocks}/{proj.totalBlocks}]
+                        </span>
+                      </div>
+                    ))}
+
+                    {state.projectQueue.length < 3 && (
+                      <form
+                        onSubmit={handleAddProjectSubmit}
+                        className="p-2.5 rounded-xl bg-black/30 border border-white/[0.07] flex flex-wrap gap-1.5"
+                      >
+                        <input
+                          id="input-new-project-title"
+                          type="text"
+                          value={newProjTitle}
+                          onChange={(e) => setNewProjTitle(e.target.value)}
+                          placeholder="Add project to Slot #3..."
+                          className="flex-1 min-w-[140px] bg-slate-950 border border-white/[0.1] rounded-lg px-2.5 py-1 text-xs text-slate-100"
+                        />
+                        <select
+                          value={newProjPreset}
+                          onChange={(e) =>
+                            setNewProjPreset(e.target.value as ProjectPresetType)
+                          }
+                          className="bg-slate-950 border border-white/[0.1] rounded-lg px-2 py-1 text-[11px] font-mono text-slate-200"
+                        >
+                          <option value="PAPER_8">8 blks</option>
+                          <option value="SLIDES_4">4 blks</option>
+                          <option value="CUSTOM">Custom</option>
+                        </select>
+                        {newProjPreset === 'CUSTOM' && (
+                          <input
+                            type="number"
+                            min={1}
+                            max={20}
+                            value={newProjCustomBlocks}
+                            onChange={(e) =>
+                              setNewProjCustomBlocks(Number(e.target.value))
+                            }
+                            className="w-14 bg-slate-950 border border-white/[0.1] rounded-lg px-2 py-1 text-[11px] font-mono text-slate-200"
+                          />
+                        )}
+                        <select
+                          value={newProjTrack}
+                          onChange={(e) => setNewProjTrack(e.target.value as TrackId)}
+                          className="bg-slate-950 border border-white/[0.1] rounded-lg px-2 py-1 text-[11px] font-mono text-slate-200"
+                        >
+                          <option value="writing">Writing</option>
+                          <option value="science">Science</option>
+                          <option value="personal">Personal</option>
+                        </select>
+                        <button
+                          type="submit"
+                          className="px-2.5 py-1 rounded-lg bg-cyan-400 text-slate-950 font-mono font-bold text-xs flex items-center gap-1 cursor-pointer"
+                        >
+                          <Plus className="w-3 h-3" />
+                          <span>Add</span>
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+
+          {/* -------------------------------------------------------------------
+              BOTTOM BENTO ROW: QUICK TRIAGE DOCK
+              (3-5m Micro-Reset, 10-15m Task-Switch Buffer, 60-120m Split-Shift Reset, 4-7-8 Stress Reset)
+             ------------------------------------------------------------------- */}
+          <section
+            id="bento-quick-triage-dock"
+            aria-label="Quick Break and Stress Triage Dock"
+            className="rounded-3xl bento-surface p-5 space-y-3.5"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-cyan-400" />
+                <h3 className="text-xs sm:text-sm font-mono uppercase tracking-wider font-bold text-slate-200">
+                  Quick Break &amp; Stress Triage Dock
+                </h3>
+              </div>
+              <span className="text-[11px] font-mono text-slate-400">
+                Chained Blocks: {timer.chainedBlocksCount}/2 (40m max before 10–15m Buffer)
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+              {/* Dock Card 1: 3-5m Micro-Reset (Same-Task) */}
+              <div
+                className={`p-3.5 rounded-2xl border flex flex-col justify-between space-y-2.5 transition ${
+                  timer.mode === 'BREAK_L1'
+                    ? 'bg-cyan-500/15 border-cyan-400/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]'
+                    : 'bg-black/25 border-white/[0.07]'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono uppercase text-cyan-300 font-bold">
+                      SAME-TASK
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      3–5m
+                    </span>
+                  </div>
+                  <div className="text-xs font-bold text-white mt-0.5">
+                    Micro-Reset
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+                    Stand, water, eyes off screen (max 2 chained blocks).
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  {([3, 5] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      disabled={timer.chainedBlocksCount >= 2}
+                      onClick={() => {
+                        triggerHaptic([10]);
+                        onSelectL1Minutes(m);
+                      }}
+                      className={`flex-1 py-1.5 rounded-xl font-mono text-xs font-bold border cursor-pointer disabled:opacity-40 ${
+                        timer.mode === 'BREAK_L1' && timer.l1DurationMinutes === m
+                          ? 'bg-cyan-400 text-slate-950 border-cyan-300'
+                          : 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.08] text-slate-200'
+                      }`}
+                    >
+                      {m}m
                     </button>
                   ))}
                 </div>
               </div>
-            </div>
 
-            {/* Fixed Event Selector (Rule 1: Wall-clock hidden unless Fixed Event logged) */}
-            <div className="space-y-1.5">
-              <label
-                htmlFor="select-fixed-event"
-                className="block text-xs font-medium text-slate-300"
-              >
-                Fixed Event Exception (Wall-Clock Anchor)
-              </label>
-              <select
-                id="select-fixed-event"
-                value={state.fixedEvent}
-                onChange={(e) => onSetFixedEvent(e.target.value as FixedEventType)}
-                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-200"
-              >
-                <option value="NONE">
-                  None — Strict Duration-Only Display (Zero Wall-Clock Timestamps)
-                </option>
-                <option value="LAB_2H">
-                  Fixed Event: Lab Shift (~2h) [09:00 AM – 11:00 AM]
-                </option>
-                <option value="VOLUNTEER">
-                  Fixed Event: Volunteer Shift [01:00 PM – 03:00 PM]
-                </option>
-                <option value="EVENING_OUTING_6PM">
-                  Fixed Event: 6:00 PM Evening Outing
-                </option>
-              </select>
-            </div>
-          </div>
-
-          <div className="text-[11px] text-slate-400 border-t border-slate-800/80 pt-2.5 flex items-center justify-between">
-            <span>Remaining Desk Blocks: {metrics.remainingBlocks}</span>
-            <span className="font-mono text-slate-300">
-              1 Block = 5m Startup + 15m Momentum
-            </span>
-          </div>
-        </section>
-      </div>
-
-      {/* Section 2: 7-Block Daily Core Baseline Tracker (Rule 3) */}
-      <section
-        aria-labelledby="core-baseline-heading"
-        className="p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2
-                id="core-baseline-heading"
-                className="text-sm font-bold uppercase tracking-wider text-slate-200 font-mono"
-              >
-                Daily Core Baseline (7 Blocks)
-              </h2>
-              <span className="px-2 py-0.5 rounded-md bg-slate-800 text-sky-300 font-mono text-xs">
-                {metrics.completedBaselineCount} / 7 Complete
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              4 Flashcard Blocks (1 Anatomy + 3 Comp, 250-card cap) + 3 Half-Chapter Blocks (2 Reading/Equations + 1 Synthesis)
-            </p>
-          </div>
-
-          {/* Flashcard 250-Card Cap & Early Clearance Toggle */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="flex items-center gap-2 bg-slate-950 border border-slate-800 px-3 py-1.5 rounded-xl text-xs font-mono">
-              <span className="text-slate-400">Cards:</span>
-              <input
-                id="input-flashcard-cap"
-                type="number"
-                min={0}
-                max={250}
-                value={state.flashcardsReviewedCount}
-                onChange={(e) =>
-                  onUpdateFlashcardCount(
-                    Math.min(250, Math.max(0, Number(e.target.value) || 0))
-                  )
-                }
-                className="w-14 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-center text-sky-300 font-bold"
-              />
-              <span className="text-slate-400">/ {state.flashcardsDailyCap} cap</span>
-            </div>
-
-            <button
-              id="btn-early-clearance-toggle"
-              type="button"
-              disabled={metrics.isZeroWorkLeft}
-              onClick={onToggleEarlyClearance}
-              className={`px-3 py-1.5 rounded-xl border text-xs font-mono font-semibold flex items-center gap-1.5 transition cursor-pointer ${
-                state.earlyClearanceEnabled
-                  ? 'bg-emerald-950/80 border-emerald-500 text-emerald-200'
-                  : 'bg-slate-950 hover:bg-slate-800 border-slate-700 text-slate-300'
-              }`}
-              title="Bank unused flashcard blocks as free time when review deck is cleared early"
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>
-                Early Clearance:{' '}
-                {state.earlyClearanceEnabled ? 'ON (Unused Banked)' : 'OFF'}
-              </span>
-            </button>
-          </div>
-        </div>
-
-        {/* Late-Night Flashcard Blocker Notice when 1 block remains */}
-        {isFinalBlockOfNight && (
-          <div
-            id="late-night-flashcard-blocker-alert"
-            className="p-3 rounded-xl bg-amber-950/60 border border-amber-700/70 text-amber-200 text-xs flex items-center gap-2.5"
-          >
-            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-            <span>
-              <strong>Final Block Flashcard Blocker Active (20m work left):</strong>{' '}
-              Flashcards cannot be scheduled or run as the final block of the night. Complete Synthesis, Reading, or Active Project Item #1 instead.
-            </span>
-          </div>
-        )}
-
-        {/* 7 Baseline Blocks Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-          {state.baselineBlocks.map((block) => {
-            const isFlashcard = isFlashcardBlock(block);
-            const blockedAsFinalBlock =
-              isFlashcard &&
-              isFinalBlockOfNight &&
-              !block.completed &&
-              !block.bankedViaEarlyClearance;
-
-            return (
+              {/* Dock Card 2: 10-15m Task-Switch Buffer */}
               <div
-                key={block.id}
-                className={`p-3.5 rounded-xl border transition flex items-start justify-between gap-3 ${
-                  block.completed
-                    ? 'bg-slate-950/50 border-emerald-800/50 text-slate-300'
-                    : block.bankedViaEarlyClearance
-                    ? 'bg-emerald-950/20 border-emerald-700/50 text-emerald-200'
-                    : blockedAsFinalBlock
-                    ? 'bg-slate-950/40 border-amber-800/60 text-slate-500'
-                    : 'bg-slate-950/90 border-slate-800 text-slate-100'
+                className={`p-3.5 rounded-2xl border flex flex-col justify-between space-y-2.5 transition ${
+                  timer.mode === 'BREAK_L2'
+                    ? 'bg-indigo-500/15 border-indigo-400/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]'
+                    : 'bg-black/25 border-white/[0.07]'
                 }`}
               >
-                <div className="flex items-start gap-2.5 min-w-0">
-                  <button
-                    id={`btn-toggle-baseline-${block.id}`}
-                    type="button"
-                    disabled={metrics.isZeroWorkLeft || blockedAsFinalBlock}
-                    onClick={() => onToggleBaselineBlock(block.id)}
-                    className="mt-0.5 text-slate-400 hover:text-emerald-400 disabled:opacity-40 cursor-pointer shrink-0"
-                    title={
-                      blockedAsFinalBlock
-                        ? 'Blocked: Flashcards cannot be the final block of the night'
-                        : 'Toggle block completion'
-                    }
-                  >
-                    {block.completed || block.bankedViaEarlyClearance ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                    ) : (
-                      <Circle className="w-5 h-5" />
-                    )}
-                  </button>
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <span
-                        className={`text-xs sm:text-sm font-semibold ${
-                          block.completed ? 'line-through text-slate-400' : ''
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono uppercase text-indigo-300 font-bold">
+                      TASK-SWITCH
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      10–15m
+                    </span>
+                  </div>
+                  <div className="text-xs font-bold text-white mt-0.5">
+                    Buffer Protocol
+                  </div>
+                  <div className="flex flex-wrap gap-1 mt-1.5">
+                    {(
+                      [
+                        { id: 'ESPRESSO' as Level2BreakProtocol, label: 'Espresso', icon: Coffee },
+                        { id: 'BASS_GUITAR_5M' as Level2BreakProtocol, label: '5m Bass', icon: Music },
+                        { id: 'TENS_NORMATEC_15M' as Level2BreakProtocol, label: 'Normatec', icon: Activity },
+                      ] as const
+                    ).map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic([10]);
+                          onSelectL2Protocol(p.id);
+                        }}
+                        className={`px-1.5 py-0.5 rounded-md font-mono text-[10px] border cursor-pointer ${
+                          timer.mode === 'BREAK_L2' && timer.l2Protocol === p.id
+                            ? 'bg-indigo-400 text-slate-950 border-indigo-300 font-bold'
+                            : 'bg-white/[0.04] border-white/[0.08] text-slate-300'
                         }`}
                       >
-                        {block.title}
-                      </span>
-                      {block.bankedViaEarlyClearance && (
-                        <span className="px-1.5 py-0.5 rounded bg-emerald-900/60 border border-emerald-600/50 text-emerald-200 font-mono text-[10px]">
-                          BANKED FREE TIME
-                        </span>
-                      )}
-                      {blockedAsFinalBlock && (
-                        <span className="px-1.5 py-0.5 rounded bg-amber-950 border border-amber-700 text-amber-300 font-mono text-[10px]">
-                          BLOCKED AS FINAL BLOCK
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      <strong className="text-slate-300 font-mono">5m Startup Step:</strong>{' '}
-                      {block.startupStep}
-                    </p>
+                        {p.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
 
-                {!block.completed && !block.bankedViaEarlyClearance && (
-                  <button
-                    id={`btn-launch-baseline-${block.id}`}
-                    type="button"
-                    disabled={metrics.isZeroWorkLeft || blockedAsFinalBlock}
-                    onClick={() =>
-                      onLaunchBlockInTimer(
-                        block.id,
-                        block.title,
-                        isFlashcard
-                          ? 'FLASHCARDS'
-                          : block.category === 'SYNTHESIS'
-                          ? 'SYNTHESIS'
-                          : 'READING',
-                        block.startupStep
-                      )
-                    }
-                    className="px-2.5 py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-200 font-mono text-xs flex items-center gap-1 shrink-0 disabled:opacity-40 cursor-pointer"
-                  >
-                    <Play className="w-3 h-3" />
-                    <span>20m</span>
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* Section 3: Active Project Lock (Closed List — Max 3 Items, Item #1 Locked) */}
-      <section
-        aria-labelledby="active-project-lock-heading"
-        className="p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2
-                id="active-project-lock-heading"
-                className="text-sm font-bold uppercase tracking-wider text-slate-200 font-mono"
-              >
-                Active Project Lock (Closed List — Max 3 Items)
-              </h2>
-              <span className="px-2 py-0.5 rounded-md bg-sky-950 border border-sky-700/60 text-sky-300 font-mono text-xs">
-                100% Locked to Item #1
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              All discretionary project blocks route exclusively to Item #1 until marked complete (2-page paper = 8 blocks; slide deck = 4 blocks).
-            </p>
-          </div>
-          <span className="text-xs font-mono text-slate-400">
-            Active Slots: {state.projectQueue.length} / 3
-          </span>
-        </div>
-
-        {/* 3 Active Queue Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {state.projectQueue.map((item) => {
-            const isPrimaryUnlocked = item.slot === 1;
-            const progressPct = Math.min(
-              100,
-              Math.round((item.completedBlocks / item.totalBlocks) * 100)
-            );
-
-            return (
-              <div
-                key={item.id}
-                id={`project-slot-${item.slot}`}
-                className={`p-4 rounded-xl border flex flex-col justify-between space-y-3 transition ${
-                  isPrimaryUnlocked
-                    ? 'bg-slate-950 border-sky-500/80 shadow-sm'
-                    : 'bg-slate-950/40 border-slate-800/80 opacity-75'
-                }`}
-              >
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span
-                      className={`px-2 py-0.5 rounded font-mono text-[11px] font-bold flex items-center gap-1 ${
-                        isPrimaryUnlocked
-                          ? 'bg-sky-500/20 border border-sky-500/50 text-sky-300'
-                          : 'bg-slate-900 border border-slate-700 text-slate-400'
+                <div className="flex items-center gap-1.5">
+                  {([10, 15] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic([10]);
+                        onSelectL2Minutes(m);
+                      }}
+                      className={`flex-1 py-1.5 rounded-xl font-mono text-xs font-bold border cursor-pointer ${
+                        timer.mode === 'BREAK_L2' && timer.l2DurationMinutes === m
+                          ? 'bg-indigo-400 text-slate-950 border-indigo-300'
+                          : 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.08] text-slate-200'
                       }`}
                     >
-                      {isPrimaryUnlocked ? (
-                        <>
-                          <Unlock className="w-3 h-3" />
-                          <span>ITEM #1 (ACTIVE TARGET)</span>
-                        </>
-                      ) : (
-                        <>
-                          <Lock className="w-3 h-3" />
-                          <span>ITEM #{item.slot} (LOCKED)</span>
-                        </>
-                      )}
-                    </span>
+                      {m}m
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-                    <span className="font-mono text-xs text-slate-300 font-bold">
-                      {item.completedBlocks} / {item.totalBlocks} blks
+              {/* Dock Card 3: 60-120m Split-Shift Reset */}
+              <div
+                className={`p-3.5 rounded-2xl border flex flex-col justify-between space-y-2.5 transition ${
+                  timer.mode === 'BREAK_L3'
+                    ? 'bg-emerald-500/15 border-emerald-400/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]'
+                    : 'bg-black/25 border-white/[0.07]'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono uppercase text-emerald-300 font-bold">
+                      SPLIT-SHIFT
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      60–120m
                     </span>
                   </div>
-
-                  <h3 className="text-sm font-bold text-slate-100">{item.title}</h3>
-
-                  {/* Progress Bar */}
-                  <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
-                    <div
-                      className={`h-full transition-all ${
-                        isPrimaryUnlocked ? 'bg-sky-500' : 'bg-slate-600'
-                      }`}
-                      style={{ width: `${progressPct}%` }}
-                    />
+                  <div className="text-xs font-bold text-white mt-0.5">
+                    Mid-Day Reset
                   </div>
-
-                  <p className="text-[11px] text-slate-400">
-                    <strong className="text-slate-300 font-mono">5m Startup Step:</strong>{' '}
-                    {item.startupStep}
+                  <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+                    Mandatory after 7 Surge blocks (meal / walk / off-desk).
                   </p>
                 </div>
 
-                {/* Actions — Enabled ONLY for Item #1 */}
-                {isPrimaryUnlocked ? (
-                  <div className="pt-2 border-t border-slate-800/80 flex flex-wrap items-center gap-1.5">
+                <div className="flex items-center gap-1">
+                  {([60, 90, 120] as const).map((m) => (
                     <button
-                      id="btn-launch-project-item1"
+                      key={m}
                       type="button"
-                      disabled={metrics.isZeroWorkLeft}
-                      onClick={() =>
-                        onLaunchBlockInTimer(
-                          item.id,
-                          item.title,
-                          'PROJECT',
-                          item.startupStep
-                        )
-                      }
-                      className="flex-1 px-2.5 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 disabled:opacity-40 text-slate-950 font-bold text-xs flex items-center justify-center gap-1 cursor-pointer"
+                      onClick={() => {
+                        triggerHaptic([10]);
+                        onSelectL3Minutes(m);
+                      }}
+                      className={`flex-1 py-1.5 rounded-xl font-mono text-[11px] font-bold border cursor-pointer ${
+                        timer.mode === 'BREAK_L3' && timer.l3DurationMinutes === m
+                          ? 'bg-emerald-400 text-slate-950 border-emerald-300'
+                          : 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.08] text-slate-200'
+                      }`}
                     >
-                      <Play className="w-3.5 h-3.5" />
-                      <span>Start 20m Block</span>
+                      {m}m
                     </button>
-
-                    <button
-                      id="btn-log-project-block-item1"
-                      type="button"
-                      disabled={metrics.isZeroWorkLeft}
-                      onClick={() => onIncrementProjectBlock(item.id)}
-                      className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 font-mono text-xs cursor-pointer"
-                      title="Log +1 completed 20m block on Item #1"
-                    >
-                      +1 Blk
-                    </button>
-
-                    <button
-                      id="btn-complete-project-item1"
-                      type="button"
-                      onClick={onCompleteProjectItem1}
-                      className="w-full mt-1 px-2.5 py-1.5 rounded-lg bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-700/60 text-emerald-200 font-mono text-xs flex items-center justify-center gap-1 cursor-pointer"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Mark Item #1 Complete &amp; Unlock #2</span>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="pt-2 border-t border-slate-800/60 text-[11px] font-mono text-slate-500 flex items-center gap-1.5">
-                    <Lock className="w-3.5 h-3.5 shrink-0" />
-                    <span>100% of project blocks locked to Item #1</span>
-                  </div>
-                )}
+                  ))}
+                </div>
               </div>
-            );
-          })}
+
+              {/* Dock Card 4: 4-7-8 Stress / Fatigue Reset Button */}
+              <div
+                className={`p-3.5 rounded-2xl border flex flex-col justify-between space-y-2.5 transition ${
+                  timer.mode === 'STRESS_RESET'
+                    ? 'bg-amber-500/20 border-amber-400/70 shadow-[inset_0_1px_0_0_rgba(255,251,235,0.15)]'
+                    : 'bg-amber-500/[0.07] border-amber-500/30'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono uppercase text-amber-300 font-bold flex items-center gap-1">
+                      <Wind className="w-3 h-3 text-amber-400" />
+                      <span>4-7-8 PACER</span>
+                    </span>
+                    <span className="text-[10px] font-mono text-amber-200/80">
+                      15–20m
+                    </span>
+                  </div>
+                  <div className="text-xs font-bold text-amber-50 mt-0.5">
+                    Stress / Fatigue Reset
+                  </div>
+                  <p className="text-[11px] text-amber-100/75 mt-0.5 leading-snug">
+                    Suspends heavy reading/writing + queues 5m Flashcards.
+                  </p>
+                </div>
+
+                <button
+                  id="btn-dock-stress-reset"
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic([20, 40, 20]);
+                    onTriggerStressReset('BREATHING_478', 15);
+                  }}
+                  className="w-full py-1.5 px-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-mono font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/20"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  <span>4-7-8 Stress Reset</span>
+                </button>
+              </div>
+            </div>
+          </section>
         </div>
-
-        {/* Add Project Form when Active Queue < 3 */}
-        {state.projectQueue.length < 3 && (
-          <form
-            onSubmit={handleAddProjectSubmit}
-            className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end"
-          >
-            <div className="sm:col-span-4">
-              <label className="block text-[11px] font-mono text-slate-400 mb-1">
-                Project Title (Slot #{state.projectQueue.length + 1})
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g., Hemodynamics Synthesis Deck"
-                value={newProjTitle}
-                onChange={(e) => setNewProjTitle(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100"
-              />
-            </div>
-            <div className="sm:col-span-3">
-              <label className="block text-[11px] font-mono text-slate-400 mb-1">
-                Block Quota Preset
-              </label>
-              <select
-                value={newProjPreset}
-                onChange={(e) => setNewProjPreset(e.target.value as ProjectPresetType)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 font-mono"
-              >
-                <option value="PAPER_8">2-Page Paper (8 Blocks)</option>
-                <option value="SLIDES_4">Slide Deck (4 Blocks)</option>
-                <option value="CUSTOM">Custom Block Count</option>
-              </select>
-            </div>
-            {newProjPreset === 'CUSTOM' && (
-              <div className="sm:col-span-2">
-                <label className="block text-[11px] font-mono text-slate-400 mb-1">
-                  Blocks
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={newProjCustomBlocks}
-                  onChange={(e) => setNewProjCustomBlocks(Number(e.target.value) || 4)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 font-mono"
-                />
-              </div>
-            )}
-            <div className="sm:col-span-3">
-              <label className="block text-[11px] font-mono text-slate-400 mb-1">
-                Roadmap Track
-              </label>
-              <select
-                value={newProjTrack}
-                onChange={(e) => setNewProjTrack(e.target.value as TrackId)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 font-mono"
-              >
-                <option value="science">Science / Clinical</option>
-                <option value="writing">Writing / Literature</option>
-                <option value="personal">Personal / Home</option>
-                <option value="coding">Coding / Hardware</option>
-                <option value="music">Music</option>
-              </select>
-            </div>
-            <div className="sm:col-span-2">
-              <button
-                type="submit"
-                className="w-full px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1 cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Slot</span>
-              </button>
-            </div>
-          </form>
-        )}
-      </section>
+      </div>
     </div>
   );
 };

@@ -4,12 +4,14 @@ import {
   Bell,
   Coffee,
   FastForward,
+  Flame,
   Music,
   Pause,
   Play,
   RotateCcw,
   ShieldAlert,
   Smartphone,
+  Wind,
   Zap,
 } from 'lucide-react';
 import {
@@ -23,9 +25,10 @@ import {
   ANDROID_CHANNEL_ID,
   NotificationLogEntry,
   SymmetryNotificationEvent,
-} from '../services/notifications';
+} from '../utils/notifications';
 import { DualRingTimerSvg } from './DualRingTimerSvg';
 import { BreathingVisualizer478 } from './BreathingVisualizer478';
+import { triggerHaptic } from '../utils/haptics';
 
 interface Tab2TimerTriageProps {
   state: SymmetryState;
@@ -95,54 +98,54 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
       : `Stress / Fatigue Reset (${timer.stressDurationMinutes}m)`;
 
   return (
-    <div className="space-y-6 animate-tab-enter">
+    <div className="space-y-5 animate-tab-enter">
       {/* Queued 5m Flashcard Block Banner (Triggered after Stress / Fatigue Reset completes) */}
       {timer.queuedRecoveryFlashcard5m && (
         <div
           id="queued-5m-flashcard-banner"
-          className="p-4 sm:p-5 rounded-2xl bg-emerald-950/70 border border-emerald-500/80 text-emerald-100 flex flex-wrap items-center justify-between gap-4"
+          className="p-4 sm:p-5 rounded-3xl backdrop-blur-xl bg-emerald-500/15 border border-emerald-400/50 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] text-emerald-100 flex flex-wrap items-center justify-between gap-4"
         >
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded bg-emerald-500 text-slate-950 font-mono text-xs font-bold uppercase">
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-400 text-slate-950 font-mono text-[10px] font-bold uppercase">
                 Post-Reset Queue Active
               </span>
-              <h2 className="text-sm sm:text-base font-bold">
+              <h2 className="text-sm sm:text-base font-bold text-white">
                 5m Flashcard Recovery Block Queued
               </h2>
             </div>
-            <p className="text-xs text-emerald-200/90">
+            <p className="text-xs text-emerald-100/85">
               Physical reset finished. Heavy reading/writing remains suspended while completing this 5-minute Flashcard ramp.
             </p>
           </div>
 
           <div className="flex items-center gap-2.5">
-            <div className="px-3.5 py-2 rounded-xl bg-slate-950 border border-emerald-600/60 font-mono tabular-nums text-lg font-bold text-emerald-300">
+            <div className="px-3.5 py-2 rounded-xl bg-black/50 border border-emerald-400/50 font-mono tabular-nums text-lg font-bold text-emerald-300">
               {formatMMSS(timer.recoveryFlashcardSecondsLeft)}
             </div>
             <button
-              id="btn-toggle-recovery-flashcard-5m"
+              id="btn-toggle-recovery-flashcard-timer"
               type="button"
               onClick={onToggleRecoveryFlashcardTimer}
-              className="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+              className="px-3.5 py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
             >
               {timer.recoveryFlashcardRunning ? (
                 <>
-                  <Pause className="w-3.5 h-3.5" />
+                  <Pause className="w-4 h-4 fill-current" />
                   <span>Pause 5m Cards</span>
                 </>
               ) : (
                 <>
-                  <Play className="w-3.5 h-3.5" />
+                  <Play className="w-4 h-4 fill-current" />
                   <span>Start 5m Cards</span>
                 </>
               )}
             </button>
             <button
-              id="btn-complete-recovery-flashcard-5m"
+              id="btn-complete-recovery-flashcard"
               type="button"
               onClick={onCompleteRecoveryFlashcard5m}
-              className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-emerald-700 text-emerald-200 font-mono text-xs cursor-pointer"
+              className="px-3.5 py-2 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] border border-emerald-400/40 text-emerald-100 font-semibold text-xs cursor-pointer"
             >
               Complete 5m Block
             </button>
@@ -150,546 +153,490 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
         </div>
       )}
 
-      {/* Main Grid: Left = Two-Stage 20m Dual-Ring Timer Console, Right = Break Triage & Stress Reset */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* Left Column: Primary Two-Stage Dual-Ring SVG Timer & Active Mode Console */}
+      {/* SPLIT-SCREEN 12-COLUMN BENTO HUD */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* LEFT COLUMN (5 COLS, STICKY): 280x280 DUAL-RING TIMER HUD */}
         <section
-          aria-labelledby="active-timer-console-heading"
-          className="lg:col-span-7 p-5 sm:p-6 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-col justify-between space-y-5"
+          aria-labelledby="timer-engine-heading"
+          className="lg:col-span-5 lg:sticky lg:top-24 rounded-3xl bento-surface p-5 sm:p-6 flex flex-col justify-between space-y-5"
         >
-          <div className="space-y-4">
-            {/* Mode Switch Pills */}
+          <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="inline-flex flex-wrap gap-1.5 rounded-xl bg-slate-950 p-1 border border-slate-800">
-                {(
-                  [
-                    { id: 'WORK_20M', label: '20m Work Block' },
-                    { id: 'BREAK_L1', label: 'L1 Break (3–5m)' },
-                    { id: 'BREAK_L2', label: 'L2 Buffer (10–15m)' },
-                    { id: 'BREAK_L3', label: 'L3 Mid-Day (60–120m)' },
-                    { id: 'STRESS_RESET', label: 'Stress Reset (15–20m)' },
-                  ] as { id: TimerRunMode; label: string }[]
-                ).map((m) => (
-                  <button
-                    key={m.id}
-                    id={`btn-timer-mode-${m.id.toLowerCase()}`}
-                    type="button"
-                    onClick={() => onSwitchTimerMode(m.id)}
-                    className={`px-2.5 py-1 rounded-lg font-mono text-xs transition cursor-pointer ${
-                      timer.mode === m.id
-                        ? m.id === 'STRESS_RESET'
-                          ? 'bg-amber-500 text-slate-950 font-bold'
-                          : 'bg-cyan-500 text-slate-950 font-bold'
-                        : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    {m.label}
-                  </button>
-                ))}
-              </div>
+              <span
+                id="timer-stage-badge"
+                className={`px-2.5 py-1 rounded-full font-mono text-[11px] font-bold uppercase tracking-wider border ${
+                  timer.mode === 'WORK_20M' && timer.workStage === 'IGNITION_5M'
+                    ? 'bg-amber-500/15 border-amber-400/50 text-amber-200'
+                    : timer.mode === 'WORK_20M' && timer.workStage === 'MOMENTUM_15M'
+                    ? 'bg-cyan-500/15 border-cyan-400/50 text-cyan-200'
+                    : timer.mode === 'STRESS_RESET'
+                    ? 'bg-amber-500/20 border-amber-400/60 text-amber-200'
+                    : 'bg-indigo-500/15 border-indigo-400/50 text-indigo-200'
+                }`}
+              >
+                {stageBadgeText}
+              </span>
 
-              <span className="font-mono tabular-nums text-xs text-slate-400">
-                Chained Blocks:{' '}
-                <strong className="text-cyan-300">
-                  [{timer.chainedBlocksCount} / 2] ({timer.chainedBlocksCount * 20}m)
-                </strong>
+              <span className="text-xs font-mono tabular-nums text-slate-400">
+                Chain: {timer.chainedBlocksCount} / 2
               </span>
             </div>
 
-            {/* Two-Stage Indicator Bar when in WORK_20M mode */}
-            {timer.mode === 'WORK_20M' && (
-              <div className="grid grid-cols-2 gap-2.5">
-                <div
-                  id="stage-indicator-ignition-5m"
-                  className={`p-3 rounded-xl border transition ${
-                    timer.workStage === 'IGNITION_5M'
-                      ? 'bg-amber-950/60 border-amber-500/80 text-amber-100'
-                      : 'bg-slate-950/50 border-slate-800 text-slate-400'
-                  }`}
-                >
-                  <div className="flex items-center justify-between font-mono tabular-nums text-xs">
-                    <span className="font-bold">STAGE 1: IGNITION_5M</span>
-                    <span>05:00</span>
-                  </div>
-                  <div className="text-[11px] mt-1">
-                    Inner Amber Arc — 5m Startup Step (Auto-rolls into Momentum)
-                  </div>
-                </div>
+            <div>
+              <h2
+                id="timer-engine-heading"
+                className="text-base sm:text-lg font-bold text-white tracking-tight"
+              >
+                {timer.activeTaskTitle}
+              </h2>
+              <p className="text-xs font-mono text-slate-400 mt-0.5">
+                {metrics.durationPrefix} • Two-Stage 20m Block (5m Startup → 15m Momentum)
+              </p>
+            </div>
 
-                <div
-                  id="stage-indicator-momentum-15m"
-                  className={`p-3 rounded-xl border transition ${
-                    timer.workStage === 'MOMENTUM_15M'
-                      ? 'bg-cyan-950/70 border-cyan-500/80 text-cyan-100'
-                      : 'bg-slate-950/50 border-slate-800 text-slate-400'
-                  }`}
-                >
-                  <div className="flex items-center justify-between font-mono tabular-nums text-xs">
-                    <span className="font-bold">STAGE 2: MOMENTUM_15M</span>
-                    <span>15:00</span>
-                  </div>
-                  <div className="text-[11px] mt-1">
-                    Outer Cyan/Indigo Arc — 15m Momentum Execution
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Central Dual-Ring SVG Timer & Task Prompt */}
-            <div className="p-5 sm:p-6 rounded-2xl bg-slate-950 border border-slate-800 text-center space-y-4">
-              <div className="flex items-center justify-center gap-2">
-                <span className="px-2.5 py-0.5 rounded-md bg-slate-900 border border-slate-800 font-mono text-xs text-cyan-300 uppercase">
-                  {stageBadgeText}
-                </span>
-              </div>
-
+            {/* Dual-Ring 280x280 Interactive SVG */}
+            <div className="py-1 flex items-center justify-center">
               <DualRingTimerSvg
                 timer={timer}
                 isEveningTheme={metrics.isZeroWorkLeft}
                 formattedTime={formatMMSS(timer.secondsLeft)}
                 stageBadgeText={stageBadgeText}
+                onToggleRun={() => {
+                  triggerHaptic([15]);
+                  onToggleTimerRun();
+                }}
               />
-
-              {timer.mode === 'WORK_20M' && (
-                <div className="max-w-lg mx-auto space-y-1.5 pt-1">
-                  <div className="text-xs sm:text-sm font-bold text-slate-200">
-                    Active Task: {timer.activeTaskTitle}
-                  </div>
-                  <div className="text-xs text-slate-400 bg-slate-900/90 border border-slate-800 rounded-xl px-3 py-2">
-                    <strong className="text-amber-300 font-mono">5m Startup Step:</strong>{' '}
-                    {timer.activeStartupPrompt}
-                  </div>
-                </div>
-              )}
-
-              {/* Toggleable 4-7-8 Breathing Visualizer when Stress / Fatigue Reset is active */}
-              {timer.mode === 'STRESS_RESET' && (
-                <div className="max-w-md mx-auto pt-1 text-left">
-                  <BreathingVisualizer478
-                    id="breathing-478-visual-pacer"
-                    isActiveContext={timer.mode === 'STRESS_RESET'}
-                    defaultExpanded={true}
-                    variant={metrics.isZeroWorkLeft ? 'evening' : 'slate'}
-                  />
-                </div>
-              )}
             </div>
-          </div>
 
-          {/* Primary Transport Controls */}
-          <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-slate-800">
-            <div className="flex flex-wrap items-center gap-2">
+            {/* Primary Timer Controls */}
+            <div className="grid grid-cols-3 gap-2">
               <button
                 id="btn-timer-start-pause"
                 type="button"
-                disabled={metrics.isZeroWorkLeft && timer.mode === 'WORK_20M'}
-                onClick={onToggleTimerRun}
-                className="px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-950 font-bold text-xs sm:text-sm flex items-center gap-2 cursor-pointer"
+                onClick={() => {
+                  triggerHaptic([15]);
+                  onToggleTimerRun();
+                }}
+                className={`py-3 px-4 rounded-2xl font-mono font-bold text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer ${
+                  timer.isRunning
+                    ? 'bg-amber-400 hover:bg-amber-300 text-slate-950'
+                    : 'bg-cyan-400 hover:bg-cyan-300 text-slate-950'
+                }`}
               >
                 {timer.isRunning ? (
                   <>
-                    <Pause className="w-4 h-4" />
-                    <span>Pause Timer</span>
+                    <Pause className="w-4 h-4 fill-current" />
+                    <span>Pause</span>
                   </>
                 ) : (
                   <>
-                    <Play className="w-4 h-4" />
-                    <span>
-                      {timer.mode === 'WORK_20M'
-                        ? timer.workStage === 'IGNITION_5M'
-                          ? 'Start 5m Startup Step'
-                          : 'Resume 15m Momentum'
-                        : 'Start Break / Reset Timer'}
-                    </span>
+                    <Play className="w-4 h-4 fill-current" />
+                    <span>Start</span>
                   </>
                 )}
               </button>
 
               <button
-                id="btn-timer-fast-forward-stage"
+                id="btn-timer-fast-forward"
                 type="button"
                 onClick={onFastForwardCurrentStage}
-                className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs flex items-center gap-1.5 cursor-pointer"
-                title="Advance current stage to 00:00 (Tests auto-roll from 5m Startup -> 15m Momentum -> Break Router)"
+                className="py-3 px-3 rounded-2xl bg-white/[0.05] hover:bg-white/[0.1] border border-cyan-500/40 text-cyan-200 font-mono font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                title="Complete current stage immediately to test auto-rollover or break routing"
               >
-                <FastForward className="w-3.5 h-3.5 text-cyan-400" />
-                <span>
-                  {timer.mode === 'WORK_20M'
-                    ? timer.workStage === 'IGNITION_5M'
-                      ? 'Auto-Roll 5m → 15m'
-                      : 'Complete 20m Block'
-                    : timer.mode === 'STRESS_RESET'
-                    ? 'Finish Reset → Queue 5m Cards'
-                    : 'Complete Break'}
-                </span>
+                <FastForward className="w-4 h-4" />
+                <span>Skip Stage</span>
+              </button>
+
+              <button
+                id="btn-timer-reset-stage"
+                type="button"
+                onClick={onResetCurrentStage}
+                className="py-3 px-3 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] text-slate-300 font-mono font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>Reset</span>
               </button>
             </div>
 
-            <button
-              id="btn-timer-reset-stage"
-              type="button"
-              onClick={onResetCurrentStage}
-              className="px-3 py-2.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 font-mono text-xs flex items-center gap-1.5 cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset</span>
-            </button>
+            {/* Active 5-Minute Startup Micro-Script */}
+            <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] space-y-1.5">
+              <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-widest text-amber-300 font-bold">
+                <span className="flex items-center gap-1">
+                  <Flame className="w-3.5 h-3.5 text-amber-400" />
+                  <span>5m Startup Micro-Script</span>
+                </span>
+                <span>{timer.activeTaskType}</span>
+              </div>
+              <p className="text-xs font-mono text-amber-100 leading-relaxed">
+                “{timer.activeStartupPrompt}”
+              </p>
+            </div>
+
+            {/* Quick Mode Switcher */}
+            <div className="pt-2 border-t border-white/[0.08] flex flex-wrap gap-1.5">
+              {(
+                [
+                  { id: 'WORK_20M', label: '20m Work (5m+15m)' },
+                  { id: 'BREAK_L1', label: `L1 Break (${timer.l1DurationMinutes}m)` },
+                  { id: 'BREAK_L2', label: `L2 Buffer (${timer.l2DurationMinutes}m)` },
+                  { id: 'BREAK_L3', label: `L3 Mid-Day (${timer.l3DurationMinutes}m)` },
+                  { id: 'STRESS_RESET', label: `Stress Reset (${timer.stressDurationMinutes}m)` },
+                ] as { id: TimerRunMode; label: string }[]
+              ).map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => onSwitchTimerMode(m.id)}
+                  className={`px-2.5 py-1 rounded-lg font-mono text-[11px] border cursor-pointer ${
+                    timer.mode === m.id
+                      ? 'bg-cyan-500/20 border-cyan-400 text-cyan-200 font-bold'
+                      : 'bg-white/[0.02] border-white/[0.08] text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
           </div>
         </section>
 
-        {/* Right Column: Auto-Routed Break Levels & Stress / Fatigue Reset Button */}
+        {/* RIGHT COLUMN (7 COLS): BENTO BREAK ROUTER + 4-7-8 BREATHING PACER + LOCK-SCREEN ALARMS */}
         <section
           aria-labelledby="break-triage-heading"
-          className="lg:col-span-5 space-y-4"
+          className="lg:col-span-7 space-y-4"
         >
-          {/* Break Router Card */}
-          <div className="p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-3.5">
-            <div>
-              <h2
-                id="break-triage-heading"
-                className="text-sm font-bold uppercase tracking-wider text-slate-200 font-mono"
+          {/* Bento Card 1: 4-7-8 Stress / Fatigue Reset & Breathing Visualizer */}
+          <div
+            id="stress-fatigue-reset-card"
+            className="p-5 rounded-3xl backdrop-blur-xl bg-amber-500/[0.07] border border-amber-500/35 shadow-[inset_0_1px_0_0_rgba(255,251,235,0.12)] space-y-4"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Wind className="w-4 h-4 text-amber-400 shrink-0" />
+                  <h2
+                    id="break-triage-heading"
+                    className="text-sm font-bold uppercase tracking-wider font-mono text-amber-200"
+                  >
+                    Stress / Fatigue Reset &amp; 4-7-8 Visual Pacer
+                  </h2>
+                </div>
+                <p className="text-xs text-amber-100/80">
+                  Suspends heavy reading/writing, runs a 15–20m physical reset timer (4-7-8 breathing visual pace, espresso, or compression boots), then queues a 5m Flashcard block.
+                </p>
+              </div>
+
+              <button
+                id="btn-trigger-stress-reset"
+                type="button"
+                onClick={() =>
+                  onTriggerStressReset(timer.stressProtocol, timer.stressDurationMinutes)
+                }
+                className="px-4 py-2.5 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-mono font-bold text-xs cursor-pointer shrink-0 shadow-lg shadow-amber-500/20"
               >
-                Break &amp; Triage Routing
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Max 2 chained 20m blocks [40m] before a mandatory 10–15m Level 2 break.
-              </p>
+                Start {timer.stressDurationMinutes}m Stress Reset
+              </button>
             </div>
 
-            {/* Level 1: Same-Task Micro-Reset (3-5m) */}
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs font-bold text-cyan-300">
-                  Level 1: Same-Task Micro-Reset (3–5m)
-                </span>
-                <div className="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-800">
-                  {([3, 5] as const).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => onSelectL1Minutes(m)}
-                      className={`px-2 py-0.5 rounded font-mono tabular-nums text-xs cursor-pointer ${
-                        timer.l1DurationMinutes === m && timer.mode === 'BREAK_L1'
-                          ? 'bg-cyan-500 text-slate-950 font-bold'
-                          : 'text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      {m}m
-                    </button>
-                  ))}
-                </div>
+            {/* Protocol & Duration Pills */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-amber-500/20">
+              <div className="flex flex-wrap gap-1.5">
+                {(
+                  [
+                    { id: 'BREATHING_478', label: '4-7-8 Breathing Visual Pace' },
+                    { id: 'ESPRESSO', label: 'Espresso Reset' },
+                    { id: 'COMPRESSION_BOOTS', label: 'Compression Boots' },
+                  ] as { id: StressResetProtocol; label: string }[]
+                ).map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => onTriggerStressReset(p.id, timer.stressDurationMinutes)}
+                    className={`px-2.5 py-1.5 rounded-xl font-mono text-xs border cursor-pointer ${
+                      timer.stressProtocol === p.id
+                        ? 'bg-amber-400/25 border-amber-300 text-amber-100 font-bold'
+                        : 'bg-black/30 border-amber-500/25 text-amber-200/80 hover:text-amber-100'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
               </div>
-              <p className="text-[11px] text-slate-400">
-                Permitted after 1st 20m block when staying on the same task. Locked once 2 blocks [40m] are chained.
-              </p>
+
+              <div className="flex items-center gap-1.5 font-mono text-xs">
+                {([15, 20] as const).map((mins) => (
+                  <button
+                    key={mins}
+                    type="button"
+                    onClick={() => onTriggerStressReset(timer.stressProtocol, mins)}
+                    className={`px-2.5 py-1 rounded-xl border cursor-pointer ${
+                      timer.stressDurationMinutes === mins
+                        ? 'bg-amber-400 text-slate-950 border-amber-300 font-bold'
+                        : 'bg-black/30 border-amber-500/30 text-amber-200'
+                    }`}
+                  >
+                    {mins}m
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Interactive 4-7-8 Breathing Visualizer */}
+            <BreathingVisualizer478
+              id="triage-breathing-478-visualizer"
+              isActiveContext={true}
+              defaultExpanded={true}
+              variant="slate"
+            />
+
+            {timer.mode === 'STRESS_RESET' && (
+              <div className="pt-2 border-t border-amber-500/25 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-mono text-amber-200">
+                  Active Reset: {formatMMSS(timer.secondsLeft)} remaining
+                </span>
+                <button
+                  id="btn-finish-stress-into-flashcards"
+                  type="button"
+                  onClick={onCompleteStressResetInto5mFlashcards}
+                  className="px-3 py-1.5 rounded-xl bg-amber-300 hover:bg-amber-200 text-slate-950 font-mono text-xs font-bold cursor-pointer"
+                >
+                  Finish Reset Now → Queue 5m Flashcards
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Bento Row 2: 3 Break Levels (Same-Task 3-5m, Task-Switch 10-15m, Mid-Day 60-120m) */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Level 1: Same-Task Break (3-5m Micro-Reset) */}
+            <div className="p-4 rounded-3xl bento-surface flex flex-col justify-between space-y-3">
+              <div className="space-y-1">
+                <span className="px-2 py-0.5 rounded-md bg-cyan-500/15 border border-cyan-400/40 font-mono text-[10px] text-cyan-200 font-bold">
+                  LEVEL 1 • SAME-TASK
+                </span>
+                <h3 className="text-sm font-bold text-white pt-1">
+                  3–5m Micro-Reset
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Max 2 chained 20m blocks [40m] before a mandatory 10–15m break.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                {([3, 5] as const).map((mins) => (
+                  <button
+                    key={mins}
+                    type="button"
+                    disabled={timer.chainedBlocksCount >= 2}
+                    onClick={() => onSelectL1Minutes(mins)}
+                    className={`flex-1 py-2 rounded-xl font-mono text-xs font-bold border cursor-pointer disabled:opacity-40 ${
+                      timer.mode === 'BREAK_L1' && timer.l1DurationMinutes === mins
+                        ? 'bg-cyan-400 text-slate-950 border-cyan-300'
+                        : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-slate-200'
+                    }`}
+                  >
+                    {mins}m Reset
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Level 2: Task-Switch Buffer (10-15m) */}
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs font-bold text-emerald-300">
-                  Level 2: Task-Switch Buffer (10–15m)
+            <div className="p-4 rounded-3xl bento-surface flex flex-col justify-between space-y-3">
+              <div className="space-y-1.5">
+                <span className="px-2 py-0.5 rounded-md bg-indigo-500/15 border border-indigo-400/40 font-mono text-[10px] text-indigo-200 font-bold">
+                  LEVEL 2 • TASK-SWITCH
                 </span>
-                <div className="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-800">
-                  {([10, 15] as const).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => onSelectL2Minutes(m)}
-                      className={`px-2 py-0.5 rounded font-mono tabular-nums text-xs cursor-pointer ${
-                        timer.l2DurationMinutes === m && timer.mode === 'BREAK_L2'
-                          ? 'bg-emerald-500 text-slate-950 font-bold'
-                          : 'text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      {m}m
-                    </button>
-                  ))}
+                <h3 className="text-sm font-bold text-white pt-0.5">
+                  10–15m Buffer
+                </h3>
+                <div className="space-y-1 pt-1">
+                  {(
+                    [
+                      { id: 'ESPRESSO' as Level2BreakProtocol, label: 'Espresso', icon: Coffee },
+                      {
+                        id: 'BASS_GUITAR_5M' as Level2BreakProtocol,
+                        label: '5m Cold Song (Bass/Guitar)',
+                        icon: Music,
+                      },
+                      {
+                        id: 'TENS_NORMATEC_15M' as Level2BreakProtocol,
+                        label: '15m TENS / Normatec',
+                        icon: Activity,
+                      },
+                    ] as const
+                  ).map((p) => {
+                    const Icon = p.icon;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => onSelectL2Protocol(p.id)}
+                        className={`w-full px-2.5 py-1 rounded-lg font-mono text-[11px] border flex items-center gap-1.5 cursor-pointer ${
+                          timer.l2Protocol === p.id
+                            ? 'bg-indigo-500/20 border-indigo-400 text-indigo-100 font-bold'
+                            : 'bg-white/[0.03] border-white/[0.07] text-slate-300'
+                        }`}
+                      >
+                        <Icon className="w-3 h-3 shrink-0" />
+                        <span className="truncate">{p.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-1.5">
-                {(
-                  [
-                    {
-                      id: 'ESPRESSO',
-                      label: 'Espresso Protocol (Step away from desk)',
-                      icon: Coffee,
-                    },
-                    {
-                      id: 'BASS_GUITAR_5M',
-                      label: '5m Cold Song on Bass / Guitar',
-                      icon: Music,
-                    },
-                    {
-                      id: 'TENS_NORMATEC_15M',
-                      label: '15m TENS / Normatec Compression',
-                      icon: Activity,
-                    },
-                  ] as {
-                    id: Level2BreakProtocol;
-                    label: string;
-                    icon: React.FC<{ className?: string }>;
-                  }[]
-                ).map((p) => {
-                  const Icon = p.icon;
-                  const active = timer.l2Protocol === p.id;
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => onSelectL2Protocol(p.id)}
-                      className={`px-2.5 py-1.5 rounded-lg border text-left text-xs flex items-center gap-2 transition cursor-pointer ${
-                        active
-                          ? 'bg-emerald-950/60 border-emerald-600/70 text-emerald-200 font-semibold'
-                          : 'bg-slate-900/70 hover:bg-slate-900 border-slate-800 text-slate-300'
-                      }`}
-                    >
-                      <Icon className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <span>{p.label}</span>
-                    </button>
-                  );
-                })}
+              <div className="flex items-center gap-1.5">
+                {([10, 15] as const).map((mins) => (
+                  <button
+                    key={mins}
+                    type="button"
+                    onClick={() => onSelectL2Minutes(mins)}
+                    className={`flex-1 py-2 rounded-xl font-mono text-xs font-bold border cursor-pointer ${
+                      timer.mode === 'BREAK_L2' && timer.l2DurationMinutes === mins
+                        ? 'bg-indigo-400 text-slate-950 border-indigo-300'
+                        : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-slate-200'
+                    }`}
+                  >
+                    {mins}m
+                  </button>
+                ))}
               </div>
             </div>
 
             {/* Level 3: Mid-Day Reset (60-120m) */}
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs font-bold text-amber-300">
-                  Level 3: Mid-Day Reset (60–120m)
+            <div className="p-4 rounded-3xl bento-surface flex flex-col justify-between space-y-3">
+              <div className="space-y-1">
+                <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-400/40 font-mono text-[10px] text-emerald-200 font-bold">
+                  LEVEL 3 • SPLIT-SHIFT
                 </span>
-                <div className="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-800">
-                  {([60, 90, 120] as const).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => onSelectL3Minutes(m)}
-                      className={`px-2 py-0.5 rounded font-mono tabular-nums text-xs cursor-pointer ${
-                        timer.l3DurationMinutes === m && timer.mode === 'BREAK_L3'
-                          ? 'bg-amber-500 text-slate-950 font-bold'
-                          : 'text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      {m}m
-                    </button>
-                  ))}
-                </div>
+                <h3 className="text-sm font-bold text-white pt-1">
+                  60–120m Mid-Day Reset
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Mandatory after 7 completed blocks in Surge Mode (14–15 blocks).
+                </p>
               </div>
-              <p className="text-[11px] text-slate-400">
-                Mandatory after 7 completed blocks in Surge Mode (14–15 block shift).
-              </p>
+
+              <div className="flex items-center gap-1.5">
+                {([60, 90, 120] as const).map((mins) => (
+                  <button
+                    key={mins}
+                    type="button"
+                    onClick={() => onSelectL3Minutes(mins)}
+                    className={`flex-1 py-2 rounded-xl font-mono text-xs font-bold border cursor-pointer ${
+                      timer.mode === 'BREAK_L3' && timer.l3DurationMinutes === mins
+                        ? 'bg-emerald-400 text-slate-950 border-emerald-300'
+                        : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-slate-200'
+                    }`}
+                  >
+                    {mins}m
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
-          {/* Stress / Fatigue Reset Card (Rule 6) */}
-          <div
-            id="stress-fatigue-reset-card"
-            className="p-4 sm:p-5 rounded-2xl bg-amber-950/30 border border-amber-700/60 space-y-3.5"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <h3 className="text-sm font-bold uppercase tracking-wider text-amber-300 font-mono flex items-center gap-1.5">
-                  <ShieldAlert className="w-4 h-4 text-amber-400" />
-                  <span>Stress / Fatigue Reset Button</span>
+          {/* Bento Row 3: Lock-Screen Notification & Capacitor Channel Console */}
+          <div className="p-5 rounded-3xl bento-surface space-y-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Smartphone className="w-4 h-4 text-cyan-400" />
+                <h3 className="text-xs font-bold uppercase tracking-wider font-mono text-slate-200">
+                  Lock-Screen Alarms &amp; Capacitor Channel ({ANDROID_CHANNEL_ID})
                 </h3>
-                <p className="text-xs text-slate-300 mt-1">
-                  Suspends heavy reading/writing, runs a 15–20m physical reset timer (4-7-8 breathing visual pace, espresso, or compression boots), then queues a 5m Flashcard block.
-                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span
+                  className={`px-2 py-0.5 rounded-md font-mono text-[10px] border ${
+                    swOfflineReady
+                      ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-200'
+                      : 'bg-white/[0.04] border-white/[0.08] text-slate-400'
+                  }`}
+                >
+                  {swOfflineReady ? 'SW Ready' : 'Web Audio + SW'}
+                </span>
+                <button
+                  id="btn-request-notification-permissions"
+                  type="button"
+                  onClick={onRequestNotificationPermissions}
+                  className="px-2.5 py-1 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-cyan-500/40 text-cyan-200 font-mono text-[11px] flex items-center gap-1 cursor-pointer"
+                >
+                  <Bell className="w-3 h-3" />
+                  <span>{notificationsGranted ? 'Channel Active' : 'Enable Alerts'}</span>
+                </button>
               </div>
             </div>
 
-            {/* Modality Selector */}
-            <div className="grid grid-cols-3 gap-1.5">
-              {(
-                [
-                  { id: 'BREATHING_478', label: '4-7-8 Breathing' },
-                  { id: 'ESPRESSO', label: 'Espresso' },
-                  { id: 'COMPRESSION_BOOTS', label: 'Compression Boots' },
-                ] as { id: StressResetProtocol; label: string }[]
-              ).map((sp) => (
-                <button
-                  key={sp.id}
-                  type="button"
-                  onClick={() => onTriggerStressReset(sp.id, timer.stressDurationMinutes)}
-                  className={`px-2 py-1.5 rounded-lg border font-mono text-[11px] transition cursor-pointer ${
-                    timer.stressProtocol === sp.id && timer.mode === 'STRESS_RESET'
-                      ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold'
-                      : 'bg-slate-950 hover:bg-slate-900 border-slate-800 text-slate-300'
-                  }`}
-                >
-                  {sp.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <button
-                id="btn-trigger-stress-reset"
+                id="btn-test-notif-rollover"
                 type="button"
-                onClick={() => onTriggerStressReset(timer.stressProtocol, 15)}
-                className="flex-1 px-3.5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                onClick={() =>
+                  onManualTriggerNotification(
+                    'ROLLOVER_5M_TO_15M',
+                    '5m Startup Complete — Rolling into 15m Momentum',
+                    `Auto-rolling into 15m Momentum (MOMENTUM_15M) for "${timer.activeTaskTitle}".`
+                  )
+                }
+                className="p-2.5 rounded-xl bg-black/30 hover:bg-white/[0.05] border border-white/[0.08] text-left font-mono text-[11px] text-cyan-200 cursor-pointer flex items-center justify-between"
               >
-                <Zap className="w-4 h-4" />
-                <span>Trigger 15–20m Stress / Fatigue Reset</span>
+                <span>1. 5m → 15m Rollover</span>
+                <Zap className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
               </button>
 
               <button
-                id="btn-complete-stress-queue-flashcard"
+                id="btn-test-notif-checkin"
                 type="button"
-                onClick={onCompleteStressResetInto5mFlashcards}
-                className="px-3 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-amber-600/60 text-amber-200 font-mono text-xs cursor-pointer"
-                title="Complete physical reset and immediately queue 5m Flashcard block"
+                onClick={() =>
+                  onManualTriggerNotification(
+                    'CHECKIN_20M_CHIME',
+                    '20m Check-In: Keep going, switch, or rest?',
+                    '20m Check-In reached. Keep going, switch, or rest?'
+                  )
+                }
+                className="p-2.5 rounded-xl bg-black/30 hover:bg-white/[0.05] border border-white/[0.08] text-left font-mono text-[11px] text-amber-200 cursor-pointer flex items-center justify-between"
               >
-                Queue 5m Flashcards
+                <span>2. 20m Check-In Chime</span>
+                <Bell className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              </button>
+
+              <button
+                id="btn-test-notif-60m-break"
+                type="button"
+                onClick={() =>
+                  onManualTriggerNotification(
+                    'MANDATORY_60M_BREAK',
+                    '60m Limit Reached: Take a 5–10m physical break',
+                    '60m continuous window complete. Enforcing mandatory 5–10m physical break.'
+                  )
+                }
+                className="p-2.5 rounded-xl bg-black/30 hover:bg-white/[0.05] border border-white/[0.08] text-left font-mono text-[11px] text-emerald-200 cursor-pointer flex items-center justify-between"
+              >
+                <span>3. 60m Break Alert</span>
+                <ShieldAlert className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
               </button>
             </div>
+
+            {notificationLog.length > 0 && (
+              <div className="max-h-24 overflow-y-auto space-y-1 pt-1">
+                {notificationLog.slice(0, 3).map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="px-2.5 py-1.5 rounded-lg bg-black/40 border border-white/[0.06] font-mono text-[11px] flex items-center justify-between gap-2"
+                  >
+                    <span className="text-slate-200 truncate">{entry.title}</span>
+                    <span className="text-[10px] text-cyan-300 shrink-0">
+                      {entry.deliveryTarget}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
       </div>
-
-      {/* Android Lock-Screen Local Notifications & Offline PWA Panel */}
-      <section
-        id="android-lockscreen-notifications-panel"
-        aria-labelledby="lockscreen-notifications-heading"
-        className="p-4 sm:p-5 rounded-2xl bg-slate-900/90 border border-slate-800 space-y-4"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <Smartphone className="w-4 h-4 text-cyan-400" />
-              <h2
-                id="lockscreen-notifications-heading"
-                className="text-sm font-bold uppercase tracking-wider font-mono text-slate-200"
-              >
-                Android Lock-Screen Notifications &amp; Offline PWA Engine
-              </h2>
-              <span className="px-2 py-0.5 rounded bg-cyan-950 border border-cyan-700/60 text-cyan-300 font-mono text-[10px]">
-                Channel: {ANDROID_CHANNEL_ID} (IMPORTANCE_HIGH / VISIBILITY_PUBLIC)
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Fires Capacitor LocalNotifications (<code className="text-cyan-300">allowWhileIdle: true</code>) and Service Worker lock-screen alerts on 5m Startup Step rollover, 20m Check-In chimes, and 60m Mandatory Break alerts.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              id="pwa-sw-status-badge"
-              className="px-2.5 py-1 rounded-lg bg-emerald-950/70 border border-emerald-700/60 text-emerald-300 font-mono text-xs"
-            >
-              SW Offline Cache: {swOfflineReady ? 'READY' : 'ACTIVE'}
-            </span>
-            <button
-              id="btn-request-notification-perm"
-              type="button"
-              onClick={onRequestNotificationPermissions}
-              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-mono text-xs flex items-center gap-1.5 cursor-pointer"
-            >
-              <Bell className="w-3.5 h-3.5 text-cyan-400" />
-              <span>
-                {notificationsGranted
-                  ? 'Lock-Screen Alerts: GRANTED'
-                  : 'Enable Lock-Screen Alerts'}
-              </span>
-            </button>
-          </div>
-        </div>
-
-        {/* 3 Lock-Screen Alert Triggers */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-          <button
-            id="btn-test-notif-5m-rollover"
-            type="button"
-            onClick={() =>
-              onManualTriggerNotification(
-                'ROLLOVER_5M_TO_15M',
-                '5m Startup Step Complete → 15m Momentum',
-                `Auto-rolling into 15m Momentum (MOMENTUM_15M) for "${timer.activeTaskTitle}".`
-              )
-            }
-            className="p-3 rounded-xl bg-slate-950 hover:bg-slate-800/80 border border-cyan-700/50 text-left transition cursor-pointer"
-          >
-            <div className="font-mono text-xs font-bold text-cyan-300">
-              1. 5m Startup Step Rollover
-            </div>
-            <div className="text-[11px] text-slate-400 mt-0.5">
-              Fires at 00:00 of IGNITION_5M when auto-rolling into MOMENTUM_15M
-            </div>
-          </button>
-
-          <button
-            id="btn-test-notif-20m-checkin"
-            type="button"
-            onClick={() =>
-              onManualTriggerNotification(
-                'CHECKIN_20M_CHIME',
-                '20m Check-In Chime',
-                'Keep going, switch, or rest? (Immediate Sticky swap unlocked).'
-              )
-            }
-            className="p-3 rounded-xl bg-slate-950 hover:bg-slate-800/80 border border-emerald-700/50 text-left transition cursor-pointer"
-          >
-            <div className="font-mono text-xs font-bold text-emerald-300">
-              2. 20m Check-In Chime
-            </div>
-            <div className="text-[11px] text-slate-400 mt-0.5">
-              Fires at 20m &amp; 40m milestones in Recharge &amp; Flow Extension
-            </div>
-          </button>
-
-          <button
-            id="btn-test-notif-60m-break"
-            type="button"
-            onClick={() =>
-              onManualTriggerNotification(
-                'MANDATORY_60M_BREAK',
-                '60m Mandatory Physical Break Alert',
-                '60 minutes elapsed. Step away from monitor for mandatory 5–10m physical break.'
-              )
-            }
-            className="p-3 rounded-xl bg-slate-950 hover:bg-slate-800/80 border border-amber-700/50 text-left transition cursor-pointer"
-          >
-            <div className="font-mono text-xs font-bold text-amber-300">
-              3. 60m Mandatory Break Alert
-            </div>
-            <div className="text-[11px] text-slate-400 mt-0.5">
-              Fires at 60m continuous Flow Extension / Evening Recharge limit
-            </div>
-          </button>
-        </div>
-
-        {/* Dispatched Lock-Screen Notification Feed */}
-        {notificationLog.length > 0 && (
-          <div
-            id="lockscreen-notification-log-list"
-            className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2"
-          >
-            <div className="text-[11px] font-mono uppercase text-slate-400">
-              Recent Dispatched Lock-Screen Alerts ({notificationLog.length})
-            </div>
-            <div className="space-y-1.5 max-h-36 overflow-y-auto">
-              {notificationLog.slice(0, 5).map((entry) => (
-                <div
-                  key={entry.id}
-                  className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs"
-                >
-                  <div>
-                    <span className="font-mono font-bold text-cyan-300 mr-2">
-                      [{entry.eventType}]
-                    </span>
-                    <strong className="text-slate-100">{entry.title}:</strong>{' '}
-                    <span className="text-slate-300">{entry.body}</span>
-                  </div>
-                  <span className="font-mono text-[10px] text-slate-400">
-                    Channel: {entry.channelId}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </section>
     </div>
   );
 };

@@ -1,12 +1,19 @@
 import React from 'react';
 import {
+  BookOpen,
+  Cpu,
   FastForward,
+  Film,
+  Flame,
+  Gamepad2,
+  Headphones,
   Lock,
   Moon,
   Music,
   Pause,
   Play,
   RefreshCw,
+  Sparkles,
   Tv,
   Unlock,
 } from 'lucide-react';
@@ -18,6 +25,7 @@ import {
 } from '../types/symmetry';
 import { computeShiftMetrics } from '../state/defaultState';
 import { BreathingVisualizer478 } from './BreathingVisualizer478';
+import { triggerHaptic } from '../utils/haptics';
 
 interface Tab3RechargeProps {
   state: SymmetryState;
@@ -40,6 +48,42 @@ interface Tab3RechargeProps {
   onResolveCheckInPrompt: (decision: 'KEEP_GOING' | 'SWITCH' | 'REST') => void;
   onSwapStickyItemFromBacklog: (key: StickyKey) => void;
 }
+
+/**
+ * Helper to render visual [X / 3] progress dots for Sticky items (Categories 2, 3A/3B/3C, 5)
+ */
+const StickyDotsCounter: React.FC<{
+  starts: number;
+  unlockedViaCheckIn: boolean;
+}> = ({ starts, unlockedViaCheckIn }) => {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1" aria-label={`${starts} of 3 starts`}>
+        {[0, 1, 2].map((idx) => {
+          const filled = idx < starts;
+          return (
+            <span
+              key={idx}
+              className={`w-2.5 h-2.5 rounded-full transition-all ${
+                filled
+                  ? 'bg-amber-400 shadow-[0_0_8px_#f59e0b]'
+                  : 'bg-amber-950/80 border border-amber-500/40'
+              }`}
+            />
+          );
+        })}
+      </div>
+      <span className="font-mono text-[11px] font-bold tabular-nums text-amber-200">
+        [{starts} / 3]
+      </span>
+      {(starts >= 3 || unlockedViaCheckIn) && (
+        <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/50 font-mono text-[9px] uppercase text-emerald-200 font-bold">
+          Swap Ready
+        </span>
+      )}
+    </div>
+  );
+};
 
 export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
   state,
@@ -79,742 +123,170 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
-  const activeStickyKey: StickyKey | null =
-    recharge.activeCategory === 'CAT2_MAKER'
-      ? 'CAT2_MAKER'
-      : recharge.activeCategory === 'CAT5_GAMING'
-      ? 'CAT5_GAMING'
-      : recharge.activeCategory === 'CAT3_MEDIA'
-      ? recharge.activeMediaTab
-      : null;
+  const activeMediaSlot = recharge.stickySlots[recharge.activeMediaTab];
+  const makerSlot = recharge.stickySlots.CAT2_MAKER;
+  const gamingSlot = recharge.stickySlots.CAT5_GAMING;
 
   return (
-    <div className="space-y-6 text-amber-50 animate-tab-enter">
-      {/* Gate Banner if work blocks still remain */}
-      {!metrics.isZeroWorkLeft && (
-        <div
-          id="evening-lock-gate-notice"
-          className="p-4 sm:p-5 rounded-2xl bg-stone-900/95 border border-amber-700/50 flex flex-wrap items-center justify-between gap-4"
-        >
-          <div className="flex items-start gap-3">
-            <Lock className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-            <div>
-              <h2 className="text-sm font-bold uppercase tracking-wider font-mono tabular-nums text-amber-300">
-                End-of-Shift Bridge ({metrics.remainingWorkFormatted} remaining)
-              </h2>
-              <p className="text-xs text-stone-300 mt-0.5">
-                Evening Recharge Menu automatically unlocks at <code className="text-amber-300">0m work left</code>. You can preview the menu below or click to simulate <code className="text-amber-300">0m work left</code> now.
-              </p>
-            </div>
+    <div className="relative space-y-6 text-amber-50 animate-tab-enter pb-8">
+      {/* Top Radial Campfire Atmospheric Halo */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -top-10 inset-x-0 h-56 rounded-full blur-3xl opacity-60 -z-10"
+        style={{
+          background:
+            'radial-gradient(ellipse 75% 100% at 50% 0%, rgba(245, 158, 11, 0.28), rgba(234, 88, 12, 0.12) 55%, transparent 85%)',
+        }}
+      />
+
+      {/* Sanctuary Header Banner with Instrument Serif Typography */}
+      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-amber-500/20 pb-4">
+        <div>
+          <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-widest text-amber-300/90">
+            <Moon className="w-3.5 h-3.5 text-amber-400" />
+            <span>LOW-BLUE-LIGHT SANCTUARY • ZERO GAMIFICATION</span>
           </div>
-          <button
-            id="btn-unlock-evening-menu-now"
-            type="button"
-            onClick={onUnlockZeroWorkLeft}
-            className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer shrink-0"
-          >
-            <Unlock className="w-4 h-4" />
-            <span>Set [0m work left] &amp; Lock Shift</span>
-          </button>
+          <h2 className="font-serif text-3xl sm:text-4xl text-amber-50 tracking-normal mt-1">
+            Evening Recharge Menu &amp; Stillness Sanctuary
+          </h2>
         </div>
-      )}
 
-      {/* Top Row: Flow Extension Gate (Rule 7) + Option 0 Rest/Stillness Timer (Rule 8) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* Flow Extension Gate & Count-Up Timer */}
-        <section
-          aria-labelledby="flow-extension-heading"
-          className="lg:col-span-7 p-5 rounded-2xl bg-stone-900/90 border border-amber-900/45 space-y-4"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2
-                id="flow-extension-heading"
-                className="text-sm font-bold uppercase tracking-wider font-mono text-amber-300"
-              >
-                Flow Extension Gate &amp; Open Count-Up Timer
-              </h2>
-              <p className="text-xs text-stone-300 mt-0.5">
-                Auto-deducts 1–2 project blocks from tomorrow’s target for every 2–3 extension blocks logged.
-              </p>
+        {/* Gate Pill or Shift Lock Status */}
+        {!metrics.isZeroWorkLeft ? (
+          <div
+            id="evening-lock-gate-notice"
+            className="flex flex-wrap items-center gap-3 px-4 py-2.5 rounded-2xl bento-surface-evening"
+          >
+            <div className="text-xs font-mono text-amber-200/90">
+              <span className="font-bold text-amber-300">{metrics.remainingWorkFormatted}</span> remaining on shift
             </div>
-            <span
-              className={`px-2.5 py-1 rounded-lg font-mono text-xs font-bold border ${
-                canUseFlowExtension
-                  ? 'bg-emerald-950/70 border-emerald-600/60 text-emerald-300'
-                  : 'bg-stone-950 border-stone-700 text-stone-400'
-              }`}
+            <button
+              id="btn-unlock-evening-menu-now"
+              type="button"
+              onClick={() => {
+                triggerHaptic([20]);
+                onUnlockZeroWorkLeft();
+              }}
+              className="px-3.5 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-stone-950 font-mono font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/20"
             >
-              {canUseFlowExtension ? 'GATE ELIGIBLE' : 'GATE LOCKED'}
-            </span>
+              <Unlock className="w-3.5 h-3.5" />
+              <span>Set [0m work left] &amp; Lock Shift</span>
+            </button>
           </div>
-
-          {/* 3 Gate Conditions Checklist */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
-            <div
-              className={`p-3 rounded-xl border ${
-                tomorrowHasZeroEarlyEvents
-                  ? 'bg-stone-950/80 border-emerald-700/50 text-emerald-200'
-                  : 'bg-stone-950/80 border-red-800/60 text-red-300'
-              }`}
-            >
-              <div className="font-mono font-bold flex items-center justify-between">
-                <span>1. Tomorrow Morning</span>
-                <button
-                  id="btn-toggle-tomorrow-anchor"
-                  type="button"
-                  onClick={onToggleTomorrowEarlyAnchor}
-                  className="underline text-[10px] text-amber-300 cursor-pointer"
-                >
-                  Toggle
-                </button>
-              </div>
-              <div className="mt-1 text-[11px]">
-                {tomorrowHasZeroEarlyEvents
-                  ? 'Zero Early Events / Labs'
-                  : 'Early Event Logged (Blocked)'}
-              </div>
-            </div>
-
-            <div
-              className={`p-3 rounded-xl border ${
-                activeTaskNotFlashcards
-                  ? 'bg-stone-950/80 border-emerald-700/50 text-emerald-200'
-                  : 'bg-stone-950/80 border-red-800/60 text-red-300'
-              }`}
-            >
-              <div className="font-mono font-bold">2. Active Task Type</div>
-              <div className="mt-1 text-[11px]">
-                {activeTaskNotFlashcards
-                  ? `${state.timer.activeTaskType} (Not Flashcards)`
-                  : 'Flashcards Active (Blocked)'}
-              </div>
-            </div>
-
-            <div
-              className={`p-3 rounded-xl border ${
-                weeklyCapUnder2
-                  ? 'bg-stone-950/80 border-emerald-700/50 text-emerald-200'
-                  : 'bg-stone-950/80 border-red-800/60 text-red-300'
-              }`}
-            >
-              <div className="font-mono font-bold flex items-center justify-between">
-                <span>3. Weekly Cap (&lt; 2)</span>
-                <div className="inline-flex gap-1">
-                  {[0, 1, 2].map((n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      onClick={() => onSetWeeklyExtensionsUsed(n)}
-                      className={`px-1 rounded text-[10px] font-mono tabular-nums cursor-pointer ${
-                        recharge.weeklyExtensionsUsed === n
-                          ? 'bg-amber-500 text-stone-950 font-bold'
-                          : 'bg-stone-800 text-stone-300'
-                      }`}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="mt-1 text-[11px] font-mono tabular-nums">
-                Used: {recharge.weeklyExtensionsUsed} / 2 this week
-              </div>
-            </div>
+        ) : (
+          <div className="px-4 py-2 rounded-2xl bg-amber-500/15 border border-amber-400/50 font-mono text-xs text-amber-200 flex items-center gap-2">
+            <Lock className="w-3.5 h-3.5 text-amber-400" />
+            <span>End-of-Shift Lock Active • [0m work left]</span>
           </div>
+        )}
+      </div>
 
-          {/* Open Count-Up Timer or Launch Button */}
-          {!recharge.flowExtensionActive ? (
-            <div className="flex items-center justify-between gap-3 pt-2">
-              <button
-                id="btn-flow-extension"
-                type="button"
-                disabled={!canUseFlowExtension}
-                onClick={onOpenFlowExtensionPrompt}
-                className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:bg-stone-800 disabled:text-stone-500 text-stone-950 font-bold text-xs sm:text-sm flex items-center gap-2 transition cursor-pointer disabled:cursor-not-allowed"
-              >
-                <Play className="w-4 h-4" />
-                <span>Start Flow Extension (Open Count-Up Timer)</span>
-              </button>
-
-              {tomorrowDay && tomorrowDay.deductedBlocksFromExtension > 0 && (
-                <span className="font-mono tabular-nums text-xs text-amber-300">
-                  Tomorrow Quota Deduction: -{tomorrowDay.deductedBlocksFromExtension} proj blks
-                </span>
-              )}
-            </div>
-          ) : (
-            <div
-              id="flow-extension-active-console"
-              className="p-4 rounded-xl bg-stone-950 border border-amber-600/60 space-y-3"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <div className="text-xs font-mono uppercase text-amber-300 font-bold">
-                    Open Count-Up Flow Extension Timer (20m Chimes / 60m Break)
-                  </div>
-                  <div className="text-[11px] text-stone-400 font-mono tabular-nums">
-                    Extension Blocks Logged Today:{' '}
-                    <strong className="text-amber-200">
-                      {recharge.flowExtensionBlocksLoggedToday} blocks
-                    </strong>{' '}
-                    (Tomorrow Target Deduction:{' '}
-                    <strong className="text-emerald-300">
-                      -{tomorrowDay?.deductedBlocksFromExtension || 0} blocks
-                    </strong>
-                    )
-                  </div>
-                </div>
-                <div
-                  id="flow-extension-countup-readout"
-                  className="text-2xl sm:text-3xl font-mono tabular-nums font-bold text-amber-200"
-                >
-                  {formatMMSS(recharge.flowExtensionElapsedSeconds)}
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  id="btn-toggle-flow-countup"
-                  type="button"
-                  onClick={onToggleFlowExtensionTimer}
-                  className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
-                >
-                  {recharge.flowExtensionRunning ? (
-                    <>
-                      <Pause className="w-3.5 h-3.5" />
-                      <span>Pause Count-Up</span>
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-3.5 h-3.5" />
-                      <span>Resume Count-Up</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  id="btn-log-flow-extension-20m"
-                  type="button"
-                  onClick={onLogFlowExtensionBlock20m}
-                  className="px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 border border-amber-700/50 text-amber-200 font-mono text-xs flex items-center gap-1.5 cursor-pointer"
-                  title="Advance +20m Chime & log 1 extension block (2-3 blocks auto-deducts 1-2 blocks from tomorrow)"
-                >
-                  <FastForward className="w-3.5 h-3.5 text-amber-400" />
-                  <span>+20m Chime (+1 Ext Block)</span>
-                </button>
-              </div>
-            </div>
-          )}
-        </section>
-
-        {/* Option 0: Rest / Stillness Timer (20m, 2-Window Cap -> 40m Fork Check) */}
-        <section
-          aria-labelledby="option-0-rest-heading"
-          className="lg:col-span-5 p-5 rounded-2xl bg-stone-900/90 border border-amber-900/45 flex flex-col justify-between space-y-4"
-        >
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2
-                id="option-0-rest-heading"
-                className="text-sm font-bold uppercase tracking-wider font-mono text-amber-300"
-              >
-                Option 0: Rest / Stillness (20m)
-              </h2>
-              <span className="px-2 py-0.5 rounded bg-stone-950 border border-amber-800/50 font-mono tabular-nums text-xs text-amber-200">
-                Windows: [{recharge.option0ConsecutiveWindows} / 2] (Max 40m)
+      {/* =====================================================================
+          WIDE, SERENE GLASSMORPHIC BANNER: OPTION 0 (20M STILLNESS)
+          WITH EMBEDDED, ANIMATED 4-7-8 BREATHING AURA RING
+         ===================================================================== */}
+      <section
+        id="option-0-stillness-card"
+        aria-labelledby="option-0-heading"
+        className="rounded-3xl bento-hero-border-evening p-6 sm:p-7 space-y-5"
+      >
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+          {/* Left 7 Columns: Option 0 Stillness Controls & Consecutive Window Pacing */}
+          <div className="lg:col-span-7 space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="px-3 py-1 rounded-full bg-amber-400/20 border border-amber-300/50 font-mono text-[10px] font-bold uppercase tracking-widest text-amber-200">
+                OPTION 0 • REST / STILLNESS
+              </span>
+              <span className="px-2.5 py-1 rounded-full bg-black/40 border border-amber-500/30 font-mono text-[11px] text-amber-200/90">
+                Consecutive Windows: [{recharge.option0ConsecutiveWindows} / 2] (40m Cap)
               </span>
             </div>
 
-            <p className="text-xs text-stone-300">
-              20m silent timer with <strong>zero startup step</strong> and <strong>no scrolling</strong>. Capped at 2 consecutive windows (40m), then prompts a Fork Check: <em>&ldquo;Go to Sleep&rdquo;</em> vs. <em>&ldquo;Start One 5m Activity&rdquo;</em>.
-            </p>
-
-            <div className="p-4 rounded-xl bg-stone-950 border border-stone-800 flex items-center justify-between">
-              <div>
-                <div className="text-[11px] font-mono uppercase text-stone-400">
-                  Silent Stillness Countdown
-                </div>
-                <div
-                  id="option0-timer-digits"
-                  className="text-3xl font-mono tabular-nums font-bold text-amber-200 mt-0.5"
-                >
-                  {formatMMSS(recharge.option0SecondsLeft)}
-                </div>
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <button
-                  id="btn-option0-start-pause"
-                  type="button"
-                  disabled={recharge.option0ConsecutiveWindows >= 2}
-                  onClick={onToggleOption0Timer}
-                  className="px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-stone-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
-                >
-                  {recharge.option0Running ? (
-                    <>
-                      <Pause className="w-3.5 h-3.5" />
-                      <span>Pause 20m</span>
-                    </>
-                  ) : (
-                    <>
-                      <Moon className="w-3.5 h-3.5" />
-                      <span>Start 20m Rest</span>
-                    </>
-                  )}
-                </button>
-                <button
-                  id="btn-option0-complete-window"
-                  type="button"
-                  onClick={onCompleteOption0Window}
-                  className="px-3 py-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 border border-stone-700 text-stone-300 font-mono tabular-nums text-[11px] cursor-pointer"
-                >
-                  Complete 20m Window ({recharge.option0ConsecutiveWindows + 1}/2)
-                </button>
-              </div>
+            <div>
+              <h3
+                id="option-0-heading"
+                className="font-serif text-2xl sm:text-3xl text-amber-50"
+              >
+                20-Minute Silent Stillness Window
+              </h3>
+              <p className="text-xs sm:text-sm text-amber-100/80 mt-1 leading-relaxed">
+                Zero startup step and zero scrolling. Eyes closed, recliner, or compression boots. Capped at 2 consecutive 20m windows (40m) before triggering a neutral Fork Check.
+              </p>
             </div>
 
-            {/* Optional Toggleable 4-7-8 Breathing Visualizer for Option 0 Rest */}
+            {/* Timer Readout & Action Buttons */}
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <div className="px-5 py-3 rounded-2xl bg-black/55 border border-amber-500/40 font-mono text-3xl sm:text-4xl font-extrabold tabular-nums text-amber-100 shadow-inner">
+                {formatMMSS(recharge.option0SecondsLeft)}
+              </div>
+
+              <button
+                id="btn-option0-start-pause"
+                type="button"
+                onClick={onToggleOption0Timer}
+                className="px-5 py-3.5 rounded-2xl bg-amber-400 hover:bg-amber-300 text-stone-950 font-mono font-bold text-xs sm:text-sm flex items-center gap-2 cursor-pointer shadow-lg shadow-amber-500/25"
+              >
+                {recharge.option0Running ? (
+                  <>
+                    <Pause className="w-4 h-4 fill-current" />
+                    <span>Pause Stillness</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4 fill-current" />
+                    <span>Start 20m Stillness</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                id="btn-option0-complete-window"
+                type="button"
+                onClick={onCompleteOption0Window}
+                className="px-4 py-3.5 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-amber-400/40 text-amber-100 font-mono font-semibold text-xs flex items-center gap-1.5 cursor-pointer"
+                title="Complete 20m window now (2 consecutive windows triggers the 40m Fork Check)"
+              >
+                <FastForward className="w-3.5 h-3.5" />
+                <span>Log +1 Window ({recharge.option0ConsecutiveWindows}/2)</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Right 5 Columns: Embedded Animated 4-7-8 Breathing Aura Ring */}
+          <div className="lg:col-span-5">
             <BreathingVisualizer478
               id="option0-breathing-478-visualizer"
               isActiveContext={true}
-              defaultExpanded={recharge.option0Running}
+              defaultExpanded={true}
               variant="evening"
               compact={true}
             />
           </div>
-
-          <div className="text-[11px] font-mono text-stone-400 border-t border-stone-800 pt-2.5 flex items-center justify-between">
-            <span>Zero Startup Step Required</span>
-            <span className="text-amber-300">Strict No-Scrolling Window</span>
-          </div>
-        </section>
-      </div>
-
-      {/* Section 2: 5 Evening Recharge Categories & Pacing Console (Rule 8) */}
-      <section
-        aria-labelledby="recharge-categories-heading"
-        className="p-5 rounded-2xl bg-stone-900/90 border border-amber-900/45 space-y-5"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2
-              id="recharge-categories-heading"
-              className="text-sm font-bold uppercase tracking-wider font-mono text-amber-300"
-            >
-              Evening Recharge Menu (5 Categories &amp; Sticky Swap Tracker)
-            </h2>
-            <p className="text-xs text-stone-300 mt-0.5">
-              Pacing: 5m Startup Step → 20m &amp; 40m Check-In (&ldquo;Keep going, switch, or rest?&rdquo;) → Mandatory 5–10m physical break at 60m.
-            </p>
-          </div>
-          <span className="font-mono tabular-nums text-xs text-amber-200 bg-stone-950 px-3 py-1 rounded-xl border border-amber-800/50">
-            Sticky Swap Rule: [X / 3] 5m Starts OR Immediate Swap at 20m Check-In
-          </span>
         </div>
 
-        {/* 5 Category Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-          {/* Category 1: Music [Fluid] */}
+        {/* 40m Fork Check Prompt Modal (Rule 8: "Go to Sleep" vs. "Start One 5m Activity") */}
+        {recharge.forkCheckModalOpen && (
           <div
-            id="recharge-card-cat1-music"
-            className={`p-4 rounded-xl border flex flex-col justify-between space-y-3 transition ${
-              recharge.activeCategory === 'CAT1_MUSIC'
-                ? 'bg-stone-950 border-amber-500 shadow-sm'
-                : 'bg-stone-950/70 border-stone-800'
-            }`}
+            id="option-0-fork-check-modal"
+            className="p-5 rounded-2xl bg-black/75 border-2 border-amber-400 space-y-3 shadow-2xl"
           >
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="px-2 py-0.5 rounded bg-amber-950/80 border border-amber-700/50 text-amber-300 font-mono text-[10px] font-bold">
-                  1. MUSIC [FLUID]
-                </span>
-                <Music className="w-4 h-4 text-amber-400" />
-              </div>
-              <h3 className="text-sm font-bold text-amber-50">
-                Bass / Guitar / Piano / Drums
-              </h3>
-              <p className="text-xs text-stone-400">
-                <strong className="text-amber-200 font-mono">5m Startup:</strong>{' '}
-                Play 1 familiar song cold — no DAW or drills
-              </p>
+            <div className="flex items-center justify-between">
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-stone-950 font-mono text-xs font-bold uppercase">
+                40m Cap Reached (2 / 2 Windows) • Fork Check
+              </span>
+              <span className="font-mono text-xs text-amber-200">
+                No third passive window
+              </span>
             </div>
-            <button
-              id="btn-select-cat1-music"
-              type="button"
-              onClick={() => onSelectCategory('CAT1_MUSIC')}
-              className="w-full px-3 py-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-200 font-mono text-xs font-bold cursor-pointer"
-            >
-              Launch 5m Cold Song Step
-            </button>
-          </div>
-
-          {/* Category 2: Maker / Hardware [Sticky] */}
-          <div
-            id="recharge-card-cat2-maker"
-            className={`p-4 rounded-xl border flex flex-col justify-between space-y-3 transition ${
-              recharge.activeCategory === 'CAT2_MAKER'
-                ? 'bg-stone-950 border-amber-500 shadow-sm'
-                : 'bg-stone-950/70 border-stone-800'
-            }`}
-          >
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="px-2 py-0.5 rounded bg-amber-950 border border-amber-700/60 text-amber-300 font-mono text-[10px] font-bold">
-                  2. MAKER / HARDWARE [STICKY]
-                </span>
-                <span className="font-mono tabular-nums text-xs font-bold text-amber-300">
-                  [{recharge.stickySlots.CAT2_MAKER.fiveMinStarts} / 3] Starts
-                </span>
-              </div>
-              <h3 className="text-sm font-bold text-amber-50">
-                {recharge.stickySlots.CAT2_MAKER.activeTitle}
-              </h3>
-              <p className="text-xs text-stone-400">
-                <strong className="text-amber-200 font-mono">5m Startup:</strong>{' '}
-                {recharge.stickySlots.CAT2_MAKER.startupStep}
-              </p>
-              <p className="text-[11px] text-stone-400">
-                Next in backlog:{' '}
-                <span className="text-stone-300">
-                  {recharge.stickySlots.CAT2_MAKER.backlogQueue[0]}
-                </span>
-              </p>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <button
-                id="btn-select-cat2-maker"
-                type="button"
-                onClick={() => onSelectCategory('CAT2_MAKER')}
-                className="flex-1 px-3 py-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-200 font-mono text-xs font-bold cursor-pointer"
-              >
-                5m K1C Step
-              </button>
-              <button
-                id="btn-swap-sticky-cat2"
-                type="button"
-                disabled={
-                  recharge.stickySlots.CAT2_MAKER.fiveMinStarts < 3 &&
-                  !recharge.stickySlots.CAT2_MAKER.unlockedViaCheckIn
-                }
-                onClick={() => onSwapStickyItemFromBacklog('CAT2_MAKER')}
-                className="px-2.5 py-2 rounded-lg bg-stone-900 hover:bg-stone-800 disabled:opacity-40 border border-stone-700 text-stone-200 font-mono text-xs flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed"
-                title="Promote next item from backlog (Requires 3/3 starts or 20m Check-In unlock)"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Swap</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Category 3: Media [Sticky Triple-Track] (3A Fiction, 3B Nonfiction, 3C Video) */}
-          <div
-            id="recharge-card-cat3-media"
-            className={`p-4 rounded-xl border flex flex-col justify-between space-y-3 transition md:col-span-2 lg:col-span-1 ${
-              recharge.activeCategory === 'CAT3_MEDIA'
-                ? 'bg-stone-950 border-amber-500 shadow-sm'
-                : 'bg-stone-950/70 border-stone-800'
-            }`}
-          >
-            <div className="space-y-2.5">
-              <div className="flex items-center justify-between">
-                <span className="px-2 py-0.5 rounded bg-amber-950 border border-amber-700/60 text-amber-300 font-mono text-[10px] font-bold">
-                  3. MEDIA [STICKY TRIPLE-TRACK]
-                </span>
-                <span className="font-mono tabular-nums text-xs font-bold text-amber-300">
-                  [{recharge.stickySlots[recharge.activeMediaTab].fiveMinStarts} / 3] Starts
-                </span>
-              </div>
-
-              {/* Parallel Sub-Tabs: 3A Fiction, 3B Nonfiction, 3C Video */}
-              <div className="grid grid-cols-3 gap-1 bg-stone-900 p-1 rounded-lg border border-stone-800">
-                {(
-                  [
-                    { id: '3A_FICTION', label: '3A Fiction' },
-                    { id: '3B_NONFICTION', label: '3B Nonfiction' },
-                    { id: '3C_VIDEO', label: '3C Video' },
-                  ] as { id: MediaSubTrackId; label: string }[]
-                ).map((sub) => (
-                  <button
-                    key={sub.id}
-                    id={`btn-media-subtab-${sub.id.toLowerCase()}`}
-                    type="button"
-                    onClick={() => onSelectMediaSubTab(sub.id)}
-                    className={`py-1 px-1.5 rounded font-mono text-[11px] transition cursor-pointer ${
-                      recharge.activeMediaTab === sub.id
-                        ? 'bg-amber-500 text-stone-950 font-bold'
-                        : 'text-stone-400 hover:text-stone-200'
-                    }`}
-                  >
-                    {sub.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="space-y-1">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="text-sm font-bold text-amber-50">
-                    {recharge.stickySlots[recharge.activeMediaTab].activeTitle}
-                  </h3>
-                  {recharge.activeMediaTab === '3A_FICTION' && (
-                    <div className="inline-flex rounded bg-stone-900 p-0.5 border border-stone-800 shrink-0">
-                      {(['1.75x', '2.00x', '2.25x'] as const).map((spd) => (
-                        <button
-                          key={spd}
-                          type="button"
-                          onClick={() => onSelectFictionSpeed(spd)}
-                          className={`px-1.5 py-0.5 rounded font-mono tabular-nums text-[10px] cursor-pointer ${
-                            recharge.fictionSpeed === spd
-                              ? 'bg-amber-500 text-stone-950 font-bold'
-                              : 'text-stone-400'
-                          }`}
-                        >
-                          {spd}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <p className="text-xs text-stone-400">
-                  <strong className="text-amber-200 font-mono">5m Startup:</strong>{' '}
-                  {recharge.stickySlots[recharge.activeMediaTab].startupStep}
-                </p>
-                <p className="text-[11px] text-stone-400">
-                  Queued Next:{' '}
-                  <span className="text-stone-300 font-semibold">
-                    {recharge.stickySlots[recharge.activeMediaTab].backlogQueue[0]}
-                  </span>
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              <button
-                id="btn-select-cat3-media"
-                type="button"
-                onClick={() => onSelectCategory('CAT3_MEDIA')}
-                className="flex-1 px-3 py-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-200 font-mono text-xs font-bold cursor-pointer"
-              >
-                Start 5m ({recharge.activeMediaTab.slice(0, 2)})
-              </button>
-              <button
-                id="btn-swap-sticky-cat3"
-                type="button"
-                disabled={
-                  recharge.stickySlots[recharge.activeMediaTab].fiveMinStarts < 3 &&
-                  !recharge.stickySlots[recharge.activeMediaTab].unlockedViaCheckIn
-                }
-                onClick={() => onSwapStickyItemFromBacklog(recharge.activeMediaTab)}
-                className="px-2.5 py-2 rounded-lg bg-stone-900 hover:bg-stone-800 disabled:opacity-40 border border-stone-700 text-stone-200 font-mono text-xs flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Swap</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Category 4: Comfort Show [Fluid] */}
-          <div
-            id="recharge-card-cat4-comfort"
-            className={`p-4 rounded-xl border flex flex-col justify-between space-y-3 transition ${
-              recharge.activeCategory === 'CAT4_COMFORT'
-                ? 'bg-stone-950 border-amber-500 shadow-sm'
-                : 'bg-stone-950/70 border-stone-800'
-            }`}
-          >
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="px-2 py-0.5 rounded bg-amber-950/80 border border-amber-700/50 text-amber-300 font-mono text-[10px] font-bold">
-                  4. COMFORT SHOW [FLUID]
-                </span>
-                <Tv className="w-4 h-4 text-amber-400" />
-              </div>
-              <h3 className="text-sm font-bold text-amber-50">
-                It&rsquo;s Always Sunny in Philadelphia
-              </h3>
-              <p className="text-xs text-stone-400">
-                <strong className="text-amber-200 font-mono">5m Startup:</strong>{' '}
-                First 5m of episode away from work monitor
-              </p>
-            </div>
-            <button
-              id="btn-select-cat4-comfort"
-              type="button"
-              onClick={() => onSelectCategory('CAT4_COMFORT')}
-              className="w-full px-3 py-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-200 font-mono text-xs font-bold cursor-pointer"
-            >
-              Launch 5m Episode Start
-            </button>
-          </div>
-
-          {/* Category 5: Gaming [Sticky] */}
-          <div
-            id="recharge-card-cat5-gaming"
-            className={`p-4 rounded-xl border flex flex-col justify-between space-y-3 transition ${
-              recharge.activeCategory === 'CAT5_GAMING'
-                ? 'bg-stone-950 border-amber-500 shadow-sm'
-                : 'bg-stone-950/70 border-stone-800'
-            }`}
-          >
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="px-2 py-0.5 rounded bg-amber-950 border border-amber-700/60 text-amber-300 font-mono text-[10px] font-bold">
-                  5. GAMING [STICKY]
-                </span>
-                <span className="font-mono tabular-nums text-xs font-bold text-amber-300">
-                  [{recharge.stickySlots.CAT5_GAMING.fiveMinStarts} / 3] Starts
-                </span>
-              </div>
-              <h3 className="text-sm font-bold text-amber-50">
-                {recharge.stickySlots.CAT5_GAMING.activeTitle}
-              </h3>
-              <p className="text-xs text-stone-400">
-                <strong className="text-amber-200 font-mono">5m Startup:</strong>{' '}
-                {recharge.stickySlots.CAT5_GAMING.startupStep}
-              </p>
-              <p className="text-[11px] text-stone-400">
-                Backlog:{' '}
-                <span className="text-stone-300">
-                  {recharge.stickySlots.CAT5_GAMING.backlogQueue.join(', ')}
-                </span>
-              </p>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <button
-                id="btn-select-cat5-gaming"
-                type="button"
-                onClick={() => onSelectCategory('CAT5_GAMING')}
-                className="flex-1 px-3 py-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-200 font-mono text-xs font-bold cursor-pointer"
-              >
-                5m Micro-Objective
-              </button>
-              <button
-                id="btn-swap-sticky-cat5"
-                type="button"
-                disabled={
-                  recharge.stickySlots.CAT5_GAMING.fiveMinStarts < 3 &&
-                  !recharge.stickySlots.CAT5_GAMING.unlockedViaCheckIn
-                }
-                onClick={() => onSwapStickyItemFromBacklog('CAT5_GAMING')}
-                className="px-2.5 py-2 rounded-lg bg-stone-900 hover:bg-stone-800 disabled:opacity-40 border border-stone-700 text-stone-200 font-mono text-xs flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Swap</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Active Recharge Pacing Console Card (5m -> 20m Check-In -> 40m Check-In -> 60m Break) */}
-          <div
-            id="recharge-pacing-console"
-            className="p-4 rounded-xl bg-stone-950 border border-amber-600/60 flex flex-col justify-between space-y-3"
-          >
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[11px] uppercase text-amber-300 font-bold">
-                  Active Pacing Console
-                </span>
-                <span className="font-mono text-xs text-stone-300">
-                  Stage: {recharge.pacingStage}
-                </span>
-              </div>
-
-              <div className="text-2xl font-mono tabular-nums font-bold text-amber-100">
-                {formatMMSS(recharge.categorySecondsLeft)}
-              </div>
-
-              <p className="text-[11px] text-stone-400">
-                {recharge.activeCategory === 'NONE'
-                  ? 'Select any of the 5 Recharge Categories to begin its 5m Startup Step.'
-                  : `Active: ${recharge.activeCategory} (${
-                      activeStickyKey
-                        ? `Sticky [${recharge.stickySlots[activeStickyKey].fiveMinStarts}/3]`
-                        : 'Fluid'
-                    })`}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                id="btn-start-recharge-5m-step"
-                type="button"
-                disabled={recharge.activeCategory === 'NONE'}
-                onClick={onStartCategory5mStep}
-                className="flex-1 px-3 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-stone-950 font-bold text-xs cursor-pointer"
-              >
-                {recharge.categoryRunning ? 'Pause Timer' : 'Start / Log 5m Step'}
-              </button>
-              <button
-                id="btn-advance-recharge-milestone"
-                type="button"
-                disabled={recharge.activeCategory === 'NONE'}
-                onClick={onAdvanceCategoryPacingMilestone}
-                className="px-2.5 py-2 rounded-lg bg-stone-800 hover:bg-stone-700 disabled:opacity-40 text-amber-200 font-mono text-xs cursor-pointer"
-                title="Advance to next pacing milestone (5m -> 20m Check-In -> 40m Check-In -> 60m Break)"
-              >
-                Next Milestone →
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* MODAL 1: Flow Extension Neutral Confirmation Prompt (Rule 7) */}
-      {recharge.flowExtensionPromptOpen && (
-        <div
-          id="modal-flow-extension-confirm"
-          className="fixed inset-0 z-50 bg-stone-950/85 backdrop-blur-sm flex items-center justify-center p-4"
-        >
-          <div className="max-w-md w-full p-6 rounded-2xl bg-stone-900 border border-amber-500/80 space-y-4 shadow-2xl">
-            <h3 className="text-base font-bold text-amber-200 font-mono uppercase">
-              Flow Extension Confirmation
-            </h3>
             <p className="text-sm text-amber-50 font-medium">
-              Confirm this is genuine creative flow and not deadline stress
+              40 minutes of stillness completed. Choose your next path:
             </p>
-            <p className="text-xs text-stone-400">
-              Starts an open count-up timer with 20m check-in chimes and a 60m micro-break. Every 2–3 extension blocks logged automatically deducts 1–2 project blocks from tomorrow&rsquo;s target.
-            </p>
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                id="btn-cancel-flow-confirm"
-                type="button"
-                onClick={onCancelFlowExtensionPrompt}
-                className="px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-semibold cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                id="btn-confirm-flow-extension"
-                type="button"
-                onClick={onConfirmFlowExtension}
-                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-xs font-bold cursor-pointer"
-              >
-                Confirm Genuine Creative Flow
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL 2: Option 0 Fork Check at 2 Consecutive Windows / 40m (Rule 8) */}
-      {recharge.forkCheckModalOpen && (
-        <div
-          id="modal-option0-fork-check"
-          className="fixed inset-0 z-50 bg-stone-950/85 backdrop-blur-sm flex items-center justify-center p-4"
-        >
-          <div className="max-w-md w-full p-6 rounded-2xl bg-stone-900 border border-amber-500/80 space-y-4 shadow-2xl">
-            <h3 className="text-base font-bold text-amber-200 font-mono uppercase">
-              40m Stillness Cap Reached — Fork Check
-            </h3>
-            <p className="text-sm text-amber-50">
-              2 consecutive 20m Rest / Stillness windows (40m) completed. Choose next action:
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
                 id="btn-fork-go-to-sleep"
                 type="button"
                 onClick={() => onResolveForkCheck('SLEEP')}
-                className="px-4 py-3 rounded-xl bg-stone-800 hover:bg-stone-700 border border-amber-700/60 text-amber-100 font-bold text-xs cursor-pointer"
+                className="py-3 px-4 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-amber-500/40 text-amber-100 font-mono font-bold text-xs cursor-pointer"
               >
                 Go to Sleep
               </button>
@@ -822,42 +294,126 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                 id="btn-fork-start-5m-activity"
                 type="button"
                 onClick={() => onResolveForkCheck('START_5M_ACTIVITY')}
-                className="px-4 py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs cursor-pointer"
+                className="py-3 px-4 rounded-xl bg-amber-400 hover:bg-amber-300 text-stone-950 font-mono font-bold text-xs cursor-pointer"
               >
                 Start One 5m Activity
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </section>
 
-      {/* MODAL 3: 20m / 40m Recharge Check-In Prompt ("Keep going, switch, or rest?") (Rule 8) */}
-      {recharge.checkInModalOpen && (
-        <div
-          id="modal-recharge-checkin"
-          className="fixed inset-0 z-50 bg-stone-950/85 backdrop-blur-sm flex items-center justify-center p-4"
-        >
-          <div className="max-w-md w-full p-6 rounded-2xl bg-stone-900 border border-amber-500/80 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-bold text-amber-200 font-mono uppercase">
-                {recharge.checkInMilestone}m Recharge Check-In
-              </h3>
-              <span className="px-2 py-0.5 rounded bg-emerald-950 border border-emerald-600/60 text-emerald-300 font-mono text-[10px]">
-                Immediate Sticky Swap Unlocked
+      {/* =====================================================================
+          EVENING PACING BAR (5m Startup -> 20m & 40m Check-In -> 60m Mandatory Break)
+         ===================================================================== */}
+      <section
+        id="recharge-pacing-console"
+        aria-label="Evening Category Pacing Console"
+        className="rounded-3xl bento-surface-evening p-5 space-y-4"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <span className="text-[10px] font-mono uppercase tracking-widest text-amber-300 font-bold flex items-center gap-1.5">
+              <Flame className="w-3.5 h-3.5 text-amber-400" />
+              <span>ACTIVE RECHARGE PACING ENGINE</span>
+            </span>
+            <h3 className="font-serif text-2xl text-amber-50 mt-0.5">
+              5m Startup Step → 20m &amp; 40m Check-In → 60m Physical Break
+            </h3>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="px-4 py-2 rounded-2xl bg-black/50 border border-amber-500/40 font-mono text-2xl font-extrabold tabular-nums text-amber-200">
+              {formatMMSS(recharge.categorySecondsLeft)}
+            </div>
+
+            <button
+              id="btn-start-category-5m"
+              type="button"
+              disabled={recharge.activeCategory === 'NONE'}
+              onClick={onStartCategory5mStep}
+              className="px-4 py-2.5 rounded-2xl bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-stone-950 font-mono font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/20"
+            >
+              {recharge.categoryRunning ? (
+                <>
+                  <Pause className="w-4 h-4 fill-current" />
+                  <span>Pause</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>
+                    {recharge.pacingStage === 'STARTUP_5M'
+                      ? 'Start 5m Step'
+                      : 'Resume Window'}
+                  </span>
+                </>
+              )}
+            </button>
+
+            <button
+              id="btn-advance-category-milestone"
+              type="button"
+              disabled={recharge.activeCategory === 'NONE'}
+              onClick={onAdvanceCategoryPacingMilestone}
+              className="px-3.5 py-2.5 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] disabled:opacity-40 border border-amber-400/40 text-amber-100 font-mono font-semibold text-xs flex items-center gap-1.5 cursor-pointer"
+              title="Advance to next milestone (5m → 20m Check-In → 40m Check-In → 60m Break)"
+            >
+              <FastForward className="w-3.5 h-3.5" />
+              <span>Next Milestone</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 4-Step Visual Milestone Track */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+          {(
+            [
+              { id: 'STARTUP_5M', label: '1. 5m Startup Step' },
+              { id: 'WINDOW_20M', label: '2. 20m Check-In' },
+              { id: 'WINDOW_40M', label: '3. 40m Check-In' },
+              { id: 'MANDATORY_BREAK_60M', label: '4. 60m Physical Break' },
+            ] as const
+          ).map((step) => {
+            const active = recharge.pacingStage === step.id;
+            return (
+              <div
+                key={step.id}
+                className={`p-2.5 rounded-xl border text-center transition ${
+                  active
+                    ? 'bg-amber-500/20 border-amber-400 text-amber-100 font-bold shadow-[inset_0_1px_0_0_rgba(255,251,235,0.2)]'
+                    : 'bg-black/30 border-amber-500/15 text-stone-400'
+                }`}
+              >
+                {step.label}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 20m / 40m Check-In Prompt Modal ("Keep going, switch, or rest?") */}
+        {recharge.checkInModalOpen && (
+          <div
+            id="recharge-checkin-modal"
+            className="p-4 rounded-2xl bg-black/75 border-2 border-amber-400 space-y-3"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-stone-950 font-mono text-xs font-bold uppercase">
+                {recharge.checkInMilestone}m Check-In Prompt
+              </span>
+              <span className="text-xs font-mono text-emerald-300">
+                ✓ Immediate Sticky Backlog Swap Unlocked
               </span>
             </div>
             <p className="text-sm font-semibold text-amber-50">
-              Keep going, switch, or rest?
+              “Keep going, switch, or rest?”
             </p>
-            <p className="text-xs text-stone-400">
-              Reaching a 20m Check-In also unlocks immediate backlog promotion for the active Sticky category if you wish to switch.
-            </p>
-            <div className="grid grid-cols-3 gap-2 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               <button
                 id="btn-checkin-keep-going"
                 type="button"
                 onClick={() => onResolveCheckInPrompt('KEEP_GOING')}
-                className="px-3 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs cursor-pointer"
+                className="py-2.5 px-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-stone-950 font-mono font-bold text-xs cursor-pointer"
               >
                 Keep Going
               </button>
@@ -865,22 +421,621 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                 id="btn-checkin-switch"
                 type="button"
                 onClick={() => onResolveCheckInPrompt('SWITCH')}
-                className="px-3 py-2.5 rounded-xl bg-stone-800 hover:bg-stone-700 border border-amber-700/60 text-amber-200 font-bold text-xs cursor-pointer"
+                className="py-2.5 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] border border-amber-400/50 text-amber-100 font-mono font-bold text-xs cursor-pointer"
               >
-                Switch / Swap
+                Switch Activity / Swap Sticky
               </button>
               <button
                 id="btn-checkin-rest"
                 type="button"
                 onClick={() => onResolveCheckInPrompt('REST')}
-                className="px-3 py-2.5 rounded-xl bg-stone-950 hover:bg-stone-800 border border-stone-700 text-stone-300 font-bold text-xs cursor-pointer"
+                className="py-2.5 px-3 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-amber-500/30 text-amber-200 font-mono font-bold text-xs cursor-pointer"
               >
                 Rest (Option 0)
               </button>
             </div>
           </div>
+        )}
+      </section>
+
+      {/* =====================================================================
+          5 RICH RECHARGE CATEGORY MEDIA CARDS WITH DISTINCT ACCENT SIGNATURES
+         ===================================================================== */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-5">
+        {/* CARD 1: MUSIC [FLUID] (4 Cols on Desktop) — Warm Rose-Amber Signature */}
+        <article
+          id="recharge-card-cat1-music"
+          onClick={() => onSelectCategory('CAT1_MUSIC')}
+          className={`lg:col-span-4 rounded-3xl p-5 border transition cursor-pointer flex flex-col justify-between space-y-4 ${
+            recharge.activeCategory === 'CAT1_MUSIC'
+              ? 'backdrop-blur-xl bg-gradient-to-br from-rose-500/20 via-amber-500/12 to-black/50 border-amber-300 shadow-[inset_0_1px_0_0_rgba(255,251,235,0.22),0_0_32px_-8px_rgba(244,63,94,0.3)]'
+              : 'bento-surface-evening hover:border-amber-400/45'
+          }`}
+        >
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-rose-500/20 border border-rose-400/40 font-mono text-[10px] font-bold uppercase text-rose-200 flex items-center gap-1">
+                <Music className="w-3 h-3 text-rose-300" />
+                <span>CAT 1 • FLUID</span>
+              </span>
+              <span className="font-mono text-[10px] text-amber-200/75">
+                Zero DAW / Zero Drills
+              </span>
+            </div>
+
+            <div>
+              <h3 className="font-serif text-2xl text-amber-50">
+                1. Acoustic &amp; Instrument Play
+              </h3>
+              <p className="text-xs text-amber-100/80 mt-0.5">
+                Bass / Guitar / Piano / Drums — fluid musical expression.
+              </p>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-black/45 border border-rose-400/25 font-mono text-xs text-rose-100">
+              5m Startup: “Play 1 familiar song cold — no DAW or drills”
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectCategory('CAT1_MUSIC');
+              onStartCategory5mStep();
+            }}
+            className="w-full py-2.5 px-3 rounded-xl bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Play className="w-3.5 h-3.5 fill-current" />
+            <span>Launch 5m Cold Song</span>
+          </button>
+        </article>
+
+        {/* CARD 2: MAKER / HARDWARE [STICKY] (4 Cols on Desktop) — Copper/Orange Signature */}
+        <article
+          id="recharge-card-cat2-maker"
+          onClick={() => onSelectCategory('CAT2_MAKER')}
+          className={`lg:col-span-4 rounded-3xl p-5 border transition cursor-pointer flex flex-col justify-between space-y-4 ${
+            recharge.activeCategory === 'CAT2_MAKER'
+              ? 'backdrop-blur-xl bg-gradient-to-br from-orange-500/25 via-amber-500/12 to-black/50 border-amber-300 shadow-[inset_0_1px_0_0_rgba(255,251,235,0.22),0_0_32px_-8px_rgba(249,115,22,0.3)]'
+              : 'bento-surface-evening hover:border-amber-400/45'
+          }`}
+        >
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-orange-500/20 border border-orange-400/40 font-mono text-[10px] font-bold uppercase text-orange-200 flex items-center gap-1">
+                <Cpu className="w-3 h-3 text-orange-300" />
+                <span>CAT 2 • STICKY</span>
+              </span>
+
+              <StickyDotsCounter
+                starts={makerSlot.fiveMinStarts}
+                unlockedViaCheckIn={makerSlot.unlockedViaCheckIn}
+              />
+            </div>
+
+            <div>
+              <h3 className="font-serif text-2xl text-amber-50">
+                2. {makerSlot.activeTitle}
+              </h3>
+              <p className="text-xs text-amber-100/80 mt-0.5">
+                Maker / Hardware bench — locked until 3 starts or 20m Check-In.
+              </p>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-black/45 border border-orange-400/25 font-mono text-xs text-orange-100">
+              5m Startup: “{makerSlot.startupStep}”
+            </div>
+
+            <div className="text-[11px] font-mono text-stone-400 flex items-center justify-between">
+              <span className="truncate">
+                Next Up: {makerSlot.backlogQueue[0] || 'None'}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectCategory('CAT2_MAKER');
+                onStartCategory5mStep();
+              }}
+              className="flex-1 py-2.5 px-3 rounded-xl bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Play className="w-3.5 h-3.5 fill-current" />
+              <span>5m K1C Step</span>
+            </button>
+
+            <button
+              id="btn-swap-sticky-CAT2_MAKER"
+              type="button"
+              disabled={
+                makerSlot.fiveMinStarts < 3 && !makerSlot.unlockedViaCheckIn
+              }
+              onClick={(e) => {
+                e.stopPropagation();
+                onSwapStickyItemFromBacklog('CAT2_MAKER');
+              }}
+              className="py-2.5 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.14] disabled:opacity-35 border border-amber-400/40 text-amber-100 font-mono text-xs flex items-center gap-1 cursor-pointer"
+              title="Unlock after [3 / 3] 5m starts or at any 20m Check-In"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Swap</span>
+            </button>
+          </div>
+        </article>
+
+        {/* CARD 4: COMFORT SHOW [FLUID] (4 Cols on Desktop) — Warm Terracotta Signature */}
+        <article
+          id="recharge-card-cat4-comfort"
+          onClick={() => onSelectCategory('CAT4_COMFORT')}
+          className={`lg:col-span-4 rounded-3xl p-5 border transition cursor-pointer flex flex-col justify-between space-y-4 ${
+            recharge.activeCategory === 'CAT4_COMFORT'
+              ? 'backdrop-blur-xl bg-gradient-to-br from-amber-500/25 via-red-500/12 to-black/50 border-amber-300 shadow-[inset_0_1px_0_0_rgba(255,251,235,0.22),0_0_32px_-8px_rgba(245,158,11,0.3)]'
+              : 'bento-surface-evening hover:border-amber-400/45'
+          }`}
+        >
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/40 font-mono text-[10px] font-bold uppercase text-amber-200 flex items-center gap-1">
+                <Tv className="w-3 h-3 text-amber-300" />
+                <span>CAT 4 • FLUID</span>
+              </span>
+              <span className="font-mono text-[10px] text-amber-200/75">
+                Off Work Monitor
+              </span>
+            </div>
+
+            <div>
+              <h3 className="font-serif text-2xl text-amber-50">
+                4. It&apos;s Always Sunny in Philadelphia
+              </h3>
+              <p className="text-xs text-amber-100/80 mt-0.5">
+                Low-friction comfort show recharge away from the desk setup.
+              </p>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-black/45 border border-amber-400/25 font-mono text-xs text-amber-100">
+              5m Startup: “First 5m of episode away from work monitor”
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectCategory('CAT4_COMFORT');
+              onStartCategory5mStep();
+            }}
+            className="w-full py-2.5 px-3 rounded-xl bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+          >
+            <Play className="w-3.5 h-3.5 fill-current" />
+            <span>Launch 5m Episode Start</span>
+          </button>
+        </article>
+
+        {/* CARD 3: TRIPLE-TRACK MEDIA [STICKY] (7 Cols on Desktop) — Rich Gold Signature + Segmented Pill Switcher */}
+        <article
+          id="recharge-card-cat3-media"
+          onClick={() => onSelectCategory('CAT3_MEDIA')}
+          className={`lg:col-span-7 rounded-3xl p-5 sm:p-6 border transition cursor-pointer flex flex-col justify-between space-y-4 ${
+            recharge.activeCategory === 'CAT3_MEDIA'
+              ? 'backdrop-blur-xl bg-gradient-to-br from-amber-400/22 via-yellow-600/12 to-black/55 border-amber-300 shadow-[inset_0_1px_0_0_rgba(255,251,235,0.22),0_0_36px_-8px_rgba(251,191,36,0.32)]'
+              : 'bento-surface-evening hover:border-amber-400/45'
+          }`}
+        >
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-400/20 border border-amber-300/50 font-mono text-[10px] font-bold uppercase text-amber-200 flex items-center gap-1.5">
+                <Headphones className="w-3 h-3 text-amber-300" />
+                <span>CAT 3 • TRIPLE-TRACK MEDIA [STICKY]</span>
+              </span>
+
+              <StickyDotsCounter
+                starts={activeMediaSlot.fiveMinStarts}
+                unlockedViaCheckIn={activeMediaSlot.unlockedViaCheckIn}
+              />
+            </div>
+
+            {/* Segmented Pill Switcher Inside Card 3 to Flip Instantly Between 3A, 3B, and 3C */}
+            <div
+              role="tablist"
+              aria-label="Triple-Track Media Switcher"
+              className="p-1 rounded-2xl bg-black/55 border border-amber-500/25 grid grid-cols-3 gap-1"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {(
+                [
+                  {
+                    id: '3A_FICTION' as MediaSubTrackId,
+                    short: '3A Fiction',
+                    sub: 'Soul Music',
+                    icon: BookOpen,
+                  },
+                  {
+                    id: '3B_NONFICTION' as MediaSubTrackId,
+                    short: '3B Nonfiction',
+                    sub: 'American Way',
+                    icon: Headphones,
+                  },
+                  {
+                    id: '3C_VIDEO' as MediaSubTrackId,
+                    short: '3C Video',
+                    sub: "Widow's Bay",
+                    icon: Film,
+                  },
+                ] as const
+              ).map((tab) => {
+                const Icon = tab.icon;
+                const active = recharge.activeMediaTab === tab.id;
+                const slot = recharge.stickySlots[tab.id];
+                return (
+                  <button
+                    key={tab.id}
+                    id={`media-subtab-${tab.id}`}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => onSelectMediaSubTab(tab.id)}
+                    className={`p-2 rounded-xl text-left transition cursor-pointer flex flex-col justify-between ${
+                      active
+                        ? 'bg-amber-400 text-stone-950 font-bold shadow-md'
+                        : 'hover:bg-white/[0.06] text-amber-100/80'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-1 w-full">
+                      <span className="font-mono text-[10px] uppercase flex items-center gap-1">
+                        <Icon className="w-3 h-3 shrink-0" />
+                        <span>{tab.short}</span>
+                      </span>
+                      <span
+                        className={`font-mono text-[10px] ${
+                          active ? 'text-stone-900 font-extrabold' : 'text-amber-300'
+                        }`}
+                      >
+                        [{slot.fiveMinStarts}/3]
+                      </span>
+                    </div>
+                    <span className="text-[11px] truncate mt-0.5 block">
+                      {slot.activeTitle}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Active Sub-Track Detail Box */}
+            <div className="p-4 rounded-2xl bg-black/45 border border-amber-400/25 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <span className="font-mono text-[10px] uppercase text-amber-300">
+                    {activeMediaSlot.label}
+                  </span>
+                  <h3 className="font-serif text-2xl sm:text-3xl text-amber-50">
+                    {activeMediaSlot.activeTitle}
+                  </h3>
+                </div>
+
+                {/* Speed Pills for 3A Fiction ("Soul Music" at 1.75x–2.25x) */}
+                {recharge.activeMediaTab === '3A_FICTION' && (
+                  <div
+                    className="flex items-center gap-1"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {(['1.75x', '2.00x', '2.25x'] as const).map((spd) => (
+                      <button
+                        key={spd}
+                        type="button"
+                        onClick={() => onSelectFictionSpeed(spd)}
+                        className={`px-2 py-1 rounded-lg font-mono text-[11px] border cursor-pointer ${
+                          recharge.fictionSpeed === spd
+                            ? 'bg-amber-400 text-stone-950 border-amber-300 font-bold'
+                            : 'bg-black/40 border-amber-500/30 text-amber-200'
+                        }`}
+                      >
+                        {spd}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <p className="font-mono text-xs text-amber-100/90">
+                5m Startup: “{activeMediaSlot.startupStep}”
+              </p>
+
+              <div className="text-[11px] font-mono text-stone-400 flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-amber-500/15">
+                <span>
+                  Queued Backlog: {activeMediaSlot.backlogQueue.join(' • ')}
+                </span>
+                <span className="text-amber-300">Credits Roadmap Input (50%)</span>
+              </div>
+            </div>
+          </div>
+
+          <div
+            className="flex items-center gap-2.5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                onSelectCategory('CAT3_MEDIA');
+                onStartCategory5mStep();
+              }}
+              className="flex-1 py-2.5 px-4 rounded-xl bg-amber-400 hover:bg-amber-300 text-stone-950 font-mono font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Play className="w-3.5 h-3.5 fill-current" />
+              <span>Start 5m ({activeMediaSlot.activeTitle})</span>
+            </button>
+
+            <button
+              id={`btn-swap-sticky-${recharge.activeMediaTab}`}
+              type="button"
+              disabled={
+                activeMediaSlot.fiveMinStarts < 3 &&
+                !activeMediaSlot.unlockedViaCheckIn
+              }
+              onClick={() => onSwapStickyItemFromBacklog(recharge.activeMediaTab)}
+              className="py-2.5 px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.14] disabled:opacity-35 border border-amber-400/40 text-amber-100 font-mono text-xs flex items-center gap-1.5 cursor-pointer"
+              title="Promote next item from backlog (requires [3 / 3] starts or 20m Check-In)"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Swap Track</span>
+            </button>
+          </div>
+        </article>
+
+        {/* CARD 5: GAMING [STICKY] (5 Cols on Desktop) — Warm Emerald-Bronze Signature */}
+        <article
+          id="recharge-card-cat5-gaming"
+          onClick={() => onSelectCategory('CAT5_GAMING')}
+          className={`lg:col-span-5 rounded-3xl p-5 sm:p-6 border transition cursor-pointer flex flex-col justify-between space-y-4 ${
+            recharge.activeCategory === 'CAT5_GAMING'
+              ? 'backdrop-blur-xl bg-gradient-to-br from-emerald-500/20 via-amber-500/14 to-black/55 border-amber-300 shadow-[inset_0_1px_0_0_rgba(255,251,235,0.22),0_0_36px_-8px_rgba(16,185,129,0.28)]'
+              : 'bento-surface-evening hover:border-amber-400/45'
+          }`}
+        >
+          <div className="space-y-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 font-mono text-[10px] font-bold uppercase text-emerald-200 flex items-center gap-1.5">
+                <Gamepad2 className="w-3.5 h-3.5 text-emerald-300" />
+                <span>CAT 5 • GAMING [STICKY]</span>
+              </span>
+
+              <StickyDotsCounter
+                starts={gamingSlot.fiveMinStarts}
+                unlockedViaCheckIn={gamingSlot.unlockedViaCheckIn}
+              />
+            </div>
+
+            <div>
+              <h3 className="font-serif text-2xl sm:text-3xl text-amber-50">
+                5. {gamingSlot.activeTitle}
+              </h3>
+              <p className="text-xs text-amber-100/80 mt-0.5">
+                Single-player narrative / tactical objective with 20m &amp; 40m pacing chimes.
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-black/45 border border-emerald-400/25 font-mono text-xs text-emerald-100">
+              5m Startup: “{gamingSlot.startupStep}”
+            </div>
+
+            <div className="p-3 rounded-2xl bg-black/35 border border-amber-500/15 space-y-1">
+              <div className="text-[10px] font-mono uppercase text-amber-300/80">
+                Sticky Backlog Queue (Unlocks at [3 / 3] or 20m Check-In)
+              </div>
+              <div className="flex flex-wrap gap-1.5 pt-0.5">
+                {gamingSlot.backlogQueue.map((item, idx) => (
+                  <span
+                    key={idx}
+                    className="px-2 py-0.5 rounded-md bg-white/[0.04] border border-amber-500/20 font-mono text-[11px] text-amber-100/85"
+                  >
+                    {idx + 1}. {item}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div
+            className="flex items-center gap-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                onSelectCategory('CAT5_GAMING');
+                onStartCategory5mStep();
+              }}
+              className="flex-1 py-2.5 px-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-stone-950 font-mono font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Play className="w-3.5 h-3.5 fill-current" />
+              <span>Launch 5m Objective</span>
+            </button>
+
+            <button
+              id="btn-swap-sticky-CAT5_GAMING"
+              type="button"
+              disabled={
+                gamingSlot.fiveMinStarts < 3 && !gamingSlot.unlockedViaCheckIn
+              }
+              onClick={() => onSwapStickyItemFromBacklog('CAT5_GAMING')}
+              className="py-2.5 px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.14] disabled:opacity-35 border border-amber-400/40 text-amber-100 font-mono text-xs flex items-center gap-1.5 cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Swap Game</span>
+            </button>
+          </div>
+        </article>
+      </div>
+
+      {/* =====================================================================
+          FLOW EXTENSION GATE & COUNT-UP CONSOLE (RULE 7)
+         ===================================================================== */}
+      <section
+        id="flow-extension-card"
+        aria-labelledby="flow-extension-heading"
+        className="rounded-3xl bento-surface-evening p-5 sm:p-6 space-y-4"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              <span className="text-[10px] font-mono uppercase tracking-widest text-amber-300 font-bold">
+                END-OF-SHIFT FLOW EXTENSION • RULE 7 CIRCUIT BREAKER
+              </span>
+            </div>
+            <h3
+              id="flow-extension-heading"
+              className="font-serif text-2xl text-amber-50"
+            >
+              Creative Flow Extension (Open Count-Up + Auto-Deduction)
+            </h3>
+            <p className="text-xs text-amber-100/75">
+              Enabled only if tomorrow has zero early morning events/labs, active task is not flashcards, and weekly extensions used &lt; 2. Automatically deducts 1–2 project blocks from tomorrow&apos;s target for every 2–3 extension blocks logged.
+            </p>
+          </div>
+
+          <button
+            id="btn-flow-extension"
+            type="button"
+            disabled={!canUseFlowExtension && !recharge.flowExtensionActive}
+            onClick={onOpenFlowExtensionPrompt}
+            className="px-4 py-2.5 rounded-2xl bg-amber-400 hover:bg-amber-300 disabled:opacity-35 text-stone-950 font-mono font-bold text-xs cursor-pointer shrink-0"
+          >
+            {recharge.flowExtensionActive
+              ? 'Flow Extension Active'
+              : canUseFlowExtension
+              ? 'Request Flow Extension'
+              : 'Flow Extension Locked'}
+          </button>
         </div>
-      )}
+
+        {/* 3 Eligibility Gate Pills */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs font-mono">
+          <div
+            className={`p-3 rounded-2xl border flex items-center justify-between ${
+              tomorrowHasZeroEarlyEvents
+                ? 'bg-emerald-500/10 border-emerald-400/40 text-emerald-200'
+                : 'bg-red-950/40 border-red-700/50 text-red-200'
+            }`}
+          >
+            <span>1. Tomorrow Early Event: {tomorrowHasZeroEarlyEvents ? 'None' : 'Active'}</span>
+            <button
+              type="button"
+              onClick={onToggleTomorrowEarlyAnchor}
+              className="px-2 py-0.5 rounded bg-black/40 border border-white/15 text-[10px] cursor-pointer"
+            >
+              Toggle
+            </button>
+          </div>
+
+          <div
+            className={`p-3 rounded-2xl border flex items-center justify-between ${
+              activeTaskNotFlashcards
+                ? 'bg-emerald-500/10 border-emerald-400/40 text-emerald-200'
+                : 'bg-red-950/40 border-red-700/50 text-red-200'
+            }`}
+          >
+            <span>2. Active Task: {state.timer.activeTaskType}</span>
+            <span>{activeTaskNotFlashcards ? 'PASS' : 'LOCKED'}</span>
+          </div>
+
+          <div
+            className={`p-3 rounded-2xl border flex items-center justify-between ${
+              weeklyCapUnder2
+                ? 'bg-emerald-500/10 border-emerald-400/40 text-emerald-200'
+                : 'bg-red-950/40 border-red-700/50 text-red-200'
+            }`}
+          >
+            <span>3. Weekly Used: {recharge.weeklyExtensionsUsed} / 2</span>
+            <div className="flex gap-1">
+              {[0, 1, 2].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => onSetWeeklyExtensionsUsed(n)}
+                  className={`px-1.5 py-0.5 rounded text-[10px] border cursor-pointer ${
+                    recharge.weeklyExtensionsUsed === n
+                      ? 'bg-amber-400 text-stone-950 border-amber-300 font-bold'
+                      : 'bg-black/40 border-white/15 text-amber-100'
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Neutral Confirmation Modal */}
+        {recharge.flowExtensionPromptOpen && (
+          <div
+            id="flow-extension-confirm-modal"
+            className="p-4 rounded-2xl bg-black/80 border-2 border-amber-400 space-y-3"
+          >
+            <p className="text-sm font-mono font-bold text-amber-100">
+              “Confirm this is genuine creative flow and not deadline stress”
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                id="btn-confirm-flow-extension"
+                type="button"
+                onClick={onConfirmFlowExtension}
+                className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-stone-950 font-mono font-bold text-xs cursor-pointer"
+              >
+                Confirm Creative Flow &amp; Start Count-Up
+              </button>
+              <button
+                id="btn-cancel-flow-extension"
+                type="button"
+                onClick={onCancelFlowExtensionPrompt}
+                className="px-4 py-2 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] text-amber-100 font-mono text-xs cursor-pointer"
+              >
+                Cancel (Return to Recharge)
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Active Flow Extension Open Count-Up Console */}
+        {recharge.flowExtensionActive && (
+          <div className="p-4 rounded-2xl bg-black/50 border border-amber-400/50 flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <span className="text-[10px] font-mono uppercase text-amber-300 font-bold">
+                OPEN COUNT-UP • 20M CHIMES + 60M MICRO-BREAK
+              </span>
+              <div className="font-mono text-2xl font-extrabold tabular-nums text-amber-100">
+                +{formatMMSS(recharge.flowExtensionElapsedSeconds)} •{' '}
+                {recharge.flowExtensionBlocksLoggedToday} ext blocks logged (Tomorrow Deduction: -
+                {tomorrowDay?.deductedBlocksFromExtension || 0} blks)
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onToggleFlowExtensionTimer}
+                className="px-3.5 py-2 rounded-xl bg-amber-400 text-stone-950 font-mono font-bold text-xs cursor-pointer"
+              >
+                {recharge.flowExtensionRunning ? 'Pause Count-Up' : 'Resume Count-Up'}
+              </button>
+              <button
+                id="btn-log-flow-extension-20m"
+                type="button"
+                onClick={onLogFlowExtensionBlock20m}
+                className="px-3.5 py-2 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] border border-amber-400/50 text-amber-100 font-mono font-semibold text-xs cursor-pointer"
+              >
+                Log +20m Extension Block
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
     </div>
   );
 };
