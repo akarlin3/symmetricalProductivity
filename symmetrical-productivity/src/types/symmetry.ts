@@ -138,6 +138,34 @@ export interface RechargeState {
   checkInModalOpen: boolean;
   checkInMilestone: 20 | 40;
   stickySlots: Record<StickyKey, StickySlotState>;
+  completedLog?: string[];
+}
+
+export interface CompletedDeliverableEntry {
+  id: string;
+  title: string;
+  trackId: TrackId;
+  totalBlocks: number;
+  completedAt: string;
+}
+
+export interface SequentialChecklistStep {
+  stepNumber: number;
+  id: string;
+  kind: 'WORK_BLOCK' | 'BREAK_L1' | 'BREAK_L2' | 'BREAK_L3' | 'SHUTDOWN';
+  blockNumber?: number; // 1..N for WORK_BLOCK
+  sourceId?: string;
+  title: string;
+  categoryBadge: string;
+  taskType?: ActiveTaskType;
+  startupStep: string;
+  durationMinutes: number;
+  chainPosition?: 1 | 2; // 1 = 20m, 2 = 40m
+  remainingMinutesAfter: number;
+  countdownBadge: string; // e.g. "[20m | 3h 40m work left]" -> "[0m work left — End-of-Shift Bridge]"
+  completed: boolean;
+  banked?: boolean;
+  isCurrentNext: boolean;
 }
 
 export interface RoadmapRung {
@@ -178,9 +206,11 @@ export interface SymmetryState {
   baselineBlocks: BaselineBlock[];
   projectQueue: ProjectItem[];
   projectBacklog: Omit<ProjectItem, 'slot'>[];
+  completedDeliverablesArchive?: CompletedDeliverableEntry[];
   pipelineDays: PipelineDay[];
   discretionaryBlocksCompletedToday: number;
   timer: TimerConsoleState;
   recharge: RechargeState;
   roadmapTracks: RoadmapTrack[];
 }
+

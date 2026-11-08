@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Bot,
   Calendar,
   Clock,
   Download,
@@ -24,6 +25,7 @@ interface HeaderBarProps {
   onSelectTab: (tab: TabId) => void;
   onOpenPipelineDrawer: () => void;
   onOpenStateModal: () => void;
+  onToggleAssistantDrawer: () => void;
   onToggleZeroWorkSimulation: () => void;
   onResetDefault: () => void;
   isEveningTheme: boolean;
@@ -42,6 +44,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   onSelectTab,
   onOpenPipelineDrawer,
   onOpenStateModal,
+  onToggleAssistantDrawer,
   onToggleZeroWorkSimulation,
   onResetDefault,
   isEveningTheme,
@@ -194,8 +197,29 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             </div>
           </div>
 
-          {/* Utility Buttons: 7-Day Pipeline Drawer, Simulate 0m Work Left, State.md Import/Export */}
+          {/* Utility Buttons: Planning Assistant, 7-Day Pipeline Drawer, Simulate 0m Work Left, State.md Import/Export */}
           <div className="flex items-center gap-1.5">
+            <button
+              id="btn-open-planning-assistant"
+              type="button"
+              onClick={() => {
+                triggerHaptic([12]);
+                onToggleAssistantDrawer();
+              }}
+              className={`px-2.5 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1.5 cursor-pointer ${
+                isEveningTheme
+                  ? 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/45 text-amber-100'
+                  : 'bg-cyan-500/15 hover:bg-cyan-500/25 border-cyan-400/45 text-cyan-100'
+              }`}
+              title="Toggle Planning Assistant AI Side-Panel (Cmd/Ctrl + /)"
+            >
+              <Bot className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Assistant</span>
+              <kbd className="hidden lg:inline px-1 py-0.5 rounded bg-black/35 text-[9px] font-mono">
+                ⌘/
+              </kbd>
+            </button>
+
             <button
               id="btn-open-pipeline-drawer"
               type="button"

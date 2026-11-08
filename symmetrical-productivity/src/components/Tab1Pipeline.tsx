@@ -9,11 +9,13 @@ import {
   Coffee,
   FastForward,
   Flame,
+  ListOrdered,
   Lock,
   Music,
   Pause,
   Play,
   Plus,
+  RefreshCw,
   RotateCcw,
   ShieldAlert,
   Sliders,
@@ -28,15 +30,28 @@ import {
   Level2BreakProtocol,
   LoadMode,
   ProjectPresetType,
+  SequentialChecklistStep,
   StressResetProtocol,
   SymmetryState,
   TimerRunMode,
   TrackId,
 } from '../types/symmetry';
-import { computeShiftMetrics } from '../state/defaultState';
+import {
+  computeShiftMetrics,
+  generateSequentialChecklist,
+} from '../state/defaultState';
 import { DualRingTimerSvg } from './DualRingTimerSvg';
 import { BreathingVisualizer478 } from './BreathingVisualizer478';
 import { triggerHaptic } from '../utils/haptics';
+
+interface PendingIntakeDeliverable {
+  title: string;
+  presetType: ProjectPresetType;
+  totalBlocks: number;
+  trackId: TrackId;
+  startupStep: string;
+  reason: string;
+}
 
 interface Tab1PipelineProps {
   state: SymmetryState;
@@ -53,6 +68,7 @@ interface Tab1PipelineProps {
     taskType: 'FLASHCARDS' | 'READING' | 'SYNTHESIS' | 'PROJECT',
     startupPrompt: string
   ) => void;
+  onLaunchBreakStepInTimer: (breakMode: 'BREAK_L1' | 'BREAK_L2' | 'BREAK_L3') => void;
   onIncrementProjectBlock: (projectId: string) => void;
   onCompleteProjectItem1: () => void;
   onAddProjectToQueue: (
@@ -62,6 +78,22 @@ interface Tab1PipelineProps {
     trackId: TrackId,
     startupStep: string
   ) => void;
+  onPromoteDeliverableWithSurge: (
+    title: string,
+    presetType: ProjectPresetType,
+    totalBlocks: number,
+    trackId: TrackId,
+    startupStep: string
+  ) => void;
+  onDemoteDeliverableToBacklog: (
+    title: string,
+    presetType: ProjectPresetType,
+    totalBlocks: number,
+    trackId: TrackId,
+    startupStep: string
+  ) => void;
+  onRecalibrateStepDownTier: () => void;
+  onRecalibrateReSequenceNow: () => void;
   onOpenPipelineDrawer: () => void;
   onTriggerMidDayReset: () => void;
   // Timer HUD & Quick Triage Dock handlers
@@ -90,9 +122,14 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   onToggleEarlyClearance,
   onUpdateFlashcardCount,
   onLaunchBlockInTimer,
+  onLaunchBreakStepInTimer,
   onIncrementProjectBlock,
   onCompleteProjectItem1,
   onAddProjectToQueue,
+  onPromoteDeliverableWithSurge,
+  onDemoteDeliverableToBacklog,
+  onRecalibrateStepDownTier,
+  onRecalibrateReSequenceNow,
   onOpenPipelineDrawer,
   onTriggerMidDayReset,
   onToggleTimerRun,
@@ -112,6 +149,8 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   const metrics = computeShiftMetrics(state);
   const { timer } = state;
 
+  const [sequentialViewOpen, setSequentialViewOpen] = useState(false);
+  const [recalibrateWizardOpen, setRecalibrateWizardOpen] = useState(false);
   const [lockedDrawerOpen, setLockedDrawerOpen] = useState(false);
   const [loadConfigExpanded, setLoadConfigExpanded] = useState(false);
   const [selectedBaselineId, setSelectedBaselineId] = useState<string>(
@@ -123,9 +162,13 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   const [newProjPreset, setNewProjPreset] = useState<ProjectPresetType>('PAPER_8');
   const [newProjCustomBlocks, setNewProjCustomBlocks] = useState(4);
   const [newProjTrack, setNewProjTrack] = useState<TrackId>('writing');
-  const [newProjStartup] = useState(
+  const [newProjStartup, setNewProjStartup] = useState(
     'Open document, create section headings, and draft first 3 lines.'
   );
+  const [pendingIntakeTriage, setPendingIntakeTriage] =
+    useState<PendingIntakeDeliverable | null>(null);
+
+  const sequentialSteps = generateSequentialChecklist(state);
 
   // Rule 3: Block flashcards from being scheduled/executed as the final block of the night
   const isFinalBlockOfNight = metrics.remainingBlocks === 1;
@@ -201,22 +244,70 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
 
   const handleAddProjectSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newProjTitle.trim() || state.projectQueue.length >= 3) return;
+    const cleanTitle = newProjTitle.trim();
+    if (!cleanTitle) return;
     const blocks =
       newProjPreset === 'PAPER_8'
         ? 8
         : newProjPreset === 'SLIDES_4'
         ? 4
         : newProjCustomBlocks;
+    const cleanStartup =
+      newProjStartup.trim() || 'Open file and complete initial 5m startup step.';
+
+    const exceedsClosedListCap = state.projectQueue.length >= 3;
+    const forcesSurgeDay =
+      state.loadMode !== 'SURGE' &&
+      7 + blocks > state.customModeBlockAdjustment;
+
+    if (exceedsClosedListCap || forcesSurgeDay) {
+      triggerHaptic([15]);
+      setPendingIntakeTriage({
+        title: cleanTitle,
+        presetType: newProjPreset,
+        totalBlocks: blocks,
+        trackId: newProjTrack,
+        startupStep: cleanStartup,
+        reason:
+          exceedsClosedListCap && forcesSurgeDay
+            ? `Closed List is full (${state.projectQueue.length}/3 items) and adding a ${blocks}-block deliverable exceeds today's ${state.loadMode} ceiling.`
+            : exceedsClosedListCap
+            ? `Closed List is at its 3-item hard cap (${state.projectQueue.length}/3 items locked).`
+            : `Adding a ${blocks}-block deliverable alongside the 7-block Baseline Floor would force a Surge day.`,
+      });
+      return;
+    }
+
     onAddProjectToQueue(
-      newProjTitle.trim(),
+      cleanTitle,
       newProjPreset,
       blocks,
       newProjTrack,
-      newProjStartup.trim() || 'Open file and complete initial 5m startup step.'
+      cleanStartup
     );
     setNewProjTitle('');
   };
+
+  const handleClickSequentialStep = (step: SequentialChecklistStep) => {
+    triggerHaptic([15]);
+    if (step.kind === 'WORK_BLOCK') {
+      onLaunchBlockInTimer(
+        step.sourceId || 'proj_1',
+        step.title,
+        step.taskType || 'PROJECT',
+        step.startupStep
+      );
+    } else if (
+      step.kind === 'BREAK_L1' ||
+      step.kind === 'BREAK_L2' ||
+      step.kind === 'BREAK_L3'
+    ) {
+      onLaunchBreakStepInTimer(step.kind);
+    } else if (step.kind === 'SHUTDOWN') {
+      onGoToRecharge();
+    }
+  };
+
 
   return (
     <div className="space-y-4 animate-tab-enter">
@@ -600,10 +691,45 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 })}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <span className="px-2.5 py-1 rounded-xl bg-black/40 border border-cyan-500/35 font-mono text-xs font-bold tabular-nums text-cyan-200">
                   {metrics.durationPrefix}
                 </span>
+
+                <button
+                  id="btn-toggle-sequential-checklist"
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic([12]);
+                    setSequentialViewOpen(!sequentialViewOpen);
+                  }}
+                  className={`px-2.5 py-1 rounded-xl font-mono text-[11px] font-semibold border flex items-center gap-1.5 cursor-pointer transition ${
+                    sequentialViewOpen
+                      ? 'bg-cyan-400 text-slate-950 border-cyan-300 font-bold shadow-md shadow-cyan-500/20'
+                      : 'bg-cyan-500/15 hover:bg-cyan-500/25 border-cyan-400/50 text-cyan-200'
+                  }`}
+                >
+                  <ListOrdered className="w-3.5 h-3.5" />
+                  <span>Sequential Checklist View</span>
+                </button>
+
+                <button
+                  id="btn-recalibrate-day"
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic([12]);
+                    setRecalibrateWizardOpen(!recalibrateWizardOpen);
+                  }}
+                  className={`px-2.5 py-1 rounded-xl font-mono text-[11px] font-semibold border flex items-center gap-1.5 cursor-pointer transition ${
+                    recalibrateWizardOpen
+                      ? 'bg-amber-400 text-slate-950 border-amber-300 font-bold'
+                      : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/50 text-amber-200'
+                  }`}
+                  title="Recalibrate Remainder of Day (Step down one Load Mode tier or re-sequence remaining blocks)"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Recalibrate Remainder of Day</span>
+                </button>
 
                 <button
                   type="button"
@@ -620,6 +746,71 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* Mid-Shift "Recalibrate Remainder of Day" Option A / Option B Triage Wizard */}
+            {recalibrateWizardOpen && (
+              <div
+                id="recalibrate-day-wizard"
+                className="p-4 rounded-2xl bg-amber-950/35 border border-amber-400/50 space-y-3"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <RefreshCw className="w-4 h-4 text-amber-400" />
+                    <h3 className="text-xs sm:text-sm font-mono font-bold uppercase tracking-wider text-amber-200">
+                      Mid-Shift Triage: Recalibrate Remainder of Day
+                    </h3>
+                  </div>
+                  <span className="text-[11px] font-mono text-amber-200/80">
+                    Current: {state.loadMode} ({metrics.totalCompletedBlocks}/{metrics.totalTargetBlocks} blks • {metrics.remainingWorkFormatted})
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300">
+                  Day started late or stalled out? Select <strong>Option A</strong> to step today down one Load Mode tier, or <strong>Option B</strong> to keep {state.loadMode} Mode and re-sequence all remaining blocks starting now:
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <button
+                    id="btn-recalibrate-option-a"
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic([15]);
+                      onRecalibrateStepDownTier();
+                      setRecalibrateWizardOpen(false);
+                    }}
+                    className="p-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-mono text-left space-y-1 cursor-pointer shadow-md"
+                  >
+                    <div className="text-xs font-extrabold uppercase">
+                      Option A: Step Down One Load Mode Tier
+                    </div>
+                    <div className="text-[11px] font-medium opacity-90">
+                      {state.loadMode === 'SURGE'
+                        ? 'Step down Surge (14–15) → Cruise Mode (12 blocks)'
+                        : state.loadMode === 'CRUISE'
+                        ? 'Step down Cruise (11–13) → Taper Floor (8 blocks)'
+                        : 'Compress Taper Floor → 7-Block Core Floor + Early Clearance'}
+                    </div>
+                  </button>
+
+                  <button
+                    id="btn-recalibrate-option-b"
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic([15]);
+                      onRecalibrateReSequenceNow();
+                      setSequentialViewOpen(true);
+                      setRecalibrateWizardOpen(false);
+                    }}
+                    className="p-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-cyan-400/50 text-cyan-100 font-mono text-left space-y-1 cursor-pointer"
+                  >
+                    <div className="text-xs font-extrabold uppercase text-cyan-300">
+                      Option B: Keep {state.loadMode} Mode &amp; Re-Sequence Now
+                    </div>
+                    <div className="text-[11px] text-slate-300">
+                      Reset chained counter to 0/2, re-sequence remaining {metrics.remainingBlocks} blocks starting now, and open Sequential Checklist.
+                    </div>
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Expandable Fine-Tuning Tray (Target Blocks, Fixed Event, Session 20m/40m, Surge Day Sim) */}
             {loadConfigExpanded && (
@@ -741,6 +932,143 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               </div>
             )}
           </section>
+
+          {/* -------------------------------------------------------------------
+              SEQUENTIAL 20M CHECKLIST VIEW (INTERLEAVED BLOCKS + AUTO-BREAKS + RUNNING COUNTDOWN)
+             ------------------------------------------------------------------- */}
+          {sequentialViewOpen && (
+            <section
+              id="sequential-checklist-view"
+              aria-label="Sequential 20m Checklist Generator"
+              className="rounded-3xl bento-surface p-5 space-y-3.5"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.08] pb-3">
+                <div>
+                  <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-widest text-cyan-300 font-bold">
+                    <ListOrdered className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>
+                      SEQUENTIAL 20M CHECKLIST • INTERLEAVED BLOCKS + AUTO-BREAKS
+                    </span>
+                  </div>
+                  <h3 className="text-base font-bold text-white mt-0.5">
+                    Full Daily Runway (Block 1 → [0m work left — Hard Shutdown])
+                  </h3>
+                  <p className="text-[11px] font-mono text-slate-400">
+                    4 Flashcards spaced early/mid-shift (never final block) • 3 Half-Chapter blocks • 100% Discretionary locked to Closed List #1 • Click any row to launch timer.
+                  </p>
+                </div>
+
+                <span className="px-3 py-1 rounded-xl bg-cyan-500/15 border border-cyan-400/50 font-mono text-xs font-bold text-cyan-200">
+                  {metrics.totalTargetBlocks} Work Blocks + Auto-Breaks
+                </span>
+              </div>
+
+              <div className="space-y-2 max-h-[540px] overflow-y-auto pr-1">
+                {sequentialSteps.map((step) => {
+                  const isWork = step.kind === 'WORK_BLOCK';
+                  const isBreakL1 = step.kind === 'BREAK_L1';
+                  const isBreakL2 = step.kind === 'BREAK_L2';
+                  const isBreakL3 = step.kind === 'BREAK_L3';
+                  const isShutdown = step.kind === 'SHUTDOWN';
+
+                  return (
+                    <div
+                      key={step.id}
+                      id={`seq-row-${step.id}`}
+                      onClick={() => handleClickSequentialStep(step)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleClickSequentialStep(step);
+                        }
+                      }}
+                      className={`p-3 rounded-2xl border transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${
+                        step.isCurrentNext
+                          ? 'bg-cyan-500/15 border-cyan-400/70 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.15)]'
+                          : step.completed || step.banked
+                          ? 'bg-emerald-950/20 border-emerald-500/30 opacity-75'
+                          : isShutdown
+                          ? 'bg-amber-950/30 border-amber-500/45 text-amber-100'
+                          : isBreakL3
+                          ? 'bg-amber-500/10 border-amber-400/45 text-amber-100'
+                          : isBreakL2
+                          ? 'bg-indigo-950/30 border-indigo-400/35 text-indigo-100'
+                          : isBreakL1
+                          ? 'bg-slate-900/60 border-white/[0.06] text-slate-300'
+                          : 'bg-black/30 hover:bg-white/[0.05] border-white/[0.08] text-slate-100'
+                      }`}
+                    >
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="px-1.5 py-0.5 rounded bg-white/[0.06] font-mono text-[10px] font-bold text-slate-300">
+                            #{step.stepNumber}
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold uppercase ${
+                              isWork
+                                ? 'bg-cyan-500/20 text-cyan-200'
+                                : isBreakL3
+                                ? 'bg-amber-500/25 text-amber-200'
+                                : isBreakL2
+                                ? 'bg-indigo-500/25 text-indigo-200'
+                                : isBreakL1
+                                ? 'bg-slate-700/60 text-slate-200'
+                                : 'bg-amber-400/25 text-amber-200'
+                            }`}
+                          >
+                            {step.categoryBadge}
+                          </span>
+                          {step.isCurrentNext && (
+                            <span className="px-2 py-0.5 rounded bg-cyan-400 text-slate-950 font-mono text-[10px] font-extrabold uppercase">
+                              NEXT STEP
+                            </span>
+                          )}
+                          {step.completed && (
+                            <span className="px-2 py-0.5 rounded bg-emerald-500/25 text-emerald-200 font-mono text-[10px] font-bold">
+                              ✓ COMPLETE
+                            </span>
+                          )}
+                          {step.banked && (
+                            <span className="px-2 py-0.5 rounded bg-cyan-500/25 text-cyan-200 font-mono text-[10px] font-bold">
+                              BANKED (EARLY CLEARANCE)
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="text-xs sm:text-sm font-bold text-white truncate">
+                          {step.title}
+                        </div>
+
+                        <div className="text-[11px] font-mono text-cyan-200/90">
+                          5m Startup: “{step.startupStep}”
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span
+                          className={`px-2.5 py-1 rounded-xl border font-mono text-[11px] font-bold tabular-nums ${
+                            isShutdown ||
+                            step.countdownBadge.includes('End-of-Shift Bridge')
+                              ? 'bg-amber-500/20 border-amber-400/50 text-amber-200'
+                              : 'bg-black/45 border-white/[0.1] text-cyan-200'
+                          }`}
+                        >
+                          {step.countdownBadge}
+                        </span>
+
+                        <span className="px-2.5 py-1 rounded-xl bg-cyan-400/20 border border-cyan-400/40 text-cyan-200 font-mono text-[10px] font-bold flex items-center gap-1">
+                          <Play className="w-3 h-3 fill-current" />
+                          <span>Launch</span>
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
           {/* -------------------------------------------------------------------
               MIDDLE BENTO ROW (2 COLUMNS):
@@ -1127,8 +1455,152 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 </div>
               )}
 
-              {/* Muted Collapsed Drawer for Items #2 & #3 */}
-              <div className="pt-2 border-t border-white/[0.08]">
+              {/* Smart Intake Bar + Inline Option A / Option B Triage Wizard */}
+              <div
+                id="smart-intake-bar"
+                className="pt-2.5 border-t border-white/[0.08] space-y-2.5"
+              >
+                <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                  <span>Smart Deliverable Intake Bar (Closed List Cap: {state.projectQueue.length}/3)</span>
+                  <span>Open List Backlog: {state.projectBacklog.length}</span>
+                </div>
+
+                <form
+                  onSubmit={handleAddProjectSubmit}
+                  className="p-2.5 rounded-2xl bg-black/30 border border-white/[0.08] space-y-2"
+                >
+                  <div className="flex flex-wrap gap-1.5">
+                    <input
+                      id="input-new-project-title"
+                      type="text"
+                      value={newProjTitle}
+                      onChange={(e) => setNewProjTitle(e.target.value)}
+                      placeholder="Add deliverable (e.g., Grant Specific Aims Draft)..."
+                      className="flex-1 min-w-[150px] bg-slate-950 border border-white/[0.1] rounded-lg px-2.5 py-1.5 text-xs text-slate-100"
+                    />
+                    <select
+                      id="select-new-project-preset"
+                      value={newProjPreset}
+                      onChange={(e) =>
+                        setNewProjPreset(e.target.value as ProjectPresetType)
+                      }
+                      className="bg-slate-950 border border-white/[0.1] rounded-lg px-2 py-1 text-[11px] font-mono text-slate-200"
+                    >
+                      <option value="PAPER_8">2-Page Paper (8 blks)</option>
+                      <option value="SLIDES_4">Slide Deck (4 blks)</option>
+                      <option value="CUSTOM">Custom</option>
+                    </select>
+                    {newProjPreset === 'CUSTOM' && (
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={newProjCustomBlocks}
+                        onChange={(e) =>
+                          setNewProjCustomBlocks(Number(e.target.value))
+                        }
+                        className="w-14 bg-slate-950 border border-white/[0.1] rounded-lg px-2 py-1 text-[11px] font-mono text-slate-200"
+                      />
+                    )}
+                    <select
+                      id="select-new-project-track"
+                      value={newProjTrack}
+                      onChange={(e) => setNewProjTrack(e.target.value as TrackId)}
+                      className="bg-slate-950 border border-white/[0.1] rounded-lg px-2 py-1 text-[11px] font-mono text-slate-200"
+                    >
+                      <option value="writing">Writing</option>
+                      <option value="science">Science</option>
+                      <option value="personal">Personal</option>
+                    </select>
+                    <button
+                      id="btn-submit-smart-intake"
+                      type="submit"
+                      className="px-3 py-1.5 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-mono font-bold text-xs flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Intake</span>
+                    </button>
+                  </div>
+
+                  <input
+                    id="input-new-project-startup"
+                    type="text"
+                    value={newProjStartup}
+                    onChange={(e) => setNewProjStartup(e.target.value)}
+                    placeholder="5m Startup Step script..."
+                    className="w-full bg-slate-950/70 border border-white/[0.07] rounded-lg px-2.5 py-1 text-[11px] font-mono text-slate-300"
+                  />
+                </form>
+
+                {/* Inline Option A / Option B Prompt when exceeding 3-item Closed List cap or forcing a Surge day */}
+                {pendingIntakeTriage && (
+                  <div
+                    id="smart-intake-triage-prompt"
+                    className="p-3.5 rounded-2xl bg-amber-950/45 border border-amber-400/60 space-y-2.5"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-mono uppercase font-extrabold text-amber-300">
+                        Capacity Governor Gate • Option A / Option B Triage
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setPendingIntakeTriage(null)}
+                        className="text-[10px] font-mono text-slate-400 hover:text-slate-200 cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+
+                    <p className="text-xs text-amber-100/90 leading-snug">
+                      <strong>“{pendingIntakeTriage.title}” ({pendingIntakeTriage.totalBlocks} blocks):</strong>{' '}
+                      {pendingIntakeTriage.reason}
+                    </p>
+
+                    <div className="grid grid-cols-1 gap-2">
+                      <button
+                        id="btn-intake-option-a"
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic([15]);
+                          onPromoteDeliverableWithSurge(
+                            pendingIntakeTriage.title,
+                            pendingIntakeTriage.presetType,
+                            pendingIntakeTriage.totalBlocks,
+                            pendingIntakeTriage.trackId,
+                            pendingIntakeTriage.startupStep
+                          );
+                          setPendingIntakeTriage(null);
+                          setNewProjTitle('');
+                        }}
+                        className="p-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-mono text-xs font-bold text-left cursor-pointer shadow-md"
+                      >
+                        Option A (Hard Deadline): Promote to Closed List &amp; schedule Surge blocks
+                      </button>
+
+                      <button
+                        id="btn-intake-option-b"
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic([15]);
+                          onDemoteDeliverableToBacklog(
+                            pendingIntakeTriage.title,
+                            pendingIntakeTriage.presetType,
+                            pendingIntakeTriage.totalBlocks,
+                            pendingIntakeTriage.trackId,
+                            pendingIntakeTriage.startupStep
+                          );
+                          setPendingIntakeTriage(null);
+                          setNewProjTitle('');
+                        }}
+                        className="p-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-cyan-400/50 text-cyan-100 font-mono text-xs font-bold text-left cursor-pointer"
+                      >
+                        Option B (Soft / Flexible): Demote to Open List backlog to preserve Cruise Mode
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Muted Collapsed Drawer for Items #2 & #3 + Open List Backlog */}
                 <button
                   id="btn-toggle-locked-projects-drawer"
                   type="button"
@@ -1138,7 +1610,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                   <span className="flex items-center gap-1.5">
                     <Lock className="w-3.5 h-3.5 text-slate-500" />
                     <span>
-                      Locked Queue #2 &amp; #3 ({lockedSecondaryProjects.length} locked)
+                      Locked Queue #2 &amp; #3 ({lockedSecondaryProjects.length} locked) • Backlog ({state.projectBacklog.length})
                     </span>
                   </span>
                   {lockedDrawerOpen ? (
@@ -1149,7 +1621,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 </button>
 
                 {lockedDrawerOpen && (
-                  <div className="mt-2.5 space-y-2">
+                  <div className="mt-2 space-y-2">
                     {lockedSecondaryProjects.map((proj) => (
                       <div
                         key={proj.id}
@@ -1171,59 +1643,25 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       </div>
                     ))}
 
-                    {state.projectQueue.length < 3 && (
-                      <form
-                        onSubmit={handleAddProjectSubmit}
-                        className="p-2.5 rounded-xl bg-black/30 border border-white/[0.07] flex flex-wrap gap-1.5"
-                      >
-                        <input
-                          id="input-new-project-title"
-                          type="text"
-                          value={newProjTitle}
-                          onChange={(e) => setNewProjTitle(e.target.value)}
-                          placeholder="Add project to Slot #3..."
-                          className="flex-1 min-w-[140px] bg-slate-950 border border-white/[0.1] rounded-lg px-2.5 py-1 text-xs text-slate-100"
-                        />
-                        <select
-                          value={newProjPreset}
-                          onChange={(e) =>
-                            setNewProjPreset(e.target.value as ProjectPresetType)
-                          }
-                          className="bg-slate-950 border border-white/[0.1] rounded-lg px-2 py-1 text-[11px] font-mono text-slate-200"
-                        >
-                          <option value="PAPER_8">8 blks</option>
-                          <option value="SLIDES_4">4 blks</option>
-                          <option value="CUSTOM">Custom</option>
-                        </select>
-                        {newProjPreset === 'CUSTOM' && (
-                          <input
-                            type="number"
-                            min={1}
-                            max={20}
-                            value={newProjCustomBlocks}
-                            onChange={(e) =>
-                              setNewProjCustomBlocks(Number(e.target.value))
-                            }
-                            className="w-14 bg-slate-950 border border-white/[0.1] rounded-lg px-2 py-1 text-[11px] font-mono text-slate-200"
-                          />
-                        )}
-                        <select
-                          value={newProjTrack}
-                          onChange={(e) => setNewProjTrack(e.target.value as TrackId)}
-                          className="bg-slate-950 border border-white/[0.1] rounded-lg px-2 py-1 text-[11px] font-mono text-slate-200"
-                        >
-                          <option value="writing">Writing</option>
-                          <option value="science">Science</option>
-                          <option value="personal">Personal</option>
-                        </select>
-                        <button
-                          type="submit"
-                          className="px-2.5 py-1 rounded-lg bg-cyan-400 text-slate-950 font-mono font-bold text-xs flex items-center gap-1 cursor-pointer"
-                        >
-                          <Plus className="w-3 h-3" />
-                          <span>Add</span>
-                        </button>
-                      </form>
+                    {state.projectBacklog.length > 0 && (
+                      <div className="pt-1.5 border-t border-white/[0.06] space-y-1.5">
+                        <div className="text-[10px] font-mono uppercase text-slate-400">
+                          Open List Backlog (Preserving Cruise Mode)
+                        </div>
+                        {state.projectBacklog.map((b, idx) => (
+                          <div
+                            key={b.id}
+                            className="p-2.5 rounded-xl bg-black/25 border border-white/[0.05] text-xs font-mono text-slate-300 flex items-center justify-between gap-2"
+                          >
+                            <span className="truncate">
+                              #{idx + 1} {b.title}
+                            </span>
+                            <span className="text-[10px] text-slate-400 shrink-0">
+                              [{b.totalBlocks} blks]
+                            </span>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
                 )}

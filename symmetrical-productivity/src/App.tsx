@@ -30,6 +30,7 @@ import {
 import {
   computeShiftMetrics,
   DEFAULT_SYMMETRY_STATE,
+  generateSequentialChecklist,
   getLogicalDayKey,
   parseFromStateInput,
   serializeToStateMarkdown,
@@ -45,6 +46,7 @@ import {
 } from './utils/notifications';
 import { HeaderBar } from './components/HeaderBar';
 import { PipelineDrawer } from './components/PipelineDrawer';
+import { PlanningAssistantDrawer } from './components/PlanningAssistantDrawer';
 import { Tab1Pipeline } from './components/Tab1Pipeline';
 import { Tab2TimerTriage } from './components/Tab2TimerTriage';
 import { Tab3Recharge } from './components/Tab3Recharge';
@@ -65,6 +67,7 @@ export function App() {
 
   const [activeTab, setActiveTab] = useState<TabId>('PIPELINE');
   const [pipelineDrawerOpen, setPipelineDrawerOpen] = useState(false);
+  const [assistantDrawerOpen, setAssistantDrawerOpen] = useState(false);
   const [stateModalOpen, setStateModalOpen] = useState(false);
   const [stateIoText, setStateIoText] = useState('');
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
@@ -369,9 +372,16 @@ export function App() {
     };
   }, []);
 
-  // Global Spacebar shortcut to start/pause the centerpiece Dual-Ring Timer
+  // Global Spacebar shortcut (start/pause timer) and Cmd/Ctrl + / shortcut (toggle Planning Assistant)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === '/') {
+        e.preventDefault();
+        triggerHaptic([12]);
+        setAssistantDrawerOpen((prev) => !prev);
+        return;
+      }
+
       if (e.code !== 'Space' || e.repeat) return;
       const target = e.target as HTMLElement | null;
       if (
@@ -1121,6 +1131,7 @@ export function App() {
 
   const handleCompleteProjectItem1 = () => {
     setState((prev) => {
+      const completedItem = prev.projectQueue[0];
       const remaining = prev.projectQueue.slice(1);
       const [nextFromBacklog, ...restBacklog] = prev.projectBacklog;
       const newQueue = remaining.map((item, index) => ({
@@ -1133,13 +1144,27 @@ export function App() {
           slot: (newQueue.length + 1) as 1 | 2 | 3,
         });
       }
+      const prevArchive = prev.completedDeliverablesArchive || [];
+      const nextArchive = completedItem
+        ? [
+            {
+              id: `arch_${Date.now()}`,
+              title: completedItem.title,
+              trackId: completedItem.trackId,
+              totalBlocks: completedItem.totalBlocks,
+              completedAt: prev.logicalDayKey || getLogicalDayKey(),
+            },
+            ...prevArchive,
+          ]
+        : prevArchive;
       return {
         ...prev,
         projectQueue: newQueue,
         projectBacklog: restBacklog,
+        completedDeliverablesArchive: nextArchive,
       };
     });
-    showNotice('Completed Item #1! Item #2 is now unlocked as Primary Target.');
+    showNotice('Completed Item #1! Archived in Part III & unlocked Item #2 as Primary Target.');
   };
 
   const handleAddProjectToQueue = (
@@ -1174,6 +1199,206 @@ export function App() {
       };
     });
     showNotice(`Added "${title}" to Active Project Queue.`);
+  };
+
+  const handlePromoteDeliverableWithSurge = (
+    title: string,
+    presetType: ProjectPresetType,
+    totalBlocks: number,
+    trackId: TrackId,
+    startupStep: string
+  ) => {
+    setState((prev) => {
+      const newItem = {
+        id: `proj_${Date.now()}`,
+        slot: 1 as 1 | 2 | 3,
+        title,
+        presetType,
+        completedBlocks: 0,
+        totalBlocks,
+        trackId,
+        startupStep,
+        nextStepNote: 'Promoted via Option A (Hard Deadline) with Surge blocks.',
+      };
+
+      const combined = [newItem, ...prev.projectQueue];
+      const nextQueue = combined.slice(0, 3).map((item, idx) => ({
+        ...item,
+        slot: (idx + 1) as 1 | 2 | 3,
+      }));
+      const displaced = combined.slice(3).map(({ slot: _slot, ...rest }) => rest);
+      const canSurge = prev.surgeConsecutiveDays < 2 || prev.loadMode === 'SURGE';
+      const nextMode: LoadMode = canSurge ? 'SURGE' : prev.loadMode;
+      const nextCeiling = canSurge ? 14 : prev.customModeBlockAdjustment;
+
+      return {
+        ...prev,
+        loadMode: nextMode,
+        cruisePlus: false,
+        customModeBlockAdjustment: nextCeiling,
+        projectQueue: nextQueue,
+        projectBacklog: [...displaced, ...prev.projectBacklog],
+        pipelineDays: prev.pipelineDays.map((d) =>
+          d.isToday
+            ? {
+                ...d,
+                loadMode: nextMode,
+                cruisePlus: false,
+                baseTargetBlocks: nextCeiling,
+              }
+            : d
+        ),
+      };
+    });
+    showNotice(
+      `Option A applied: Promoted "${title}" to Closed List #1 and scheduled Surge blocks.`
+    );
+  };
+
+  const handleDemoteDeliverableToBacklog = (
+    title: string,
+    presetType: ProjectPresetType,
+    totalBlocks: number,
+    trackId: TrackId,
+    startupStep: string
+  ) => {
+    setState((prev) => ({
+      ...prev,
+      projectBacklog: [
+        ...prev.projectBacklog,
+        {
+          id: `proj_${Date.now()}`,
+          title,
+          presetType,
+          completedBlocks: 0,
+          totalBlocks,
+          trackId,
+          startupStep,
+          nextStepNote: 'Demoted to Open List backlog to preserve Cruise Mode.',
+        },
+      ],
+    }));
+    showNotice(
+      `Option B applied: Added "${title}" to Open List Backlog (Cruise Mode & Closed List preserved).`
+    );
+  };
+
+  const handleRecalibrateStepDownTier = () => {
+    setState((prev) => {
+      if (prev.loadMode === 'SURGE') {
+        return {
+          ...prev,
+          loadMode: 'CRUISE',
+          cruisePlus: false,
+          customModeBlockAdjustment: 12,
+          pipelineDays: prev.pipelineDays.map((d) =>
+            d.isToday
+              ? { ...d, loadMode: 'CRUISE', cruisePlus: false, baseTargetBlocks: 12 }
+              : d
+          ),
+        };
+      }
+      if (prev.loadMode === 'CRUISE') {
+        return {
+          ...prev,
+          loadMode: 'TAPER',
+          cruisePlus: false,
+          customModeBlockAdjustment: 8,
+          pipelineDays: prev.pipelineDays.map((d) =>
+            d.isToday
+              ? { ...d, loadMode: 'TAPER', cruisePlus: false, baseTargetBlocks: 8 }
+              : d
+          ),
+        };
+      }
+      // Already in TAPER -> step down to 7-block Core Floor + Early Clearance banking
+      return {
+        ...prev,
+        loadMode: 'TAPER',
+        cruisePlus: false,
+        customModeBlockAdjustment: 7,
+        earlyClearanceEnabled: true,
+        baselineBlocks: prev.baselineBlocks.map((b) => {
+          const isFc =
+            b.category === 'FLASHCARDS_ANATOMY' || b.category === 'FLASHCARDS_COMP';
+          if (!isFc || b.completed) return b;
+          return { ...b, bankedViaEarlyClearance: true };
+        }),
+      };
+    });
+    showNotice('Recalibrated Remainder of Day (Option A): Stepped down one Load Mode tier.');
+  };
+
+  const handleRecalibrateReSequenceNow = () => {
+    setState((prev) => {
+      const steps = generateSequentialChecklist(prev);
+      const nextWorkStep = steps.find(
+        (s) => s.kind === 'WORK_BLOCK' && !s.completed && !s.banked
+      );
+      return {
+        ...prev,
+        timer: {
+          ...prev.timer,
+          mode: 'WORK_20M',
+          workStage: 'IGNITION_5M',
+          secondsLeft: 300,
+          targetEndTimeMs: null,
+          isRunning: false,
+          chainedBlocksCount: 0,
+          activeBlockSourceId:
+            nextWorkStep?.sourceId || prev.timer.activeBlockSourceId,
+          activeTaskTitle: nextWorkStep?.title || prev.timer.activeTaskTitle,
+          activeTaskType: nextWorkStep?.taskType || prev.timer.activeTaskType,
+          activeStartupPrompt:
+            nextWorkStep?.startupStep || prev.timer.activeStartupPrompt,
+        },
+      };
+    });
+    showNotice(
+      'Recalibrated Remainder of Day (Option B): Re-sequenced remaining blocks starting now.'
+    );
+  };
+
+  const handleLaunchBreakStepInTimer = (
+    breakMode: 'BREAK_L1' | 'BREAK_L2' | 'BREAK_L3'
+  ) => {
+    const now = Date.now();
+    setState((prev) => {
+      const durationSec =
+        breakMode === 'BREAK_L1'
+          ? prev.timer.l1DurationMinutes * 60
+          : breakMode === 'BREAK_L2'
+          ? prev.timer.l2DurationMinutes * 60
+          : prev.timer.l3DurationMinutes * 60;
+      return {
+        ...prev,
+        timer: {
+          ...prev.timer,
+          mode: breakMode,
+          secondsLeft: durationSec,
+          targetEndTimeMs: now + durationSec * 1000,
+          isRunning: true,
+          chainedBlocksCount: breakMode === 'BREAK_L1' ? 2 : 0,
+        },
+      };
+    });
+    setActiveTab('TIMER');
+    showNotice(`Launched ${breakMode} timer from Sequential Checklist.`);
+  };
+
+  const handleApplyStatePatch = (
+    patch: Partial<SymmetryState>,
+    summary: string
+  ) => {
+    setState((prev) => ({
+      ...prev,
+      ...patch,
+      timer: patch.timer ? { ...prev.timer, ...patch.timer } : prev.timer,
+      recharge: patch.recharge
+        ? { ...prev.recharge, ...patch.recharge }
+        : prev.recharge,
+    }));
+    showNotice(`AI Planning Assistant applied statePatch: ${summary}`);
   };
 
   // Toggle between On-Duty and 0m work left simulation
@@ -1319,6 +1544,9 @@ export function App() {
             setStateIoText(serializeToStateMarkdown(state));
             setStateModalOpen(true);
           }}
+          onToggleAssistantDrawer={() =>
+            setAssistantDrawerOpen((prev) => !prev)
+          }
           onToggleZeroWorkSimulation={handleToggleZeroWorkSimulation}
           onResetDefault={() => {
             setState(DEFAULT_SYMMETRY_STATE);
@@ -1380,9 +1608,14 @@ export function App() {
                 setState((prev) => ({ ...prev, flashcardsReviewedCount: count }))
               }
               onLaunchBlockInTimer={handleLaunchBlockInTimer}
+              onLaunchBreakStepInTimer={handleLaunchBreakStepInTimer}
               onIncrementProjectBlock={handleIncrementProjectBlock}
               onCompleteProjectItem1={handleCompleteProjectItem1}
               onAddProjectToQueue={handleAddProjectToQueue}
+              onPromoteDeliverableWithSurge={handlePromoteDeliverableWithSurge}
+              onDemoteDeliverableToBacklog={handleDemoteDeliverableToBacklog}
+              onRecalibrateStepDownTier={handleRecalibrateStepDownTier}
+              onRecalibrateReSequenceNow={handleRecalibrateReSequenceNow}
               onOpenPipelineDrawer={() => setPipelineDrawerOpen(true)}
               onTriggerMidDayReset={() => {
                 const now = Date.now();
@@ -2359,7 +2592,17 @@ export function App() {
         }
       />
 
-      {/* State Sync Modal (Copy State JSON / Markdown, Import State JSON, New Day Reset) */}
+      {/* State-Aware AI Side-Panel (Cmd/Ctrl + /) */}
+      <PlanningAssistantDrawer
+        isOpen={assistantDrawerOpen}
+        onClose={() => setAssistantDrawerOpen(false)}
+        state={state}
+        onApplyStatePatch={handleApplyStatePatch}
+        onSelectTab={setActiveTab}
+        isEveningTheme={isEveningTheme}
+      />
+
+      {/* State Sync Modal (3-Part state.md Compiler & Parser, Copy for Gemini, Download state.md, New Day Reset) */}
       {stateModalOpen && (
         <div
           id="modal-state-io"
@@ -2369,7 +2612,7 @@ export function App() {
             <div className="flex items-center justify-between">
               <h2 className="text-base font-bold text-slate-100 flex items-center gap-2 font-mono">
                 <FileText className="w-4 h-4 text-sky-400" />
-                <span>State Sync (state.md &amp; JSON / New Day Reset)</span>
+                <span>State Sync — 3-Part `state.md` Compiler &amp; Parser</span>
               </h2>
               <button
                 id="btn-close-state-modal"
@@ -2382,11 +2625,11 @@ export function App() {
             </div>
 
             <p className="text-xs text-slate-400">
-              Copy a clean <code className="text-sky-300">state.md</code> summary + JSON block to clipboard, paste updated state JSON to overwrite local state, or run a <strong>New Day Reset</strong>.
+              Compiles and parses the 3-part <code className="text-sky-300">state.md</code> architecture (<strong>Part I: On-Duty Capacity Governor</strong>, <strong>Part II: Off-Duty 5-Pillar Recharge</strong>, <strong>Part III: 4-Rung Master Horizon &amp; Input/Output State</strong>). Copy or download <code className="text-sky-300">state.md</code> for Gemini, paste updated Markdown/JSON to sync, or run a <strong>New Day Reset</strong>.
             </p>
 
-            {/* Primary 3 State Sync Actions */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            {/* Primary 4 State Sync Actions */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
               <button
                 id="btn-copy-state-markdown"
                 type="button"
@@ -2394,12 +2637,35 @@ export function App() {
                   const md = serializeToStateMarkdown(state);
                   setStateIoText(md);
                   navigator.clipboard?.writeText(md);
-                  showNotice('Copied state.md summary + JSON block to clipboard.');
+                  showNotice('Copied 3-part state.md for Gemini to clipboard.');
                 }}
-                className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-sky-600/50 text-sky-200 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-sky-600/50 text-sky-200 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Copy className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                <span>Copy State JSON / Markdown</span>
+                <span>Copy state.md for Gemini</span>
+              </button>
+
+              <button
+                id="btn-download-state-markdown"
+                type="button"
+                onClick={() => {
+                  const md = serializeToStateMarkdown(state);
+                  setStateIoText(md);
+                  const blob = new Blob([md], {
+                    type: 'text/markdown;charset=utf-8',
+                  });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'state.md';
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  showNotice('Downloaded 3-part state.md file.');
+                }}
+                className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-emerald-500/50 text-emerald-200 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Download state.md</span>
               </button>
 
               <button
@@ -2410,15 +2676,15 @@ export function App() {
                     const restored = parseFromStateInput(stateIoText);
                     setState(restored);
                     setStateModalOpen(false);
-                    showNotice('Imported State JSON and updated local state.');
+                    showNotice('Parsed and imported 3-part state.md / JSON into live state.');
                   } catch {
                     showNotice('Invalid state.md or JSON syntax.');
                   }
                 }}
-                className="px-3.5 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                className="px-3 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Upload className="w-3.5 h-3.5 shrink-0" />
-                <span>Import State JSON</span>
+                <span>Import state.md / JSON</span>
               </button>
 
               <button
@@ -2545,7 +2811,7 @@ export function App() {
                     }, Roadmap & Sticky [X/3] counters preserved.`
                   );
                 }}
-                className="px-3.5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                className="px-3 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5 shrink-0" />
                 <span>New Day Reset</span>
@@ -2567,7 +2833,7 @@ export function App() {
                   onClick={() => setStateIoText(serializeToStateMarkdown(state))}
                   className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs cursor-pointer"
                 >
-                  Format as state.md
+                  Format as 3-Part state.md
                 </button>
                 <button
                   type="button"
@@ -2578,27 +2844,9 @@ export function App() {
                 </button>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const blob = new Blob([stateIoText], {
-                      type: 'text/markdown;charset=utf-8',
-                    });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'state.md';
-                    a.click();
-                    URL.revokeObjectURL(url);
-                    showNotice('Downloaded state.md file.');
-                  }}
-                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Download state.md</span>
-                </button>
-              </div>
+              <span className="text-[11px] font-mono text-slate-400">
+                Supports direct Markdown edits in Part I, II, &amp; III + JSON payload
+              </span>
             </div>
           </div>
         </div>
@@ -2608,3 +2856,4 @@ export function App() {
 }
 
 export default App;
+
