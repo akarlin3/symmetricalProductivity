@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import {
+  Check,
   Copy,
   Download,
   FileText,
+  KeyRound,
   Layers,
   ListChecks,
   Moon,
@@ -20,6 +22,7 @@ import {
   PipelineDay,
   ProjectPresetType,
   RechargeCategoryId,
+  SmartIntakePlanResult,
   StickyKey,
   StressResetProtocol,
   SymmetryState,
@@ -43,6 +46,12 @@ import {
   scheduleTimerNotificationAt,
   SymmetryNotificationEvent,
 } from './utils/notifications';
+import {
+  applySmartIntakePlanToState,
+  getEnvGeminiApiKey,
+  getStoredGeminiApiKey,
+  setStoredGeminiApiKey,
+} from './utils/smartIntakePlanner';
 import { HeaderBar } from './components/HeaderBar';
 import { PipelineDrawer } from './components/PipelineDrawer';
 import { Tab1Pipeline } from './components/Tab1Pipeline';
@@ -71,6 +80,15 @@ export function App() {
   const [notificationLog, setNotificationLog] = useState<NotificationLogEntry[]>([]);
   const [notificationsGranted, setNotificationsGranted] = useState(false);
   const [swOfflineReady, setSwOfflineReady] = useState(false);
+
+  // Smart Intake & Week Planner state + Gemini API Key storage
+  const [smartIntakeText, setSmartIntakeText] = useState('');
+  const [smartIntakePreview, setSmartIntakePreview] =
+    useState<SmartIntakePlanResult | null>(null);
+  const [geminiApiKeyInput, setGeminiApiKeyInput] = useState<string>(() =>
+    getStoredGeminiApiKey()
+  );
+  const [apiKeyVersion, setApiKeyVersion] = useState(0);
 
   const showNotice = (msg: string) => {
     setStatusNotice(msg);
@@ -370,8 +388,24 @@ export function App() {
   }, []);
 
   // Global Spacebar shortcut to start/pause the centerpiece Dual-Ring Timer
+  // and Cmd/Ctrl + J shortcut to focus the Smart Intake & Week Planner bar
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'j') {
+        if (!pipelineDrawerOpen && activeTab !== 'PIPELINE') {
+          e.preventDefault();
+          setActiveTab('PIPELINE');
+          window.setTimeout(() => {
+            const el = document.getElementById(
+              'pipeline-intake-input'
+            ) as HTMLInputElement | null;
+            el?.focus();
+            el?.select();
+          }, 40);
+        }
+        return;
+      }
+
       if (e.code !== 'Space' || e.repeat) return;
       const target = e.target as HTMLElement | null;
       if (
@@ -408,7 +442,16 @@ export function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [activeTab, pipelineDrawerOpen]);
+
+  const handleApplySmartIntakePlan = (plan: SmartIntakePlanResult) => {
+    setState((prev) => applySmartIntakePlanToState(prev, plan));
+    setSmartIntakePreview(null);
+    setSmartIntakeText('');
+    showNotice(
+      `Applied Smart Intake Plan: Today Mode → ${plan.todayLoadMode}, ${plan.closedListUpdates.length} Closed List items, ${plan.fixedEvents.length} Fixed Events.`
+    );
+  };
 
   // Dynamic browser document.title update while any timer is running
   useEffect(() => {
@@ -1316,6 +1359,7 @@ export function App() {
           onSelectTab={setActiveTab}
           onOpenPipelineDrawer={() => setPipelineDrawerOpen(true)}
           onOpenStateModal={() => {
+            setGeminiApiKeyInput(getStoredGeminiApiKey());
             setStateIoText(serializeToStateMarkdown(state));
             setStateModalOpen(true);
           }}
@@ -1355,6 +1399,17 @@ export function App() {
           {activeTab === 'PIPELINE' && (
             <Tab1Pipeline
               state={state}
+              smartIntakeText={smartIntakeText}
+              onChangeSmartIntakeText={setSmartIntakeText}
+              smartIntakePreview={smartIntakePreview}
+              onSetSmartIntakePreview={setSmartIntakePreview}
+              onApplySmartIntakePlan={handleApplySmartIntakePlan}
+              onOpenStateModal={() => {
+                setGeminiApiKeyInput(getStoredGeminiApiKey());
+                setStateIoText(serializeToStateMarkdown(state));
+                setStateModalOpen(true);
+              }}
+              apiKeyVersion={apiKeyVersion}
               onSelectLoadMode={handleSelectLoadMode}
               onSetSurgeConsecutiveDays={(days) =>
                 setState((prev) => ({ ...prev, surgeConsecutiveDays: days }))
@@ -2341,6 +2396,17 @@ export function App() {
         isOpen={pipelineDrawerOpen}
         onClose={() => setPipelineDrawerOpen(false)}
         state={state}
+        smartIntakeText={smartIntakeText}
+        onChangeSmartIntakeText={setSmartIntakeText}
+        smartIntakePreview={smartIntakePreview}
+        onSetSmartIntakePreview={setSmartIntakePreview}
+        onApplySmartIntakePlan={handleApplySmartIntakePlan}
+        onOpenStateModal={() => {
+          setGeminiApiKeyInput(getStoredGeminiApiKey());
+          setStateIoText(serializeToStateMarkdown(state));
+          setStateModalOpen(true);
+        }}
+        apiKeyVersion={apiKeyVersion}
         onUpdateDay={(dayIndex: number, patch: Partial<PipelineDay>) =>
           setState((prev) => {
             const updatedDays = prev.pipelineDays.map((d) =>
@@ -2359,17 +2425,17 @@ export function App() {
         }
       />
 
-      {/* State Sync Modal (Copy State JSON / Markdown, Import State JSON, New Day Reset) */}
+      {/* State Sync Modal (Settings / Gemini API Key / Copy State JSON / Markdown, Import State JSON, New Day Reset) */}
       {stateModalOpen && (
         <div
           id="modal-state-io"
-          className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
         >
-          <div className="max-w-2xl w-full p-5 sm:p-6 rounded-2xl bg-slate-900 border border-slate-700 space-y-4 shadow-2xl">
+          <div className="max-w-2xl w-full p-5 sm:p-6 rounded-2xl bg-slate-900 border border-slate-700 space-y-4 shadow-2xl my-auto">
             <div className="flex items-center justify-between">
               <h2 className="text-base font-bold text-slate-100 flex items-center gap-2 font-mono">
                 <FileText className="w-4 h-4 text-sky-400" />
-                <span>State Sync (state.md &amp; JSON / New Day Reset)</span>
+                <span>Settings &amp; State Sync (state.md &amp; JSON / New Day Reset)</span>
               </h2>
               <button
                 id="btn-close-state-modal"
@@ -2379,6 +2445,81 @@ export function App() {
               >
                 <X className="w-4 h-4" />
               </button>
+            </div>
+
+            {/* Gemini API Key Storage & Fallback Section */}
+            <div
+              id="settings-gemini-api-key-section"
+              className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label
+                  htmlFor="input-gemini-api-key"
+                  className="text-xs font-mono font-bold text-cyan-300 flex items-center gap-1.5"
+                >
+                  <KeyRound className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Gemini 2.5 Flash API Key (localStorage: geminiApiKey)</span>
+                </label>
+                <span className="text-[11px] font-mono text-slate-400">
+                  {getStoredGeminiApiKey()
+                    ? '✓ Saved in localStorage'
+                    : getEnvGeminiApiKey()
+                    ? '✓ Using VITE_GEMINI_API_KEY env fallback'
+                    : 'No API key set (Offline Regex Parser active)'}
+                </span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  id="input-gemini-api-key"
+                  type="password"
+                  value={geminiApiKeyInput}
+                  onChange={(e) => setGeminiApiKeyInput(e.target.value)}
+                  placeholder={
+                    getEnvGeminiApiKey()
+                      ? 'Fallback active (import.meta.env.VITE_GEMINI_API_KEY) — enter key to override...'
+                      : 'Enter Gemini API key (AIza...) or leave blank for offline regex parser...'
+                  }
+                  className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-cyan-400"
+                />
+                <div className="flex items-center gap-1.5">
+                  <button
+                    id="btn-save-gemini-api-key"
+                    type="button"
+                    onClick={() => {
+                      setStoredGeminiApiKey(geminiApiKeyInput);
+                      setApiKeyVersion((v) => v + 1);
+                      showNotice(
+                        geminiApiKeyInput.trim()
+                          ? 'Saved geminiApiKey to localStorage for Smart Intake (gemini-2.5-flash).'
+                          : 'Cleared geminiApiKey from localStorage (using env fallback or offline regex parser).'
+                      );
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-mono font-bold text-xs flex items-center gap-1 cursor-pointer shrink-0"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Save Key</span>
+                  </button>
+                  {geminiApiKeyInput && (
+                    <button
+                      id="btn-clear-gemini-api-key"
+                      type="button"
+                      onClick={() => {
+                        setGeminiApiKeyInput('');
+                        setStoredGeminiApiKey('');
+                        setApiKeyVersion((v) => v + 1);
+                        showNotice('Cleared geminiApiKey from localStorage.');
+                      }}
+                      className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-mono text-xs cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-400 font-mono">
+                Fallback chain: <code className="text-cyan-300">localStorage.getItem(&apos;geminiApiKey&apos;)</code> → <code className="text-cyan-300">import.meta.env.VITE_GEMINI_API_KEY</code> → Local Offline Regex Parser (<code className="text-amber-300">+paper Draft 8b</code>, <code className="text-amber-300">+lab Tue 2h</code>).
+              </p>
             </div>
 
             <p className="text-xs text-slate-400">

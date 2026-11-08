@@ -28,6 +28,7 @@ import {
   Level2BreakProtocol,
   LoadMode,
   ProjectPresetType,
+  SmartIntakePlanResult,
   StressResetProtocol,
   SymmetryState,
   TimerRunMode,
@@ -36,10 +37,18 @@ import {
 import { computeShiftMetrics } from '../state/defaultState';
 import { DualRingTimerSvg } from './DualRingTimerSvg';
 import { BreathingVisualizer478 } from './BreathingVisualizer478';
+import { SmartIntakeBar } from './SmartIntakeBar';
 import { triggerHaptic } from '../utils/haptics';
 
 interface Tab1PipelineProps {
   state: SymmetryState;
+  smartIntakeText: string;
+  onChangeSmartIntakeText: (val: string) => void;
+  smartIntakePreview: SmartIntakePlanResult | null;
+  onSetSmartIntakePreview: (plan: SmartIntakePlanResult | null) => void;
+  onApplySmartIntakePlan: (plan: SmartIntakePlanResult) => void;
+  onOpenStateModal: () => void;
+  apiKeyVersion: number;
   onSelectLoadMode: (mode: LoadMode, targetBlocks: number, cruisePlus?: boolean) => void;
   onSetSurgeConsecutiveDays: (days: number) => void;
   onSetFixedEvent: (event: FixedEventType) => void;
@@ -82,6 +91,13 @@ interface Tab1PipelineProps {
 
 export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   state,
+  smartIntakeText,
+  onChangeSmartIntakeText,
+  smartIntakePreview,
+  onSetSmartIntakePreview,
+  onApplySmartIntakePlan,
+  onOpenStateModal,
+  apiKeyVersion,
   onSelectLoadMode,
   onSetSurgeConsecutiveDays,
   onSetFixedEvent,
@@ -220,6 +236,19 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
 
   return (
     <div className="space-y-4 animate-tab-enter">
+      {/* Smart Intake & Week Planner Bar (Gemini 2.5 Flash + Local Offline Fallback) */}
+      <SmartIntakeBar
+        state={state}
+        contextVariant="FOCUS_PIPELINE"
+        inputText={smartIntakeText}
+        onChangeInputText={onChangeSmartIntakeText}
+        previewPlan={smartIntakePreview}
+        onSetPreviewPlan={onSetSmartIntakePreview}
+        onApplyPlan={onApplySmartIntakePlan}
+        onOpenSettingsModal={onOpenStateModal}
+        apiKeyVersion={apiKeyVersion}
+      />
+
       {/* End-of-Shift Lock Banner when 0m work left */}
       {metrics.isZeroWorkLeft && (
         <div
