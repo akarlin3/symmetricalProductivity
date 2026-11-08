@@ -3,6 +3,7 @@ import {
   Calendar,
   Clock,
   Download,
+  ListChecks,
   Lock,
   Moon,
   RotateCcw,
@@ -22,6 +23,7 @@ interface HeaderBarProps {
   state: SymmetryState;
   activeTab: TabId;
   onSelectTab: (tab: TabId) => void;
+  onOpenTodayLogDrawer: () => void;
   onOpenPipelineDrawer: () => void;
   onOpenStateModal: () => void;
   onToggleZeroWorkSimulation: () => void;
@@ -40,6 +42,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   state,
   activeTab,
   onSelectTab,
+  onOpenTodayLogDrawer,
   onOpenPipelineDrawer,
   onOpenStateModal,
   onToggleZeroWorkSimulation,
@@ -50,6 +53,9 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   const fixedEventDisplay = FIXED_EVENT_LABELS[state.fixedEvent];
   const logicalDay = state.logicalDayKey || getLogicalDayKey();
   const isLateShiftPre4am = isPre4amRolloverWindow();
+  const todayLoggedCount = (state.todayBlockLog || []).filter(
+    (entry) => entry.logicalDate === logicalDay
+  ).length;
 
   const tabs: { id: TabId; label: string; shortLabel: string; badge?: string }[] = [
     {
@@ -194,8 +200,26 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             </div>
           </div>
 
-          {/* Utility Buttons: 7-Day Pipeline Drawer, Simulate 0m Work Left, State.md Import/Export */}
+          {/* Utility Buttons: Today's Log, 7-Day Pipeline Drawer, Simulate 0m Work Left, State.md Import/Export */}
           <div className="flex items-center gap-1.5">
+            <button
+              id="btn-open-today-log-drawer"
+              type="button"
+              onClick={() => {
+                triggerHaptic([10]);
+                onOpenTodayLogDrawer();
+              }}
+              className={`px-2.5 py-1.5 rounded-xl border text-xs font-mono font-semibold flex items-center gap-1.5 cursor-pointer ${
+                isEveningTheme
+                  ? 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/45 text-amber-100'
+                  : 'bg-cyan-500/10 hover:bg-cyan-500/20 border-cyan-400/40 text-cyan-200'
+              }`}
+              title="Open Editable Today's Block Log drawer (since 4:00 AM logical day)"
+            >
+              <ListChecks className="w-3.5 h-3.5 shrink-0" />
+              <span>Today&apos;s Log ({todayLoggedCount} blocks)</span>
+            </button>
+
             <button
               id="btn-open-pipeline-drawer"
               type="button"
