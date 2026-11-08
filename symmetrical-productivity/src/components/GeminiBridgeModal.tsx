@@ -417,7 +417,7 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
                 <AveryCorpEmblem
                   size={32}
                   variant="image"
-                  cropMode="mark-only"
+                  cropMode="full-seal"
                   ariaLabel="AveryCorp Institute Sync with Gemini Seal"
                 />
                 <div>

@@ -199,7 +199,7 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
             <AveryCorpEmblem
               size={32}
               variant="image"
-              cropMode="mark-only"
+              cropMode="full-seal"
               architectUnlocked={architectModeUnlocked}
               ariaLabel="AveryCorp Institute Onboarding Seal"
             />
