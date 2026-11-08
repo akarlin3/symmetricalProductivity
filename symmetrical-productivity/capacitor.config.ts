@@ -1,15 +1,15 @@
 import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
-  appId: 'com.symmetrymanager.app',
-  appName: 'SymmetryManager',
+  appId: 'org.averycorp.symmetrical',
+  appName: 'Symmetrical Productivity',
   webDir: 'dist',
   server: {
     androidScheme: 'https',
     cleartext: true,
   },
   android: {
-    backgroundColor: '#090d16',
+    backgroundColor: '#0f172a',
   },
   plugins: {
     LocalNotifications: {

@@ -1,10 +1,6 @@
 import React from 'react';
 import {
-  AlertTriangle,
-  BookOpen,
-  CheckCircle2,
   FastForward,
-  Gamepad2,
   Lock,
   Moon,
   Music,
@@ -13,7 +9,6 @@ import {
   RefreshCw,
   Tv,
   Unlock,
-  Wrench,
 } from 'lucide-react';
 import {
   MediaSubTrackId,
@@ -426,10 +421,11 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                 <Music className="w-4 h-4 text-amber-400" />
               </div>
               <h3 className="text-sm font-bold text-amber-50">
-                5m Cold Song Play (Bass / Guitar)
+                Bass / Guitar / Piano / Drums
               </h3>
               <p className="text-xs text-stone-400">
-                Pick up instrument and play 1 song cold. Explicitly <strong>no DAW / no drills</strong>.
+                <strong className="text-amber-200 font-mono">5m Startup:</strong>{' '}
+                Play 1 familiar song cold — no DAW or drills
               </p>
             </div>
             <button
@@ -464,7 +460,11 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                 {recharge.stickySlots.CAT2_MAKER.activeTitle}
               </h3>
               <p className="text-xs text-stone-400">
-                5m K1C 3D printer diagnostic/build step. Next in backlog:{' '}
+                <strong className="text-amber-200 font-mono">5m Startup:</strong>{' '}
+                {recharge.stickySlots.CAT2_MAKER.startupStep}
+              </p>
+              <p className="text-[11px] text-stone-400">
+                Next in backlog:{' '}
                 <span className="text-stone-300">
                   {recharge.stickySlots.CAT2_MAKER.backlogQueue[0]}
                 </span>
@@ -541,12 +541,12 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
               </div>
 
               <div className="space-y-1">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <h3 className="text-sm font-bold text-amber-50">
                     {recharge.stickySlots[recharge.activeMediaTab].activeTitle}
                   </h3>
                   {recharge.activeMediaTab === '3A_FICTION' && (
-                    <div className="inline-flex rounded bg-stone-900 p-0.5 border border-stone-800">
+                    <div className="inline-flex rounded bg-stone-900 p-0.5 border border-stone-800 shrink-0">
                       {(['1.75x', '2.00x', '2.25x'] as const).map((spd) => (
                         <button
                           key={spd}
@@ -565,13 +565,12 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                   )}
                 </div>
                 <p className="text-xs text-stone-400">
-                  {recharge.activeMediaTab === '3A_FICTION'
-                    ? `Audiobook/Print pacing at ${recharge.fictionSpeed}.`
-                    : recharge.activeMediaTab === '3B_NONFICTION'
-                    ? 'Narrative nonfiction track (auto-credits Roadmap Input).'
-                    : 'Dedicated episodic series track.'}{' '}
-                  Backlog:{' '}
-                  <span className="text-stone-300">
+                  <strong className="text-amber-200 font-mono">5m Startup:</strong>{' '}
+                  {recharge.stickySlots[recharge.activeMediaTab].startupStep}
+                </p>
+                <p className="text-[11px] text-stone-400">
+                  Queued Next:{' '}
+                  <span className="text-stone-300 font-semibold">
                     {recharge.stickySlots[recharge.activeMediaTab].backlogQueue[0]}
                   </span>
                 </p>
@@ -620,10 +619,11 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                 <Tv className="w-4 h-4 text-amber-400" />
               </div>
               <h3 className="text-sm font-bold text-amber-50">
-                &ldquo;It&rsquo;s Always Sunny in Philadelphia&rdquo;
+                It&rsquo;s Always Sunny in Philadelphia
               </h3>
               <p className="text-xs text-stone-400">
-                5m episode start <strong>away from work monitor</strong>. Zero sticky commitment counter.
+                <strong className="text-amber-200 font-mono">5m Startup:</strong>{' '}
+                First 5m of episode away from work monitor
               </p>
             </div>
             <button
@@ -658,9 +658,13 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                 {recharge.stickySlots.CAT5_GAMING.activeTitle}
               </h3>
               <p className="text-xs text-stone-400">
-                5m micro-objective (clear 1 room/inventory step). Backlog:{' '}
+                <strong className="text-amber-200 font-mono">5m Startup:</strong>{' '}
+                {recharge.stickySlots.CAT5_GAMING.startupStep}
+              </p>
+              <p className="text-[11px] text-stone-400">
+                Backlog:{' '}
                 <span className="text-stone-300">
-                  {recharge.stickySlots.CAT5_GAMING.backlogQueue[0]}
+                  {recharge.stickySlots.CAT5_GAMING.backlogQueue.join(', ')}
                 </span>
               </p>
             </div>

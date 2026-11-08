@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">SymmetryManager</string>
-    <string name="title_activity_main">SymmetryManager</string>
-    <string name="package_name">com.symmetrymanager.app</string>
-    <string name="custom_url_scheme">com.symmetrymanager.app</string>
+    <string name="app_name">Symmetrical Productivity</string>
+    <string name="title_activity_main">Symmetrical Productivity</string>
+    <string name="package_name">org.averycorp.symmetrical</string>
+    <string name="custom_url_scheme">org.averycorp.symmetrical</string>
 </resources>

@@ -81,9 +81,13 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
     if (timer.mode !== 'STRESS_RESET' || timer.stressProtocol !== 'BREATHING_478') {
       return;
     }
-    const id = window.setInterval(() => {
-      setBreathTick((prev) => (prev + 1) % 19);
-    }, 1000);
+    const cycleAnchorMs = Date.now();
+    const updateBreathFromTimestamp = () => {
+      const elapsedSec = Math.max(0, Math.floor((Date.now() - cycleAnchorMs) / 1000));
+      setBreathTick(elapsedSec % 19);
+    };
+    updateBreathFromTimestamp();
+    const id = window.setInterval(updateBreathFromTimestamp, 250);
     return () => window.clearInterval(id);
   }, [timer.mode, timer.stressProtocol]);
 

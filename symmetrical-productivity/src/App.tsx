@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Copy, Download, FileText, Upload, X } from 'lucide-react';
+import { Copy, Download, FileText, RotateCcw, Upload, X } from 'lucide-react';
 import {
   FixedEventType,
   Level2BreakProtocol,
@@ -27,9 +27,9 @@ import {
   fireSymmetryNotification,
   initSymmetryNotifications,
   NotificationLogEntry,
-  scheduleLockScreenStageAlarm,
+  scheduleTimerNotificationAt,
   SymmetryNotificationEvent,
-} from './services/notifications';
+} from './utils/notifications';
 import { HeaderBar } from './components/HeaderBar';
 import { PipelineDrawer } from './components/PipelineDrawer';
 import { Tab1Pipeline } from './components/Tab1Pipeline';
@@ -42,7 +42,7 @@ export function App() {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
-        return { ...DEFAULT_SYMMETRY_STATE, ...JSON.parse(saved) };
+        return parseFromStateInput(saved);
       }
     } catch {
       // Fallback to default deterministic state
@@ -91,7 +91,7 @@ export function App() {
     return () => window.clearTimeout(id);
   }, [statusNotice]);
 
-  // Persist to localStorage on every state update
+  // Persist to localStorage on every state update (including targetEndTimeMs timestamps)
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -100,30 +100,118 @@ export function App() {
     }
   }, [state]);
 
-  // Schedule or cancel ahead-of-time Android Lock-Screen Alarms when timers start/pause
+  // Schedule or cancel ahead-of-time notifications at exact targetEndTimeMs when timers start/pause/reset
   useEffect(() => {
-    if (
-      state.timer.isRunning &&
-      state.timer.mode === 'WORK_20M' &&
-      state.timer.workStage === 'IGNITION_5M'
-    ) {
-      scheduleLockScreenStageAlarm(
-        'ROLLOVER_5M_TO_15M',
-        state.timer.secondsLeft,
-        '5m Startup Step Complete → 15m Momentum',
-        `Auto-rolling into 15m Momentum (MOMENTUM_15M) for "${state.timer.activeTaskTitle}".`
-      );
-    } else if (!state.timer.isRunning && !state.recharge.flowExtensionRunning && !state.recharge.categoryRunning) {
+    const anyTimerActive =
+      (state.timer.isRunning && Boolean(state.timer.targetEndTimeMs)) ||
+      (state.timer.recoveryFlashcardRunning &&
+        Boolean(state.timer.recoveryFlashcardTargetEndTimeMs)) ||
+      (state.recharge.option0Running &&
+        Boolean(state.recharge.option0TargetEndTimeMs)) ||
+      (state.recharge.categoryRunning &&
+        Boolean(state.recharge.categoryTargetEndTimeMs));
+
+    if (!anyTimerActive) {
       cancelAllScheduledStageAlarms();
+      return;
+    }
+
+    if (state.timer.isRunning && state.timer.targetEndTimeMs) {
+      if (state.timer.mode === 'WORK_20M' && state.timer.workStage === 'IGNITION_5M') {
+        scheduleTimerNotificationAt(
+          state.timer.targetEndTimeMs,
+          '5m Startup Complete — Rolling into 15m Momentum',
+          `Auto-rolling into 15m Momentum (MOMENTUM_15M) for "${state.timer.activeTaskTitle}".`,
+          'ROLLOVER_5M_TO_15M'
+        );
+      } else if (
+        state.timer.mode === 'WORK_20M' &&
+        state.timer.workStage === 'MOMENTUM_15M'
+      ) {
+        scheduleTimerNotificationAt(
+          state.timer.targetEndTimeMs,
+          '20m Work Block Complete',
+          `Completed 20m block for "${state.timer.activeTaskTitle}".`,
+          'WORK_BLOCK_COMPLETE'
+        );
+      } else if (state.timer.mode === 'STRESS_RESET') {
+        scheduleTimerNotificationAt(
+          state.timer.targetEndTimeMs,
+          'Stress / Fatigue Reset Complete',
+          'Physical reset complete. 5m Flashcard recovery block queued.',
+          'STRESS_RESET_COMPLETE'
+        );
+      } else {
+        scheduleTimerNotificationAt(
+          state.timer.targetEndTimeMs,
+          'Break Complete — Ready for 5m Startup Step',
+          'Break finished. Ready to start next 5m Startup Step (IGNITION_5M).',
+          'BREAK_COMPLETE'
+        );
+      }
+    }
+
+    if (
+      state.timer.recoveryFlashcardRunning &&
+      state.timer.recoveryFlashcardTargetEndTimeMs
+    ) {
+      scheduleTimerNotificationAt(
+        state.timer.recoveryFlashcardTargetEndTimeMs,
+        '5m Recovery Flashcard Block Complete',
+        'Recovery flashcard block cleared.',
+        'WORK_BLOCK_COMPLETE'
+      );
+    }
+
+    if (state.recharge.option0Running && state.recharge.option0TargetEndTimeMs) {
+      scheduleTimerNotificationAt(
+        state.recharge.option0TargetEndTimeMs,
+        '20m Option 0 Stillness Complete',
+        '20m stillness window complete.',
+        'CHECKIN_20M_CHIME'
+      );
+    }
+
+    if (state.recharge.categoryRunning && state.recharge.categoryTargetEndTimeMs) {
+      if (state.recharge.pacingStage === 'STARTUP_5M') {
+        scheduleTimerNotificationAt(
+          state.recharge.categoryTargetEndTimeMs,
+          '5m Startup Complete — Rolling into 15m Momentum',
+          'Rolling into 20m Check-In window.',
+          'ROLLOVER_5M_TO_15M'
+        );
+      } else if (
+        state.recharge.pacingStage === 'WINDOW_20M' ||
+        state.recharge.pacingStage === 'WINDOW_40M'
+      ) {
+        scheduleTimerNotificationAt(
+          state.recharge.categoryTargetEndTimeMs,
+          '20m Check-In: Keep going, switch, or rest?',
+          'Keep going, switch, or rest?',
+          'CHECKIN_20M_CHIME'
+        );
+      } else {
+        scheduleTimerNotificationAt(
+          state.recharge.categoryTargetEndTimeMs,
+          '60m Limit Reached: Take a 5–10m physical break',
+          'Enforcing mandatory 5–10m physical break.',
+          'MANDATORY_60M_BREAK'
+        );
+      }
     }
   }, [
     state.timer.isRunning,
     state.timer.mode,
     state.timer.workStage,
-    state.timer.secondsLeft,
+    state.timer.targetEndTimeMs,
     state.timer.activeTaskTitle,
-    state.recharge.flowExtensionRunning,
+    state.timer.recoveryFlashcardRunning,
+    state.timer.recoveryFlashcardTargetEndTimeMs,
+    state.recharge.option0Running,
+    state.recharge.option0TargetEndTimeMs,
     state.recharge.categoryRunning,
+    state.recharge.categoryTargetEndTimeMs,
+    state.recharge.pacingStage,
   ]);
 
   const metrics = computeShiftMetrics(state);
@@ -153,169 +241,6 @@ export function App() {
       };
     });
   };
-
-  // Master 1-second tick loop for active timers
-  useEffect(() => {
-    const anyRunning =
-      state.timer.isRunning ||
-      state.timer.recoveryFlashcardRunning ||
-      state.recharge.flowExtensionRunning ||
-      state.recharge.option0Running ||
-      state.recharge.categoryRunning;
-
-    if (!anyRunning) return;
-
-    const interval = window.setInterval(() => {
-      setState((prev) => {
-        let next = { ...prev };
-
-        // 1. Primary Work / Break / Stress Timer
-        if (prev.timer.isRunning) {
-          if (prev.timer.secondsLeft > 1) {
-            next.timer = {
-              ...prev.timer,
-              secondsLeft: prev.timer.secondsLeft - 1,
-            };
-          } else {
-            // Stage hit 00:00 -> deterministic state transition
-            if (prev.timer.mode === 'WORK_20M' && prev.timer.workStage === 'IGNITION_5M') {
-              // Rule 2: Auto-roll 5m Startup Step (IGNITION_5M) into 15m Momentum (MOMENTUM_15M)
-              dispatchLockScreenAlert(
-                'ROLLOVER_5M_TO_15M',
-                '5m Startup Step Complete → 15m Momentum',
-                `Auto-rolling into 15m Momentum (MOMENTUM_15M) for "${prev.timer.activeTaskTitle}".`
-              );
-              next.timer = {
-                ...prev.timer,
-                workStage: 'MOMENTUM_15M',
-                secondsLeft: 900,
-                isRunning: true,
-              };
-            } else if (
-              prev.timer.mode === 'WORK_20M' &&
-              prev.timer.workStage === 'MOMENTUM_15M'
-            ) {
-              next = handleCompleteWorkBlockTransition(prev);
-            } else if (prev.timer.mode === 'STRESS_RESET') {
-              // Rule 6: Stress / Fatigue Reset finishes -> queues 5m Flashcard block
-              dispatchLockScreenAlert(
-                'STRESS_RESET_COMPLETE',
-                'Stress / Fatigue Reset Complete',
-                '5m Flashcard recovery block queued.'
-              );
-              next.timer = {
-                ...prev.timer,
-                isRunning: false,
-                secondsLeft: prev.timer.stressDurationMinutes * 60,
-                queuedRecoveryFlashcard5m: true,
-                recoveryFlashcardSecondsLeft: 300,
-                recoveryFlashcardRunning: false,
-              };
-            } else {
-              // Break completed -> return to 5m Startup Step
-              next.timer = {
-                ...prev.timer,
-                mode: 'WORK_20M',
-                workStage: 'IGNITION_5M',
-                secondsLeft: 300,
-                isRunning: false,
-              };
-              if (prev.timer.mode === 'BREAK_L3') {
-                next.midDayResetCompletedToday = true;
-              }
-            }
-          }
-        }
-
-        // 2. Queued 5m Recovery Flashcard Timer
-        if (prev.timer.recoveryFlashcardRunning) {
-          if (prev.timer.recoveryFlashcardSecondsLeft > 1) {
-            next.timer = {
-              ...next.timer,
-              recoveryFlashcardSecondsLeft:
-                prev.timer.recoveryFlashcardSecondsLeft - 1,
-            };
-          } else {
-            next.timer = {
-              ...next.timer,
-              queuedRecoveryFlashcard5m: false,
-              recoveryFlashcardRunning: false,
-              recoveryFlashcardSecondsLeft: 300,
-            };
-            next.roadmapTracks = creditRoadmapTrack(
-              next.roadmapTracks,
-              'science',
-              'INPUT',
-              1
-            );
-          }
-        }
-
-        // 3. Flow Extension Open Count-Up Timer (20m Check-In Chimes & 60m Mandatory Break Alert)
-        if (prev.recharge.flowExtensionRunning) {
-          const newElapsed = prev.recharge.flowExtensionElapsedSeconds + 1;
-          if (newElapsed > 0 && newElapsed % 3600 === 0) {
-            dispatchLockScreenAlert(
-              'MANDATORY_60M_BREAK',
-              '60m Mandatory Physical Break Alert',
-              '60 minutes of Flow Extension elapsed. Take a mandatory 5–10m physical break.'
-            );
-          } else if (newElapsed > 0 && newElapsed % 1200 === 0) {
-            dispatchLockScreenAlert(
-              'CHECKIN_20M_CHIME',
-              '20m Flow Extension Check-In Chime',
-              `${Math.floor(newElapsed / 60)}m elapsed in Flow Extension.`
-            );
-          }
-          next.recharge = {
-            ...prev.recharge,
-            flowExtensionElapsedSeconds: newElapsed,
-          };
-        }
-
-        // 4. Option 0 Rest / Stillness 20m Timer
-        if (prev.recharge.option0Running) {
-          if (prev.recharge.option0SecondsLeft > 1) {
-            next.recharge = {
-              ...prev.recharge,
-              option0SecondsLeft: prev.recharge.option0SecondsLeft - 1,
-            };
-          } else {
-            const windows = prev.recharge.option0ConsecutiveWindows + 1;
-            next.recharge = {
-              ...prev.recharge,
-              option0Running: false,
-              option0SecondsLeft: 1200,
-              option0ConsecutiveWindows: windows,
-              forkCheckModalOpen: windows >= 2,
-            };
-          }
-        }
-
-        // 5. Evening Recharge Category Timer
-        if (prev.recharge.categoryRunning) {
-          if (prev.recharge.categorySecondsLeft > 1) {
-            next.recharge = {
-              ...prev.recharge,
-              categorySecondsLeft: prev.recharge.categorySecondsLeft - 1,
-            };
-          } else {
-            next = advanceCategoryMilestoneInternal(prev);
-          }
-        }
-
-        return next;
-      });
-    }, 1000);
-
-    return () => window.clearInterval(interval);
-  }, [
-    state.timer.isRunning,
-    state.timer.recoveryFlashcardRunning,
-    state.recharge.flowExtensionRunning,
-    state.recharge.option0Running,
-    state.recharge.categoryRunning,
-  ]);
 
   // Complete a 20m work block and route to the appropriate Break level
   const handleCompleteWorkBlockTransition = (prev: SymmetryState): SymmetryState => {
@@ -375,6 +300,7 @@ export function App() {
           mode: 'BREAK_L3',
           workStage: 'IGNITION_5M',
           secondsLeft: prev.timer.l3DurationMinutes * 60,
+          targetEndTimeMs: null,
           isRunning: false,
           chainedBlocksCount: 0,
         },
@@ -390,6 +316,7 @@ export function App() {
           mode: 'BREAK_L2',
           workStage: 'IGNITION_5M',
           secondsLeft: prev.timer.l2DurationMinutes * 60,
+          targetEndTimeMs: null,
           isRunning: false,
           chainedBlocksCount: 0,
         },
@@ -403,6 +330,7 @@ export function App() {
         mode: 'BREAK_L1',
         workStage: 'IGNITION_5M',
         secondsLeft: prev.timer.l1DurationMinutes * 60,
+        targetEndTimeMs: null,
         isRunning: false,
         chainedBlocksCount: 2,
       },
@@ -410,7 +338,10 @@ export function App() {
   };
 
   // Advance Recharge Pacing: 5m Startup -> 20m Check-In -> 40m Check-In -> 60m Mandatory Break
-  const advanceCategoryMilestoneInternal = (prev: SymmetryState): SymmetryState => {
+  const advanceCategoryMilestoneInternal = (
+    prev: SymmetryState,
+    now = Date.now()
+  ): SymmetryState => {
     const r = prev.recharge;
     if (r.pacingStage === 'STARTUP_5M') {
       dispatchLockScreenAlert(
@@ -418,14 +349,23 @@ export function App() {
         '5m Recharge Startup Step Complete',
         'Rolling into 20m Check-In window.'
       );
+      const keepRunning = r.categoryRunning;
+      const nextEndTimeMs = keepRunning
+        ? (r.categoryTargetEndTimeMs ?? now) + 900 * 1000
+        : null;
+      const nextSecondsLeft =
+        keepRunning && nextEndTimeMs
+          ? Math.max(1, Math.ceil((nextEndTimeMs - now) / 1000))
+          : 900;
       return {
         ...prev,
         recharge: {
           ...r,
           pacingStage: 'WINDOW_20M',
-          categorySecondsLeft: 900, // 15m remaining to 20m mark
+          categorySecondsLeft: nextSecondsLeft, // 15m remaining to 20m mark
+          categoryTargetEndTimeMs: nextEndTimeMs,
           categoryElapsedMinutes: 5,
-          categoryRunning: false,
+          categoryRunning: keepRunning,
         },
       };
     }
@@ -458,6 +398,7 @@ export function App() {
           ...r,
           pacingStage: 'WINDOW_40M',
           categorySecondsLeft: 1200,
+          categoryTargetEndTimeMs: null,
           categoryElapsedMinutes: 20,
           categoryRunning: false,
           checkInModalOpen: true,
@@ -478,6 +419,7 @@ export function App() {
           ...r,
           pacingStage: 'MANDATORY_BREAK_60M',
           categorySecondsLeft: 600, // 10m Mandatory Physical Break at 60m
+          categoryTargetEndTimeMs: null,
           categoryElapsedMinutes: 40,
           categoryRunning: false,
           checkInModalOpen: true,
@@ -496,11 +438,299 @@ export function App() {
         ...r,
         pacingStage: 'STARTUP_5M',
         categorySecondsLeft: 300,
+        categoryTargetEndTimeMs: null,
         categoryElapsedMinutes: 60,
         categoryRunning: false,
       },
     };
   };
+
+  // Master timestamp-delta (targetEndTimeMs - Date.now()) reconciliation loop for all active timers
+  useEffect(() => {
+    const anyRunning =
+      state.timer.isRunning ||
+      state.timer.recoveryFlashcardRunning ||
+      state.recharge.flowExtensionRunning ||
+      state.recharge.option0Running ||
+      state.recharge.categoryRunning;
+
+    if (!anyRunning) return;
+
+    const syncTimersWithNow = () => {
+      const now = Date.now();
+      setState((prev) => {
+        let next = { ...prev };
+        let changed = false;
+
+        // 1. Primary Work (5m Startup / 15m Momentum) / Break (L1/L2/L3) / Stress Reset Timer
+        if (prev.timer.isRunning) {
+          const endTimeMs =
+            prev.timer.targetEndTimeMs ?? now + prev.timer.secondsLeft * 1000;
+          const remainingMs = endTimeMs - now;
+          const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000));
+
+          if (remainingMs > 0) {
+            if (
+              prev.timer.secondsLeft !== remainingSec ||
+              prev.timer.targetEndTimeMs !== endTimeMs
+            ) {
+              next.timer = {
+                ...prev.timer,
+                targetEndTimeMs: endTimeMs,
+                secondsLeft: remainingSec,
+              };
+              changed = true;
+            }
+          } else {
+            changed = true;
+            // Stage reached targetEndTimeMs -> deterministic state transition
+            if (prev.timer.mode === 'WORK_20M' && prev.timer.workStage === 'IGNITION_5M') {
+              // Rule 2: Auto-roll 5m Startup Step (IGNITION_5M) into 15m Momentum (MOMENTUM_15M) without stopping the timer
+              dispatchLockScreenAlert(
+                'ROLLOVER_5M_TO_15M',
+                '5m Startup Step Complete → 15m Momentum',
+                `Auto-rolling into 15m Momentum (MOMENTUM_15M) for "${prev.timer.activeTaskTitle}".`
+              );
+              const nextEndTimeMs = endTimeMs + 900 * 1000;
+              const nextSecondsLeft = Math.max(
+                1,
+                Math.ceil((nextEndTimeMs - now) / 1000)
+              );
+              next.timer = {
+                ...prev.timer,
+                workStage: 'MOMENTUM_15M',
+                secondsLeft: nextSecondsLeft,
+                targetEndTimeMs: nextEndTimeMs,
+                isRunning: true,
+              };
+            } else if (
+              prev.timer.mode === 'WORK_20M' &&
+              prev.timer.workStage === 'MOMENTUM_15M'
+            ) {
+              dispatchLockScreenAlert(
+                'WORK_BLOCK_COMPLETE',
+                '20m Work Block Complete',
+                `Completed 20m block for "${prev.timer.activeTaskTitle}".`
+              );
+              next = handleCompleteWorkBlockTransition(prev);
+            } else if (prev.timer.mode === 'STRESS_RESET') {
+              // Rule 6: Stress / Fatigue Reset finishes -> queues 5m Flashcard block
+              dispatchLockScreenAlert(
+                'STRESS_RESET_COMPLETE',
+                'Stress / Fatigue Reset Complete',
+                '5m Flashcard recovery block queued.'
+              );
+              next.timer = {
+                ...prev.timer,
+                isRunning: false,
+                targetEndTimeMs: null,
+                secondsLeft: prev.timer.stressDurationMinutes * 60,
+                queuedRecoveryFlashcard5m: true,
+                recoveryFlashcardSecondsLeft: 300,
+                recoveryFlashcardTargetEndTimeMs: null,
+                recoveryFlashcardRunning: false,
+              };
+            } else {
+              // Level 1 / 2 / 3 Break completed -> chime + return to 5m Startup Step
+              dispatchLockScreenAlert(
+                'BREAK_COMPLETE',
+                'Break Complete → Ready for 5m Startup Step',
+                'Break finished. Ready to start next 5m Startup Step (IGNITION_5M).'
+              );
+              next.timer = {
+                ...prev.timer,
+                mode: 'WORK_20M',
+                workStage: 'IGNITION_5M',
+                secondsLeft: 300,
+                targetEndTimeMs: null,
+                isRunning: false,
+              };
+              if (prev.timer.mode === 'BREAK_L3') {
+                next.midDayResetCompletedToday = true;
+              }
+            }
+          }
+        }
+
+        // 2. Queued 5m Recovery Flashcard Timer
+        if (prev.timer.recoveryFlashcardRunning) {
+          const recEndTimeMs =
+            prev.timer.recoveryFlashcardTargetEndTimeMs ??
+            now + prev.timer.recoveryFlashcardSecondsLeft * 1000;
+          const recRemainingMs = recEndTimeMs - now;
+          const recRemainingSec = Math.max(0, Math.ceil(recRemainingMs / 1000));
+
+          if (recRemainingMs > 0) {
+            if (
+              next.timer.recoveryFlashcardSecondsLeft !== recRemainingSec ||
+              next.timer.recoveryFlashcardTargetEndTimeMs !== recEndTimeMs
+            ) {
+              next.timer = {
+                ...next.timer,
+                recoveryFlashcardTargetEndTimeMs: recEndTimeMs,
+                recoveryFlashcardSecondsLeft: recRemainingSec,
+              };
+              changed = true;
+            }
+          } else {
+            changed = true;
+            dispatchLockScreenAlert(
+              'WORK_BLOCK_COMPLETE',
+              '5m Flashcard Recovery Block Complete',
+              'Completed 5-minute Flashcard recovery ramp.'
+            );
+            next.timer = {
+              ...next.timer,
+              queuedRecoveryFlashcard5m: false,
+              recoveryFlashcardRunning: false,
+              recoveryFlashcardSecondsLeft: 300,
+              recoveryFlashcardTargetEndTimeMs: null,
+            };
+            next.roadmapTracks = creditRoadmapTrack(
+              next.roadmapTracks,
+              'science',
+              'INPUT',
+              1
+            );
+          }
+        }
+
+        // 3. Flow Extension Open Count-Up Timer (20m Check-In Chimes & 60m Mandatory Break Alert)
+        if (prev.recharge.flowExtensionRunning) {
+          const startTimeMs =
+            prev.recharge.flowExtensionStartTimeMs ??
+            now - prev.recharge.flowExtensionElapsedSeconds * 1000;
+          const newElapsed = Math.max(
+            prev.recharge.flowExtensionElapsedSeconds,
+            Math.floor((now - startTimeMs) / 1000)
+          );
+
+          if (
+            newElapsed !== prev.recharge.flowExtensionElapsedSeconds ||
+            prev.recharge.flowExtensionStartTimeMs !== startTimeMs
+          ) {
+            const prev60mBuckets = Math.floor(
+              prev.recharge.flowExtensionElapsedSeconds / 3600
+            );
+            const new60mBuckets = Math.floor(newElapsed / 3600);
+            const prev20mBuckets = Math.floor(
+              prev.recharge.flowExtensionElapsedSeconds / 1200
+            );
+            const new20mBuckets = Math.floor(newElapsed / 1200);
+
+            if (new60mBuckets > prev60mBuckets) {
+              dispatchLockScreenAlert(
+                'MANDATORY_60M_BREAK',
+                '60m Mandatory Physical Break Alert',
+                '60 minutes of Flow Extension elapsed. Take a mandatory 5–10m physical break.'
+              );
+            } else if (new20mBuckets > prev20mBuckets) {
+              dispatchLockScreenAlert(
+                'CHECKIN_20M_CHIME',
+                '20m Flow Extension Check-In Chime',
+                `${new20mBuckets * 20}m elapsed in Flow Extension.`
+              );
+            }
+            next.recharge = {
+              ...next.recharge,
+              flowExtensionStartTimeMs: startTimeMs,
+              flowExtensionElapsedSeconds: newElapsed,
+            };
+            changed = true;
+          }
+        }
+
+        // 4. Option 0 Rest / Stillness 20m Timer
+        if (prev.recharge.option0Running) {
+          const optEndTimeMs =
+            prev.recharge.option0TargetEndTimeMs ??
+            now + prev.recharge.option0SecondsLeft * 1000;
+          const optRemainingMs = optEndTimeMs - now;
+          const optRemainingSec = Math.max(0, Math.ceil(optRemainingMs / 1000));
+
+          if (optRemainingMs > 0) {
+            if (
+              next.recharge.option0SecondsLeft !== optRemainingSec ||
+              next.recharge.option0TargetEndTimeMs !== optEndTimeMs
+            ) {
+              next.recharge = {
+                ...next.recharge,
+                option0TargetEndTimeMs: optEndTimeMs,
+                option0SecondsLeft: optRemainingSec,
+              };
+              changed = true;
+            }
+          } else {
+            changed = true;
+            const windows = prev.recharge.option0ConsecutiveWindows + 1;
+            dispatchLockScreenAlert(
+              'WORK_BLOCK_COMPLETE',
+              'Option 0 Stillness Window Complete',
+              `Completed 20m Rest / Stillness window (${windows}/2).`
+            );
+            next.recharge = {
+              ...next.recharge,
+              option0Running: false,
+              option0TargetEndTimeMs: null,
+              option0SecondsLeft: 1200,
+              option0ConsecutiveWindows: windows,
+              forkCheckModalOpen: windows >= 2,
+            };
+          }
+        }
+
+        // 5. Evening Recharge Category Timer (5m Startup -> 20m Check-In -> 40m Check-In -> 60m Break)
+        if (prev.recharge.categoryRunning) {
+          const catEndTimeMs =
+            prev.recharge.categoryTargetEndTimeMs ??
+            now + prev.recharge.categorySecondsLeft * 1000;
+          const catRemainingMs = catEndTimeMs - now;
+          const catRemainingSec = Math.max(0, Math.ceil(catRemainingMs / 1000));
+
+          if (catRemainingMs > 0) {
+            if (
+              next.recharge.categorySecondsLeft !== catRemainingSec ||
+              next.recharge.categoryTargetEndTimeMs !== catEndTimeMs
+            ) {
+              next.recharge = {
+                ...next.recharge,
+                categoryTargetEndTimeMs: catEndTimeMs,
+                categorySecondsLeft: catRemainingSec,
+              };
+              changed = true;
+            }
+          } else {
+            changed = true;
+            next = advanceCategoryMilestoneInternal(next, now);
+          }
+        }
+
+        return changed ? next : prev;
+      });
+    };
+
+    syncTimersWithNow();
+    const interval = window.setInterval(syncTimersWithNow, 250);
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        syncTimersWithNow();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', syncTimersWithNow);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', syncTimersWithNow);
+    };
+  }, [
+    state.timer.isRunning,
+    state.timer.recoveryFlashcardRunning,
+    state.recharge.flowExtensionRunning,
+    state.recharge.option0Running,
+    state.recharge.categoryRunning,
+  ]);
 
   // Handlers for Tab 1 (Focus Pipeline)
   const handleSelectLoadMode = (
@@ -587,6 +817,7 @@ export function App() {
     taskType: 'FLASHCARDS' | 'READING' | 'SYNTHESIS' | 'PROJECT',
     startupPrompt: string
   ) => {
+    const now = Date.now();
     setState((prev) => {
       const isTaskSwitch = prev.timer.activeTaskType !== taskType;
       return {
@@ -596,6 +827,7 @@ export function App() {
           mode: 'WORK_20M',
           workStage: 'IGNITION_5M',
           secondsLeft: 300,
+          targetEndTimeMs: now + 300 * 1000,
           isRunning: true,
           activeBlockSourceId: sourceId,
           activeTaskTitle: title,
@@ -731,6 +963,7 @@ export function App() {
 
   // Fast-forward current timer stage (5m -> 15m -> Break Router / Stress Reset -> 5m Flashcards)
   const handleFastForwardTimerStage = () => {
+    const now = Date.now();
     setState((prev) => {
       if (prev.timer.mode === 'WORK_20M' && prev.timer.workStage === 'IGNITION_5M') {
         dispatchLockScreenAlert(
@@ -745,11 +978,17 @@ export function App() {
             ...prev.timer,
             workStage: 'MOMENTUM_15M',
             secondsLeft: 900,
+            targetEndTimeMs: now + 900 * 1000,
             isRunning: true,
           },
         };
       }
       if (prev.timer.mode === 'WORK_20M' && prev.timer.workStage === 'MOMENTUM_15M') {
+        dispatchLockScreenAlert(
+          'WORK_BLOCK_COMPLETE',
+          '20m Work Block Complete',
+          `Completed 20m block for "${prev.timer.activeTaskTitle}".`
+        );
         const next = handleCompleteWorkBlockTransition(prev);
         const nextM = computeShiftMetrics(next);
         if (nextM.isZeroWorkLeft) {
@@ -780,14 +1019,21 @@ export function App() {
           timer: {
             ...prev.timer,
             isRunning: false,
+            targetEndTimeMs: null,
             secondsLeft: prev.timer.stressDurationMinutes * 60,
             queuedRecoveryFlashcard5m: true,
             recoveryFlashcardSecondsLeft: 300,
+            recoveryFlashcardTargetEndTimeMs: null,
             recoveryFlashcardRunning: false,
           },
         };
       }
-      // Break complete -> return to 5m Startup Step
+      // Break complete -> chime + return to 5m Startup Step
+      dispatchLockScreenAlert(
+        'BREAK_COMPLETE',
+        'Break Complete → Ready for 5m Startup Step',
+        'Break finished. Ready to start next 5m Startup Step (IGNITION_5M).'
+      );
       showNotice('Break complete → Ready for next 5m Startup Step (IGNITION_5M).');
       return {
         ...prev,
@@ -798,6 +1044,7 @@ export function App() {
           mode: 'WORK_20M',
           workStage: 'IGNITION_5M',
           secondsLeft: 300,
+          targetEndTimeMs: null,
           isRunning: false,
         },
       };
@@ -888,15 +1135,20 @@ export function App() {
               onAddProjectToQueue={handleAddProjectToQueue}
               onOpenPipelineDrawer={() => setPipelineDrawerOpen(true)}
               onTriggerMidDayReset={() => {
-                setState((prev) => ({
-                  ...prev,
-                  timer: {
-                    ...prev.timer,
-                    mode: 'BREAK_L3',
-                    secondsLeft: prev.timer.l3DurationMinutes * 60,
-                    isRunning: true,
-                  },
-                }));
+                const now = Date.now();
+                setState((prev) => {
+                  const secs = prev.timer.l3DurationMinutes * 60;
+                  return {
+                    ...prev,
+                    timer: {
+                      ...prev.timer,
+                      mode: 'BREAK_L3',
+                      secondsLeft: secs,
+                      targetEndTimeMs: now + secs * 1000,
+                      isRunning: true,
+                    },
+                  };
+                });
                 setActiveTab('TIMER');
                 showNotice('Started mandatory 60–120m Surge Mid-Day Reset.');
               }}
@@ -906,18 +1158,34 @@ export function App() {
           {activeTab === 'TIMER' && (
             <Tab2TimerTriage
               state={state}
-              onToggleTimerRun={() =>
-                setState((prev) => ({
-                  ...prev,
-                  timer: { ...prev.timer, isRunning: !prev.timer.isRunning },
-                }))
-              }
+              onToggleTimerRun={() => {
+                const now = Date.now();
+                setState((prev) => {
+                  const nextRunning = !prev.timer.isRunning;
+                  const currentSecondsLeft =
+                    prev.timer.isRunning && prev.timer.targetEndTimeMs
+                      ? Math.max(0, Math.ceil((prev.timer.targetEndTimeMs - now) / 1000))
+                      : prev.timer.secondsLeft;
+                  return {
+                    ...prev,
+                    timer: {
+                      ...prev.timer,
+                      isRunning: nextRunning,
+                      secondsLeft: currentSecondsLeft,
+                      targetEndTimeMs: nextRunning
+                        ? now + currentSecondsLeft * 1000
+                        : null,
+                    },
+                  };
+                });
+              }}
               onResetCurrentStage={() =>
                 setState((prev) => ({
                   ...prev,
                   timer: {
                     ...prev.timer,
                     isRunning: false,
+                    targetEndTimeMs: null,
                     secondsLeft:
                       prev.timer.mode === 'WORK_20M'
                         ? prev.timer.workStage === 'IGNITION_5M'
@@ -941,6 +1209,7 @@ export function App() {
                     ...prev.timer,
                     mode,
                     isRunning: false,
+                    targetEndTimeMs: null,
                     workStage: 'IGNITION_5M',
                     secondsLeft:
                       mode === 'WORK_20M'
@@ -963,6 +1232,7 @@ export function App() {
                     mode: 'BREAK_L1',
                     l1DurationMinutes: mins,
                     secondsLeft: mins * 60,
+                    targetEndTimeMs: null,
                     isRunning: false,
                   },
                 }))
@@ -975,6 +1245,7 @@ export function App() {
                     mode: 'BREAK_L2',
                     l2DurationMinutes: mins,
                     secondsLeft: mins * 60,
+                    targetEndTimeMs: null,
                     isRunning: false,
                   },
                 }))
@@ -987,6 +1258,8 @@ export function App() {
                     mode: 'BREAK_L2',
                     l2Protocol: protocol,
                     secondsLeft: prev.timer.l2DurationMinutes * 60,
+                    targetEndTimeMs: null,
+                    isRunning: false,
                   },
                 }))
               }
@@ -998,6 +1271,7 @@ export function App() {
                     mode: 'BREAK_L3',
                     l3DurationMinutes: mins,
                     secondsLeft: mins * 60,
+                    targetEndTimeMs: null,
                     isRunning: false,
                   },
                 }))
@@ -1006,6 +1280,7 @@ export function App() {
                 protocol: StressResetProtocol = 'BREATHING_478',
                 mins: 15 | 20 = 15
               ) => {
+                const now = Date.now();
                 setState((prev) => ({
                   ...prev,
                   timer: {
@@ -1014,6 +1289,7 @@ export function App() {
                     stressProtocol: protocol,
                     stressDurationMinutes: mins,
                     secondsLeft: mins * 60,
+                    targetEndTimeMs: now + mins * 60 * 1000,
                     isRunning: true,
                   },
                 }));
@@ -1022,28 +1298,59 @@ export function App() {
                 );
               }}
               onCompleteStressResetInto5mFlashcards={() => {
+                const now = Date.now();
+                dispatchLockScreenAlert(
+                  'STRESS_RESET_COMPLETE',
+                  'Stress / Fatigue Reset Complete',
+                  '5m Flashcard recovery block queued.'
+                );
                 setState((prev) => ({
                   ...prev,
                   timer: {
                     ...prev.timer,
                     isRunning: false,
+                    targetEndTimeMs: null,
                     queuedRecoveryFlashcard5m: true,
                     recoveryFlashcardSecondsLeft: 300,
+                    recoveryFlashcardTargetEndTimeMs: now + 300 * 1000,
                     recoveryFlashcardRunning: true,
                   },
                 }));
                 showNotice('Physical reset finished → Queued 5m Flashcard block.');
               }}
-              onToggleRecoveryFlashcardTimer={() =>
-                setState((prev) => ({
-                  ...prev,
-                  timer: {
-                    ...prev.timer,
-                    recoveryFlashcardRunning: !prev.timer.recoveryFlashcardRunning,
-                  },
-                }))
-              }
+              onToggleRecoveryFlashcardTimer={() => {
+                const now = Date.now();
+                setState((prev) => {
+                  const nextRunning = !prev.timer.recoveryFlashcardRunning;
+                  const currentSec =
+                    prev.timer.recoveryFlashcardRunning &&
+                    prev.timer.recoveryFlashcardTargetEndTimeMs
+                      ? Math.max(
+                          0,
+                          Math.ceil(
+                            (prev.timer.recoveryFlashcardTargetEndTimeMs - now) / 1000
+                          )
+                        )
+                      : prev.timer.recoveryFlashcardSecondsLeft;
+                  return {
+                    ...prev,
+                    timer: {
+                      ...prev.timer,
+                      recoveryFlashcardRunning: nextRunning,
+                      recoveryFlashcardSecondsLeft: currentSec,
+                      recoveryFlashcardTargetEndTimeMs: nextRunning
+                        ? now + currentSec * 1000
+                        : null,
+                    },
+                  };
+                });
+              }}
               onCompleteRecoveryFlashcard5m={() => {
+                dispatchLockScreenAlert(
+                  'WORK_BLOCK_COMPLETE',
+                  '5m Flashcard Recovery Block Complete',
+                  'Completed 5-minute Flashcard recovery ramp.'
+                );
                 setState((prev) => ({
                   ...prev,
                   roadmapTracks: creditRoadmapTrack(
@@ -1057,6 +1364,7 @@ export function App() {
                     queuedRecoveryFlashcard5m: false,
                     recoveryFlashcardRunning: false,
                     recoveryFlashcardSecondsLeft: 300,
+                    recoveryFlashcardTargetEndTimeMs: null,
                   },
                 }));
                 showNotice('Completed 5m Flashcard recovery block.');
@@ -1096,6 +1404,7 @@ export function App() {
                 }))
               }
               onConfirmFlowExtension={() => {
+                const now = Date.now();
                 setState((prev) => ({
                   ...prev,
                   recharge: {
@@ -1103,21 +1412,45 @@ export function App() {
                     flowExtensionPromptOpen: false,
                     flowExtensionActive: true,
                     flowExtensionRunning: true,
-                    weeklyExtensionsUsed: Math.min(2, prev.recharge.weeklyExtensionsUsed + 1),
+                    flowExtensionStartTimeMs:
+                      now - prev.recharge.flowExtensionElapsedSeconds * 1000,
+                    weeklyExtensionsUsed: Math.min(
+                      2,
+                      prev.recharge.weeklyExtensionsUsed + 1
+                    ),
                   },
                 }));
                 showNotice('Flow Extension confirmed → Open count-up timer started.');
               }}
-              onToggleFlowExtensionTimer={() =>
-                setState((prev) => ({
-                  ...prev,
-                  recharge: {
-                    ...prev.recharge,
-                    flowExtensionRunning: !prev.recharge.flowExtensionRunning,
-                  },
-                }))
-              }
+              onToggleFlowExtensionTimer={() => {
+                const now = Date.now();
+                setState((prev) => {
+                  const nextRunning = !prev.recharge.flowExtensionRunning;
+                  const currentElapsed =
+                    prev.recharge.flowExtensionRunning &&
+                    prev.recharge.flowExtensionStartTimeMs
+                      ? Math.max(
+                          prev.recharge.flowExtensionElapsedSeconds,
+                          Math.floor(
+                            (now - prev.recharge.flowExtensionStartTimeMs) / 1000
+                          )
+                        )
+                      : prev.recharge.flowExtensionElapsedSeconds;
+                  return {
+                    ...prev,
+                    recharge: {
+                      ...prev.recharge,
+                      flowExtensionRunning: nextRunning,
+                      flowExtensionElapsedSeconds: currentElapsed,
+                      flowExtensionStartTimeMs: nextRunning
+                        ? now - currentElapsed * 1000
+                        : null,
+                    },
+                  };
+                });
+              }}
               onLogFlowExtensionBlock20m={() => {
+                const now = Date.now();
                 setState((prev) => {
                   const newBlocksLogged =
                     prev.recharge.flowExtensionBlocksLoggedToday + 1;
@@ -1137,6 +1470,8 @@ export function App() {
                   // Rule 7: Deduct 1-2 project blocks from tomorrow's target for every 2-3 extension blocks logged
                   const deducted =
                     newBlocksLogged >= 3 ? 2 : newBlocksLogged >= 2 ? 1 : 0;
+                  const newElapsed =
+                    prev.recharge.flowExtensionElapsedSeconds + 1200;
                   return {
                     ...prev,
                     pipelineDays: prev.pipelineDays.map((d, idx) =>
@@ -1152,8 +1487,10 @@ export function App() {
                     ),
                     recharge: {
                       ...prev.recharge,
-                      flowExtensionElapsedSeconds:
-                        prev.recharge.flowExtensionElapsedSeconds + 1200,
+                      flowExtensionElapsedSeconds: newElapsed,
+                      flowExtensionStartTimeMs: prev.recharge.flowExtensionRunning
+                        ? now - newElapsed * 1000
+                        : null,
                       flowExtensionBlocksLoggedToday: newBlocksLogged,
                     },
                   };
@@ -1178,16 +1515,39 @@ export function App() {
                   ),
                 }))
               }
-              onToggleOption0Timer={() =>
-                setState((prev) => ({
-                  ...prev,
-                  recharge: {
-                    ...prev.recharge,
-                    option0Running: !prev.recharge.option0Running,
-                  },
-                }))
-              }
-              onCompleteOption0Window={() =>
+              onToggleOption0Timer={() => {
+                const now = Date.now();
+                setState((prev) => {
+                  const nextRunning = !prev.recharge.option0Running;
+                  const currentSec =
+                    prev.recharge.option0Running &&
+                    prev.recharge.option0TargetEndTimeMs
+                      ? Math.max(
+                          0,
+                          Math.ceil(
+                            (prev.recharge.option0TargetEndTimeMs - now) / 1000
+                          )
+                        )
+                      : prev.recharge.option0SecondsLeft;
+                  return {
+                    ...prev,
+                    recharge: {
+                      ...prev.recharge,
+                      option0Running: nextRunning,
+                      option0SecondsLeft: currentSec,
+                      option0TargetEndTimeMs: nextRunning
+                        ? now + currentSec * 1000
+                        : null,
+                    },
+                  };
+                });
+              }}
+              onCompleteOption0Window={() => {
+                dispatchLockScreenAlert(
+                  'WORK_BLOCK_COMPLETE',
+                  'Option 0 Stillness Window Complete',
+                  'Completed 20m Rest / Stillness window.'
+                );
                 setState((prev) => {
                   const nextWin = prev.recharge.option0ConsecutiveWindows + 1;
                   return {
@@ -1195,13 +1555,14 @@ export function App() {
                     recharge: {
                       ...prev.recharge,
                       option0Running: false,
+                      option0TargetEndTimeMs: null,
                       option0SecondsLeft: 1200,
                       option0ConsecutiveWindows: nextWin,
                       forkCheckModalOpen: nextWin >= 2,
                     },
                   };
-                })
-              }
+                });
+              }}
               onResolveForkCheck={(choice) => {
                 setState((prev) => ({
                   ...prev,
@@ -1229,6 +1590,7 @@ export function App() {
                     activeCategory: cat,
                     pacingStage: 'STARTUP_5M',
                     categorySecondsLeft: 300,
+                    categoryTargetEndTimeMs: null,
                     categoryRunning: false,
                   },
                 }))
@@ -1249,9 +1611,19 @@ export function App() {
                   recharge: { ...prev.recharge, fictionSpeed: speed },
                 }))
               }
-              onStartCategory5mStep={() =>
+              onStartCategory5mStep={() => {
+                const now = Date.now();
                 setState((prev) => {
                   const r = prev.recharge;
+                  const nextRunning = !r.categoryRunning;
+                  const currentSec =
+                    r.categoryRunning && r.categoryTargetEndTimeMs
+                      ? Math.max(
+                          0,
+                          Math.ceil((r.categoryTargetEndTimeMs - now) / 1000)
+                        )
+                      : r.categorySecondsLeft;
+
                   const stickyKey: StickyKey | null =
                     r.activeCategory === 'CAT2_MAKER'
                       ? 'CAT2_MAKER'
@@ -1304,23 +1676,36 @@ export function App() {
                     roadmapTracks: updatedTracks,
                     recharge: {
                       ...r,
-                      categoryRunning: !r.categoryRunning,
+                      categoryRunning: nextRunning,
+                      categorySecondsLeft: currentSec,
+                      categoryTargetEndTimeMs: nextRunning
+                        ? now + currentSec * 1000
+                        : null,
                       stickySlots: updatedSlots,
                     },
                   };
-                })
-              }
+                });
+              }}
               onAdvanceCategoryPacingMilestone={() =>
-                setState((prev) => advanceCategoryMilestoneInternal(prev))
+                setState((prev) => advanceCategoryMilestoneInternal(prev, Date.now()))
               }
               onResolveCheckInPrompt={(decision) => {
+                const now = Date.now();
                 setState((prev) => ({
                   ...prev,
                   recharge: {
                     ...prev.recharge,
                     checkInModalOpen: false,
                     categoryRunning: decision === 'KEEP_GOING',
+                    categoryTargetEndTimeMs:
+                      decision === 'KEEP_GOING'
+                        ? now + prev.recharge.categorySecondsLeft * 1000
+                        : null,
                     option0Running: decision === 'REST',
+                    option0TargetEndTimeMs:
+                      decision === 'REST'
+                        ? now + prev.recharge.option0SecondsLeft * 1000
+                        : null,
                   },
                 }));
               }}
@@ -1416,7 +1801,7 @@ export function App() {
         }
       />
 
-      {/* State Import / Export Modal (state.md + JSON) */}
+      {/* State Sync Modal (Copy State JSON / Markdown, Import State JSON, New Day Reset) */}
       {stateModalOpen && (
         <div
           id="modal-state-io"
@@ -1426,7 +1811,7 @@ export function App() {
             <div className="flex items-center justify-between">
               <h2 className="text-base font-bold text-slate-100 flex items-center gap-2 font-mono">
                 <FileText className="w-4 h-4 text-sky-400" />
-                <span>state.md &amp; JSON Import / Export</span>
+                <span>State Sync (state.md &amp; JSON / New Day Reset)</span>
               </h2>
               <button
                 id="btn-close-state-modal"
@@ -1439,8 +1824,174 @@ export function App() {
             </div>
 
             <p className="text-xs text-slate-400">
-              Export or restore your complete SymmetryManager state in Markdown (<code className="text-sky-300">state.md</code>) or raw JSON format.
+              Copy a clean <code className="text-sky-300">state.md</code> summary + JSON block to clipboard, paste updated state JSON to overwrite local state, or run a <strong>New Day Reset</strong>.
             </p>
+
+            {/* Primary 3 State Sync Actions */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <button
+                id="btn-copy-state-markdown"
+                type="button"
+                onClick={() => {
+                  const md = serializeToStateMarkdown(state);
+                  setStateIoText(md);
+                  navigator.clipboard?.writeText(md);
+                  showNotice('Copied state.md summary + JSON block to clipboard.');
+                }}
+                className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-sky-600/50 text-sky-200 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Copy className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                <span>Copy State JSON / Markdown</span>
+              </button>
+
+              <button
+                id="btn-import-state-payload"
+                type="button"
+                onClick={() => {
+                  try {
+                    const restored = parseFromStateInput(stateIoText);
+                    setState(restored);
+                    setStateModalOpen(false);
+                    showNotice('Imported State JSON and updated local state.');
+                  } catch {
+                    showNotice('Invalid state.md or JSON syntax.');
+                  }
+                }}
+                className="px-3.5 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Upload className="w-3.5 h-3.5 shrink-0" />
+                <span>Import State JSON</span>
+              </button>
+
+              <button
+                id="btn-new-day-reset"
+                type="button"
+                onClick={() => {
+                  const tomorrowDay = state.pipelineDays[1];
+                  const appliedDeduction =
+                    state.recharge.flowExtensionBlocksLoggedToday >= 3
+                      ? 2
+                      : state.recharge.flowExtensionBlocksLoggedToday >= 2
+                      ? 1
+                      : tomorrowDay?.deductedBlocksFromExtension ?? 0;
+                  const baseCeiling =
+                    tomorrowDay?.baseTargetBlocks ??
+                    (state.loadMode === 'SURGE'
+                      ? 14
+                      : state.loadMode === 'TAPER'
+                      ? 8
+                      : state.cruisePlus
+                      ? 13
+                      : 12);
+                  const newCeiling = Math.max(7, baseCeiling - appliedDeduction);
+
+                  const preservedStickySlots = Object.fromEntries(
+                    Object.entries(state.recharge.stickySlots).map(([k, slot]) => [
+                      k,
+                      {
+                        ...slot,
+                        fiveMinStarts: slot.fiveMinStarts, // Preserves [X/3] counter
+                        unlockedViaCheckIn: false,
+                      },
+                    ])
+                  ) as SymmetryState['recharge']['stickySlots'];
+
+                  const primaryProject = state.projectQueue[0];
+
+                  const nextState: SymmetryState = {
+                    ...state,
+                    // Preserve consecutive Surge day counts & 4-Rung Roadmap totals
+                    surgeConsecutiveDays: state.surgeConsecutiveDays,
+                    roadmapTracks: state.roadmapTracks,
+                    // Apply today's block ceiling (with Flow Extension deductions from last night)
+                    customModeBlockAdjustment: newCeiling,
+                    // Reset daily floor checkboxes & daily counters to 0
+                    midDayResetCompletedToday: false,
+                    flashcardsReviewedCount: 0,
+                    earlyClearanceEnabled: false,
+                    discretionaryBlocksCompletedToday: 0,
+                    baselineBlocks: state.baselineBlocks.map((b) => ({
+                      ...b,
+                      completed: false,
+                      bankedViaEarlyClearance: false,
+                    })),
+                    pipelineDays: state.pipelineDays.map((d, idx) =>
+                      idx === 0
+                        ? {
+                            ...d,
+                            baseTargetBlocks: newCeiling,
+                            completedBlocks: 0,
+                            deductedBlocksFromExtension: appliedDeduction,
+                          }
+                        : idx === 1
+                        ? {
+                            ...d,
+                            deductedBlocksFromExtension: 0,
+                          }
+                        : d
+                    ),
+                    timer: {
+                      ...state.timer,
+                      mode: 'WORK_20M',
+                      workStage: 'IGNITION_5M',
+                      secondsLeft: 300,
+                      targetEndTimeMs: null,
+                      isRunning: false,
+                      chainedBlocksCount: 0,
+                      activeBlockSourceId: primaryProject?.id || 'fc_anat_1',
+                      activeTaskTitle:
+                        primaryProject?.title || 'Anatomy Flashcards — Block 1/1',
+                      activeTaskType: primaryProject ? 'PROJECT' : 'FLASHCARDS',
+                      activeStartupPrompt:
+                        primaryProject?.startupStep ||
+                        'Open deck + clear first 15 cards',
+                      queuedRecoveryFlashcard5m: false,
+                      recoveryFlashcardRunning: false,
+                      recoveryFlashcardSecondsLeft: 300,
+                      recoveryFlashcardTargetEndTimeMs: null,
+                    },
+                    recharge: {
+                      ...state.recharge,
+                      endOfShiftLocked: false,
+                      manualEveningPreview: false,
+                      flowExtensionPromptOpen: false,
+                      flowExtensionActive: false,
+                      flowExtensionRunning: false,
+                      flowExtensionElapsedSeconds: 0,
+                      flowExtensionStartTimeMs: null,
+                      flowExtensionBlocksLoggedToday: 0,
+                      option0Running: false,
+                      option0SecondsLeft: 1200,
+                      option0TargetEndTimeMs: null,
+                      option0ConsecutiveWindows: 0,
+                      forkCheckModalOpen: false,
+                      activeCategory: 'NONE',
+                      pacingStage: 'STARTUP_5M',
+                      categorySecondsLeft: 300,
+                      categoryTargetEndTimeMs: null,
+                      categoryElapsedMinutes: 0,
+                      categoryRunning: false,
+                      checkInModalOpen: false,
+                      stickySlots: preservedStickySlots,
+                    },
+                  };
+                  setState(nextState);
+                  setStateIoText(serializeToStateMarkdown(nextState));
+                  setStateModalOpen(false);
+                  showNotice(
+                    `New Day Reset complete: Daily floor reset to 0/7, ceiling set to ${newCeiling} blocks${
+                      appliedDeduction > 0
+                        ? ` (-${appliedDeduction} Flow Extension deduction applied)`
+                        : ''
+                    }, Roadmap & Sticky [X/3] counters preserved.`
+                  );
+                }}
+                className="px-3.5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5 shrink-0" />
+                <span>New Day Reset</span>
+              </button>
+            </div>
 
             <textarea
               id="textarea-state-io"
@@ -1472,18 +2023,6 @@ export function App() {
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard?.writeText(stateIoText);
-                    showNotice('Copied state.md payload to clipboard.');
-                  }}
-                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>Copy</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
                     const blob = new Blob([stateIoText], {
                       type: 'text/markdown;charset=utf-8',
                     });
@@ -1499,25 +2038,6 @@ export function App() {
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Download state.md</span>
-                </button>
-
-                <button
-                  id="btn-import-state-payload"
-                  type="button"
-                  onClick={() => {
-                    try {
-                      const restored = parseFromStateInput(stateIoText);
-                      setState(restored);
-                      setStateModalOpen(false);
-                      showNotice('Restored SymmetryManager state from payload.');
-                    } catch {
-                      showNotice('Invalid state.md or JSON syntax.');
-                    }
-                  }}
-                  className="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>Import State</span>
                 </button>
               </div>
             </div>

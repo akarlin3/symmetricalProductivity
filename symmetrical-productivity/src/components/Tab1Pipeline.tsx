@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import {
   AlertTriangle,
-  ArrowRight,
-  Calendar,
   CheckCircle2,
   Circle,
   Lock,
@@ -11,7 +9,6 @@ import {
   ShieldAlert,
   Sliders,
   Unlock,
-  Zap,
 } from 'lucide-react';
 import {
   BaselineBlock,
@@ -72,7 +69,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   const [newProjPreset, setNewProjPreset] = useState<ProjectPresetType>('PAPER_8');
   const [newProjCustomBlocks, setNewProjCustomBlocks] = useState(4);
   const [newProjTrack, setNewProjTrack] = useState<TrackId>('writing');
-  const [newProjStartup, setNewProjStartup] = useState(
+  const [newProjStartup] = useState(
     'Open document, create section headings, and draft first 3 lines.'
   );
 

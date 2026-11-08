@@ -60,6 +60,7 @@ export interface TimerConsoleState {
   mode: TimerRunMode;
   workStage: WorkStage;
   secondsLeft: number;
+  targetEndTimeMs: number | null;
   isRunning: boolean;
   activeBlockSourceId: string;
   activeTaskTitle: string;
@@ -76,6 +77,7 @@ export interface TimerConsoleState {
   queuedRecoveryFlashcard5m: boolean;
   recoveryFlashcardRunning: boolean;
   recoveryFlashcardSecondsLeft: number;
+  recoveryFlashcardTargetEndTimeMs: number | null;
 }
 
 export type RechargeCategoryId =
@@ -94,6 +96,7 @@ export interface StickySlotState {
   key: StickyKey;
   label: string;
   activeTitle: string;
+  startupStep: string;
   backlogQueue: string[];
   fiveMinStarts: number; // [X / 3] counter
   unlockedViaCheckIn: boolean;
@@ -113,12 +116,14 @@ export interface RechargeState {
   flowExtensionActive: boolean;
   flowExtensionRunning: boolean;
   flowExtensionElapsedSeconds: number;
+  flowExtensionStartTimeMs: number | null;
   flowExtensionBlocksLoggedToday: number;
   weeklyExtensionsUsed: number; // Hard cap: < 2
   lastChimeMinute: number;
   // Option 0: Rest / Stillness (20m, 2-window cap -> Fork Check)
   option0Running: boolean;
   option0SecondsLeft: number;
+  option0TargetEndTimeMs: number | null;
   option0ConsecutiveWindows: number; // Cap at 2 (40m)
   forkCheckModalOpen: boolean;
   // 5 Recharge Categories
@@ -127,6 +132,7 @@ export interface RechargeState {
   fictionSpeed: '1.75x' | '2.00x' | '2.25x';
   pacingStage: RechargePacingStage;
   categorySecondsLeft: number;
+  categoryTargetEndTimeMs: number | null;
   categoryElapsedMinutes: number;
   categoryRunning: boolean;
   checkInModalOpen: boolean;
@@ -158,6 +164,7 @@ export interface RoadmapTrack {
 
 export interface SymmetryState {
   version: string;
+  upcomingMilestones: string[];
   loadMode: LoadMode;
   cruisePlus: boolean;
   customModeBlockAdjustment: number; // e.g. 11 vs 12 for Cruise, 14 vs 15 for Surge, 7-9 for Taper

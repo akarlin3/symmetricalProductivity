@@ -191,10 +191,10 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                   ? 'bg-stone-900 hover:bg-stone-800 border-amber-800/60 text-amber-100'
                   : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
               }`}
-              title="Import or Export state.md / JSON"
+              title="Open State Sync modal (Copy State JSON / Markdown, Import State JSON, New Day Reset)"
             >
               <Download className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">state.md</span>
+              <span>State Sync</span>
             </button>
 
             <button
@@ -206,6 +206,40 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             >
               <RotateCcw className="w-3.5 h-3.5" />
             </button>
+          </div>
+        </div>
+
+        {/* Upcoming Milestones Banner */}
+        <div
+          id="upcoming-milestones-banner"
+          className={`mt-2.5 px-3 py-1.5 rounded-xl border text-xs font-mono flex flex-wrap items-center justify-between gap-2 ${
+            isEveningTheme
+              ? 'bg-stone-900/80 border-amber-800/50 text-amber-200'
+              : 'bg-slate-900/90 border-sky-800/60 text-sky-200'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <Calendar className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+            <span className="uppercase font-bold tracking-wider text-[11px] text-slate-300">
+              Upcoming Milestones:
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {(state.upcomingMilestones?.length
+              ? state.upcomingMilestones
+              : ['Nov 12: Anatomy Exam', 'Dec 8–9: Comp Exam']
+            ).map((milestone, idx) => (
+              <span
+                key={idx}
+                className={`px-2.5 py-0.5 rounded-md font-bold text-xs border ${
+                  isEveningTheme
+                    ? 'bg-amber-950/70 border-amber-700/60 text-amber-200'
+                    : 'bg-sky-950/80 border-sky-600/60 text-sky-200'
+                }`}
+              >
+                {milestone}
+              </span>
+            ))}
           </div>
         </div>
 

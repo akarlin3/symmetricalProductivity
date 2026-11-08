@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowUpRight, CheckCircle2, Layers, Plus } from 'lucide-react';
+import { CheckCircle2, Layers, Plus } from 'lucide-react';
 import { SymmetryState, TrackId } from '../types/symmetry';
 
 interface Tab4RoadmapProps {

@@ -1,4 +1,4 @@
-package com.symmetrymanager.app;
+package org.averycorp.symmetrical;
 
 import com.getcapacitor.BridgeActivity;
 

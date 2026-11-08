@@ -4,6 +4,7 @@ export const STORAGE_KEY = 'symmetry_manager_state_v1';
 
 export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
   version: '1.0.0',
+  upcomingMilestones: ['Nov 12: Anatomy Exam', 'Dec 8–9: Comp Exam'],
   loadMode: 'CRUISE',
   cruisePlus: false,
   customModeBlockAdjustment: 12, // 12 total blocks in Cruise; 3 completed = 9 left = 180m (3h 00m work left)
@@ -20,7 +21,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
       category: 'FLASHCARDS_ANATOMY',
       completed: true,
       bankedViaEarlyClearance: false,
-      startupStep: 'Open Anatomy deck and clear the first 15 visual identification cards.',
+      startupStep: 'Open deck + clear first 15 cards',
       trackId: 'science',
     },
     {
@@ -29,7 +30,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
       category: 'FLASHCARDS_COMP',
       completed: true,
       bankedViaEarlyClearance: false,
-      startupStep: 'Run 15 high-priority comprehensive review cards at a 10s pace.',
+      startupStep: 'Open deck + clear first 15 cards',
       trackId: 'science',
     },
     {
@@ -79,34 +80,34 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     {
       id: 'proj_1',
       slot: 1,
-      title: 'Pathophysiology Literature Review (2-Page Paper)',
+      title: 'Anatomy & Comp Exam Prep Sprint',
       presetType: 'PAPER_8',
       completedBlocks: 2,
       totalBlocks: 8,
-      trackId: 'writing',
-      startupStep: 'Open draft document and write the first 3 sentences of Section 2.',
-      nextStepNote: 'Integrate hemodynamic table citations into paragraph 3.',
+      trackId: 'science',
+      startupStep: 'Open deck + clear first 15 cards',
+      nextStepNote: 'Primary focus target for Nov 12 Anatomy Exam & Dec 8–9 Comp Exam.',
     },
     {
       id: 'proj_2',
       slot: 2,
-      title: 'Clinical Case Conference Slide Deck',
-      presetType: 'SLIDES_4',
+      title: '12-Page AI/Coding Practicum Paper',
+      presetType: 'PAPER_8',
       completedBlocks: 0,
-      totalBlocks: 4,
+      totalBlocks: 8,
       trackId: 'science',
-      startupStep: 'Create 6 blank slide titles matching the case timeline.',
-      nextStepNote: 'Locked until Item #1 (2-Page Paper) reaches 8/8 blocks.',
+      startupStep: 'Open draft + write 2 bullet lines',
+      nextStepNote: 'Locked until Item #1 completes.',
     },
     {
       id: 'proj_3',
       slot: 3,
-      title: 'Quarterly Home Equipment & Filter Maintenance',
-      presetType: 'CUSTOM',
+      title: 'NMR / MRM / Green Journal Manuscript Revisions',
+      presetType: 'PAPER_8',
       completedBlocks: 0,
-      totalBlocks: 3,
-      trackId: 'personal',
-      startupStep: 'List replacement parts and check HVAC/printer filter inventory.',
+      totalBlocks: 8,
+      trackId: 'science',
+      startupStep: 'Open manuscript + review 1 figure/paragraph',
       nextStepNote: 'Locked until Item #1 and Item #2 complete.',
     },
   ],
@@ -226,11 +227,12 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     mode: 'WORK_20M',
     workStage: 'IGNITION_5M',
     secondsLeft: 300, // 5m Startup Step (IGNITION_5M)
+    targetEndTimeMs: null,
     isRunning: false,
     activeBlockSourceId: 'proj_1',
-    activeTaskTitle: 'Pathophysiology Literature Review (2-Page Paper)',
+    activeTaskTitle: 'Anatomy & Comp Exam Prep Sprint',
     activeTaskType: 'PROJECT',
-    activeStartupPrompt: 'Open draft document and write the first 3 sentences of Section 2.',
+    activeStartupPrompt: 'Open deck + clear first 15 cards',
     chainedBlocksCount: 1,
     sessionDisplayDurationMinutes: 40,
     l1DurationMinutes: 5,
@@ -242,6 +244,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     queuedRecoveryFlashcard5m: false,
     recoveryFlashcardRunning: false,
     recoveryFlashcardSecondsLeft: 300,
+    recoveryFlashcardTargetEndTimeMs: null,
   },
   recharge: {
     endOfShiftLocked: false,
@@ -250,11 +253,13 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     flowExtensionActive: false,
     flowExtensionRunning: false,
     flowExtensionElapsedSeconds: 0,
+    flowExtensionStartTimeMs: null,
     flowExtensionBlocksLoggedToday: 0,
     weeklyExtensionsUsed: 1, // 1 of 2 used this week
     lastChimeMinute: 0,
     option0Running: false,
     option0SecondsLeft: 1200, // 20m silent timer
+    option0TargetEndTimeMs: null,
     option0ConsecutiveWindows: 0, // Cap at 2 (40m) -> Fork Check
     forkCheckModalOpen: false,
     activeCategory: 'NONE',
@@ -262,6 +267,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     fictionSpeed: '2.00x',
     pacingStage: 'STARTUP_5M',
     categorySecondsLeft: 300,
+    categoryTargetEndTimeMs: null,
     categoryElapsedMinutes: 0,
     categoryRunning: false,
     checkInModalOpen: false,
@@ -270,41 +276,46 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
       CAT2_MAKER: {
         key: 'CAT2_MAKER',
         label: 'Maker / Hardware [Sticky]',
-        activeTitle: 'K1C 3D Printer Diagnostic & Bed Mesh Step',
+        activeTitle: 'Creality K1C 3D Printer',
+        startupStep: '1 single 5m diagnostic or mechanical step',
         backlogQueue: ['Custom Cable Organizer CAD Bracket', 'Multimeter Sensor Enclosure Print'],
-        fiveMinStarts: 1,
+        fiveMinStarts: 0,
         unlockedViaCheckIn: false,
       },
       '3A_FICTION': {
         key: '3A_FICTION',
         label: '3A Fiction [Sticky]',
-        activeTitle: 'Soul Music',
-        backlogQueue: ['Feet of Clay', 'Hogfather'],
-        fiveMinStarts: 2,
+        activeTitle: 'Soul Music by Terry Pratchett',
+        startupStep: 'Listen 5m at 1.75x–2.25x in boots or eyes closed',
+        backlogQueue: ['Exoplanet', 'Feet of Clay', 'Hogfather'],
+        fiveMinStarts: 0,
         unlockedViaCheckIn: false,
       },
       '3B_NONFICTION': {
         key: '3B_NONFICTION',
         label: '3B Nonfiction [Sticky]',
         activeTitle: 'The American Way of Killing',
+        startupStep: 'Listen 5m in recliner or compression boots',
         backlogQueue: ['The Emperor of All Maladies', 'Thinking in Systems'],
-        fiveMinStarts: 1,
+        fiveMinStarts: 0,
         unlockedViaCheckIn: false,
       },
       '3C_VIDEO': {
         key: '3C_VIDEO',
         label: '3C Video [Sticky]',
         activeTitle: "Widow's Bay",
+        startupStep: 'Watch first 5m away from work monitor',
         backlogQueue: ['Severance Season 2', 'Andor Archive Cut'],
-        fiveMinStarts: 1,
+        fiveMinStarts: 0,
         unlockedViaCheckIn: false,
       },
       CAT5_GAMING: {
         key: 'CAT5_GAMING',
         label: 'Gaming [Sticky]',
         activeTitle: "Baldur's Gate 3",
-        backlogQueue: ['Disco Elysium Final Cut', 'Factorio Space Age'],
-        fiveMinStarts: 2,
+        startupStep: 'Boot save + 1 single 5m micro-objective',
+        backlogQueue: ['Factorio', 'Dwarf Fortress', 'RimWorld', 'Hades II'],
+        fiveMinStarts: 0,
         unlockedViaCheckIn: false,
       },
     },
@@ -579,9 +590,13 @@ export function computeShiftMetrics(state: SymmetryState) {
 
 export function serializeToStateMarkdown(state: SymmetryState): string {
   const metrics = computeShiftMetrics(state);
+  const milestones = state.upcomingMilestones?.length
+    ? state.upcomingMilestones.join(' • ')
+    : 'Nov 12: Anatomy Exam • Dec 8–9: Comp Exam';
   const lines: string[] = [
     '# SymmetryManager — State Snapshot (`state.md`)',
     '',
+    `- **Upcoming Milestones**: ${milestones}`,
     `- **Load Mode**: ${state.loadMode}${state.cruisePlus ? ' (Cruise+)' : ''} (${metrics.totalCompletedBlocks} / ${metrics.totalTargetBlocks} blocks complete)`,
     `- **Focus Pipeline Header**: \`${metrics.durationPrefix}\``,
     `- **Fixed Event**: ${state.fixedEvent}`,
@@ -592,7 +607,7 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
     '## 7-Block Daily Core Baseline',
     ...state.baselineBlocks.map(
       (b) =>
-        `- [${b.completed ? 'x' : b.bankedViaEarlyClearance ? 'B' : ' '}] **${b.title}** (${b.category})`
+        `- [${b.completed ? 'x' : b.bankedViaEarlyClearance ? 'B' : ' '}] **${b.title}** (${b.category}) — 5m Startup: *${b.startupStep}*`
     ),
     '',
     '## Active Project Lock (Closed List — Max 3)',
@@ -600,8 +615,17 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
       (p) =>
         `${p.slot}. **${p.title}** — \`[${p.completedBlocks} / ${p.totalBlocks} blocks]\` ${
           p.slot === 1 ? '(UNLOCKED PRIMARY)' : '(LOCKED TO ITEM #1)'
-        }`
+        } — 5m Startup: *${p.startupStep}*`
     ),
+    '',
+    '## Evening Recharge Menu (Sticky Swap Counters)',
+    `- **Category 1 (Music - Fluid)**: Bass / Guitar / Piano / Drums — 5m Startup: *Play 1 familiar song cold — no DAW or drills*`,
+    `- **Category 2 (Maker - Sticky)**: ${state.recharge.stickySlots.CAT2_MAKER.activeTitle} \`[${state.recharge.stickySlots.CAT2_MAKER.fiveMinStarts}/3 starts]\` — 5m Startup: *${state.recharge.stickySlots.CAT2_MAKER.startupStep}*`,
+    `- **Category 3A (Fiction - Sticky)**: ${state.recharge.stickySlots['3A_FICTION'].activeTitle} \`[${state.recharge.stickySlots['3A_FICTION'].fiveMinStarts}/3 starts]\` — 5m Startup: *${state.recharge.stickySlots['3A_FICTION'].startupStep}* (Queued Next: ${state.recharge.stickySlots['3A_FICTION'].backlogQueue[0] || 'None'})`,
+    `- **Category 3B (Nonfiction - Sticky)**: ${state.recharge.stickySlots['3B_NONFICTION'].activeTitle} \`[${state.recharge.stickySlots['3B_NONFICTION'].fiveMinStarts}/3 starts]\` — 5m Startup: *${state.recharge.stickySlots['3B_NONFICTION'].startupStep}*`,
+    `- **Category 3C (Video - Sticky)**: ${state.recharge.stickySlots['3C_VIDEO'].activeTitle} \`[${state.recharge.stickySlots['3C_VIDEO'].fiveMinStarts}/3 starts]\` — 5m Startup: *${state.recharge.stickySlots['3C_VIDEO'].startupStep}*`,
+    `- **Category 4 (Comfort Show - Fluid)**: It's Always Sunny in Philadelphia — 5m Startup: *First 5m of episode away from work monitor*`,
+    `- **Category 5 (Gaming - Sticky)**: ${state.recharge.stickySlots.CAT5_GAMING.activeTitle} \`[${state.recharge.stickySlots.CAT5_GAMING.fiveMinStarts}/3 starts]\` — 5m Startup: *${state.recharge.stickySlots.CAT5_GAMING.startupStep}* (Backlog: ${state.recharge.stickySlots.CAT5_GAMING.backlogQueue.join(', ')})`,
     '',
     '## Machine-Readable State Payload',
     '```json',
@@ -617,8 +641,38 @@ export function parseFromStateInput(rawText: string): SymmetryState {
   const jsonBlockMatch = trimmed.match(/```json\s*([\s\S]*?)```/);
   const candidate = jsonBlockMatch ? jsonBlockMatch[1].trim() : trimmed;
   const parsed = JSON.parse(candidate);
+  const defaultSticky = DEFAULT_SYMMETRY_STATE.recharge.stickySlots;
+  const parsedSticky = parsed.recharge?.stickySlots || {};
   return {
     ...DEFAULT_SYMMETRY_STATE,
     ...parsed,
+    upcomingMilestones:
+      parsed.upcomingMilestones && Array.isArray(parsed.upcomingMilestones)
+        ? parsed.upcomingMilestones
+        : DEFAULT_SYMMETRY_STATE.upcomingMilestones,
+    timer: {
+      ...DEFAULT_SYMMETRY_STATE.timer,
+      ...(parsed.timer || {}),
+    },
+    recharge: {
+      ...DEFAULT_SYMMETRY_STATE.recharge,
+      ...(parsed.recharge || {}),
+      stickySlots: {
+        CAT2_MAKER: { ...defaultSticky.CAT2_MAKER, ...(parsedSticky.CAT2_MAKER || {}) },
+        '3A_FICTION': {
+          ...defaultSticky['3A_FICTION'],
+          ...(parsedSticky['3A_FICTION'] || {}),
+        },
+        '3B_NONFICTION': {
+          ...defaultSticky['3B_NONFICTION'],
+          ...(parsedSticky['3B_NONFICTION'] || {}),
+        },
+        '3C_VIDEO': { ...defaultSticky['3C_VIDEO'], ...(parsedSticky['3C_VIDEO'] || {}) },
+        CAT5_GAMING: {
+          ...defaultSticky.CAT5_GAMING,
+          ...(parsedSticky.CAT5_GAMING || {}),
+        },
+      },
+    },
   };
 }
