@@ -71,9 +71,15 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: false,
-      includeAssets: ['favicon.svg'],
+      includeAssets: [
+        'averycorp-emblem.jpeg',
+        'averycorp-emblem-192.png',
+        'averycorp-emblem-512.png',
+        'favicon.svg',
+      ],
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,jpg,jpeg,ico,woff2}'],
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,
@@ -85,8 +91,8 @@ export default defineConfig({
         short_name: 'Symmetrical',
         description:
           'Duration-only focus pipeline, two-stage 20m work blocks, break triage router, evening recharge menu, and 4-rung input/output roadmap.',
-        theme_color: '#0f172a',
-        background_color: '#0f172a',
+        theme_color: '#06080d',
+        background_color: '#121b2d',
         display: 'standalone',
         start_url: './',
         scope: './',
@@ -94,21 +100,27 @@ export default defineConfig({
         categories: ['productivity', 'utilities'],
         icons: [
           {
-            src: INLINE_PRISM_ICON,
+            src: '/averycorp-emblem.jpeg',
             sizes: '192x192',
-            type: 'image/svg+xml',
+            type: 'image/jpeg',
             purpose: 'any',
           },
           {
-            src: INLINE_PRISM_ICON,
+            src: '/averycorp-emblem.jpeg',
             sizes: '512x512',
-            type: 'image/svg+xml',
+            type: 'image/jpeg',
             purpose: 'any maskable',
           },
           {
-            src: 'favicon.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
+            src: '/averycorp-emblem-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: '/averycorp-emblem-512.png',
+            sizes: '512x512',
+            type: 'image/png',
             purpose: 'any maskable',
           },
         ],
@@ -120,9 +132,9 @@ export default defineConfig({
             url: '/?action=start',
             icons: [
               {
-                src: INLINE_PRISM_ICON,
+                src: '/averycorp-emblem.jpeg',
                 sizes: '192x192',
-                type: 'image/svg+xml',
+                type: 'image/jpeg',
               },
             ],
           },
@@ -133,9 +145,9 @@ export default defineConfig({
             url: '/?action=reset',
             icons: [
               {
-                src: INLINE_PRISM_ICON,
+                src: '/averycorp-emblem.jpeg',
                 sizes: '192x192',
-                type: 'image/svg+xml',
+                type: 'image/jpeg',
               },
             ],
           },
@@ -146,9 +158,9 @@ export default defineConfig({
             url: '/?action=evening',
             icons: [
               {
-                src: INLINE_PRISM_ICON,
+                src: '/averycorp-emblem.jpeg',
                 sizes: '192x192',
-                type: 'image/svg+xml',
+                type: 'image/jpeg',
               },
             ],
           },

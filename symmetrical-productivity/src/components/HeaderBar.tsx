@@ -38,6 +38,7 @@ import {
 } from '../state/defaultState';
 import { triggerHaptic } from '../utils/haptics';
 import { playHarmonicChord, SOUNDSCAPE_METADATA, soundEngine } from '../utils/soundEngine';
+import { AveryCorpEmblem } from './AveryCorpEmblem';
 
 interface HeaderBarProps {
   state: SymmetryState;
@@ -173,32 +174,17 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
         >
           {/* 1. LEFT: Circular Emblem + Subtle Title + Compact Duration-Only Pill */}
           <div className="flex items-center gap-2.5 min-w-0">
-            <button
+            <AveryCorpEmblem
               id="header-brand-prism-trigger"
-              type="button"
+              size={34}
+              variant="image"
+              cropMode="mark-only"
+              isTimerActive={isWorkTimerRunning}
+              architectUnlocked={architectModeUnlocked}
+              showPreviewPopover
               onClick={handleBrandPrismTap}
-              aria-label="SymmetryManager Emblem"
-              className={`w-8 h-8 rounded-full flex items-center justify-center border transition-all duration-500 cursor-pointer select-none shrink-0 ${
-                isCinemaReceding ? 'opacity-30 hover:opacity-100' : ''
-              } ${
-                isEveningTheme
-                  ? 'bg-amber-500/10 border-amber-400/25 text-amber-200'
-                  : 'bg-sky-500/10 border-white/[0.08] text-sky-300'
-              }`}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                className="w-3.5 h-3.5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.75"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <polygon points="12 3 21 19 3 19" />
-                <line x1="12" y1="3" x2="12" y2="19" />
-              </svg>
-            </button>
+              ariaLabel="AveryCorp Institute Header Emblem (5-Tap Architect Trigger)"
+            />
 
             <h1
               id="header-app-title-trigger"

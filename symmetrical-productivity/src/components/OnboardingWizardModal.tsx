@@ -25,6 +25,7 @@ import {
   RotateCcw,
   X,
 } from 'lucide-react';
+import { AveryCorpEmblem } from './AveryCorpEmblem';
 
 interface OnboardingWizardModalProps {
   isOpen: boolean;
@@ -195,9 +196,13 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
           }`}
         >
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300">
-              <Sparkles className="w-5 h-5" />
-            </div>
+            <AveryCorpEmblem
+              size={40}
+              variant="image"
+              cropMode="mark-only"
+              architectUnlocked={architectModeUnlocked}
+              ariaLabel="AveryCorp Institute Onboarding Seal"
+            />
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h2 className="text-base sm:text-lg font-extrabold tracking-tight text-white">

@@ -29,6 +29,7 @@ import {
 import { computeShiftMetrics } from '../state/defaultState';
 import { BreathingVisualizer478 } from './BreathingVisualizer478';
 import { triggerHaptic } from '../utils/haptics';
+import { AveryCorpEmblem } from './AveryCorpEmblem';
 
 interface Tab3RechargeProps {
   state: SymmetryState;
@@ -158,14 +159,22 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
 
       {/* Editorial Section Header */}
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-white/[0.05] pb-5">
-        <div>
-          <span className="text-[10px] font-mono uppercase tracking-widest text-amber-300/80 flex items-center gap-1.5">
-            <Moon className="w-3 h-3 text-amber-400" />
-            <span>Evening Sanctuary</span>
-          </span>
-          <h2 className="font-serif text-3xl sm:text-4xl font-medium tracking-tight text-amber-50 mt-1">
-            Evening Recharge Menu
-          </h2>
+        <div className="flex items-center gap-3.5">
+          <AveryCorpEmblem
+            size={42}
+            variant="image"
+            cropMode="mark-only"
+            ariaLabel="AveryCorp End-of-Shift Seal"
+          />
+          <div>
+            <span className="text-[10px] font-mono uppercase tracking-widest text-amber-300/80 flex items-center gap-1.5">
+              <Moon className="w-3 h-3 text-amber-400" />
+              <span>Evening Sanctuary</span>
+            </span>
+            <h2 className="font-serif text-3xl sm:text-4xl font-medium tracking-tight text-amber-50 mt-1">
+              Evening Recharge Menu
+            </h2>
+          </div>
         </div>
 
         {!metrics.isZeroWorkLeft ? (

@@ -192,6 +192,23 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
           }`}
         />
 
+        {/* Centerpiece AveryCorp Interlocked Rings & Chains Watermark */}
+        <div
+          aria-hidden="true"
+          className={`absolute w-[164px] h-[164px] rounded-full overflow-hidden pointer-events-none select-none z-[12] transition-opacity duration-700 ${
+            isEveningTheme || (durationPrefix && durationPrefix.includes('0m work left'))
+              ? 'opacity-20'
+              : 'opacity-[0.07]'
+          }`}
+        >
+          <img
+            src="/averycorp-emblem.jpeg"
+            alt=""
+            className="w-full h-full object-cover scale-[1.65] -translate-y-[8%]"
+            draggable={false}
+          />
+        </div>
+
         <svg
           width={size}
           height={size}
