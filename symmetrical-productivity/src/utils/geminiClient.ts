@@ -202,7 +202,10 @@ export function getCloudflareProEndpointUrl(): string {
 export async function verifyProModePassword(
   password: string
 ): Promise<{ ok: boolean; error?: string }> {
-  const trimmed = password.trim();
+  const trimmed = password
+    .trim()
+    .replace(/^\/pro\s+/i, '')
+    .trim();
   if (!trimmed) {
     return { ok: false, error: 'Enter a Pro Mode password.' };
   }

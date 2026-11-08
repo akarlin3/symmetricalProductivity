@@ -1,6 +1,9 @@
 export interface Env {
   GEMINI_API_KEY?: string;
+  VITE_GEMINI_API_KEY?: string;
   PRO_MODE_PASSWORD?: string;
+  PRO_PASSWORD?: string;
+  VITE_PRO_MODE_PASSWORD?: string;
 }
 
 export interface PagesFunctionContext {
@@ -32,6 +35,13 @@ function jsonResponse(body: unknown, status = 200): Response {
       ...CORS_HEADERS,
     },
   });
+}
+
+function normalizePasswordCandidate(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^\/pro\s+/i, '')
+    .trim();
 }
 
 /**
@@ -97,8 +107,26 @@ export const onRequestPost = async (
 
   const headerPassword = request.headers.get('x-pro-password');
   const bodyPassword = typeof body.password === 'string' ? body.password : '';
-  const enteredPassword = (headerPassword ?? bodyPassword ?? '').trim();
-  const configuredSecretPassword = (env.PRO_MODE_PASSWORD ?? '').trim();
+  const enteredPassword = normalizePasswordCandidate(
+    headerPassword ?? bodyPassword ?? ''
+  );
+
+  const configuredSecretPassword = normalizePasswordCandidate(
+    env.PRO_MODE_PASSWORD ||
+      env.PRO_PASSWORD ||
+      env.VITE_PRO_MODE_PASSWORD ||
+      ''
+  );
+
+  if (!configuredSecretPassword) {
+    return jsonResponse(
+      {
+        error:
+          'PRO_MODE_PASSWORD is not set in Cloudflare Worker Runtime Variables & Secrets (Settings -> Variables and Secrets).',
+      },
+      500
+    );
+  }
 
   const isValidPassword = await timingSafePasswordCompare(
     enteredPassword,
@@ -116,7 +144,11 @@ export const onRequestPost = async (
   }
 
   if (action === 'generate') {
-    const geminiApiKey = (env.GEMINI_API_KEY ?? '').trim();
+    const geminiApiKey = (
+      env.GEMINI_API_KEY ||
+      env.VITE_GEMINI_API_KEY ||
+      ''
+    ).trim();
     if (!geminiApiKey) {
       return jsonResponse(
         { error: 'Server GEMINI_API_KEY secret is not configured' },
@@ -140,7 +172,7 @@ export const onRequestPost = async (
       upstreamPayload.generationConfig = body.generationConfig;
     }
 
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model || 'gemini-2.5-flash'}:generateContent?key=${env.GEMINI_API_KEY}`;
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model || 'gemini-2.5-flash'}:generateContent?key=${geminiApiKey}`;
 
     try {
       const upstreamResponse = await fetch(endpoint, {

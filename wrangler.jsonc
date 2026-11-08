@@ -2,6 +2,10 @@
   "name": "symmetrical-productivity-root",
   "compatibility_date": "2026-04-01",
   "main": "worker.ts",
+  "keep_vars": true,
+  "build": {
+    "command": "node scripts/prepare-worker-env.mjs"
+  },
   "observability": {
     "enabled": true
   },

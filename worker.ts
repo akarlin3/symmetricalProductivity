@@ -2,6 +2,7 @@ import {
   onRequestOptions as geminiProOptions,
   onRequestPost as geminiProPost,
 } from './symmetrical-productivity/functions/api/gemini-pro';
+import { WORKER_BUILD_ENV } from './worker-build-env';
 
 interface Fetcher {
   fetch(input: Request | string | URL, init?: RequestInit): Promise<Response>;
@@ -9,7 +10,10 @@ interface Fetcher {
 
 interface WorkerEnv {
   GEMINI_API_KEY?: string;
+  VITE_GEMINI_API_KEY?: string;
   PRO_MODE_PASSWORD?: string;
+  PRO_PASSWORD?: string;
+  VITE_PRO_MODE_PASSWORD?: string;
   ASSETS?: Fetcher;
 }
 
@@ -26,7 +30,20 @@ export default {
         return geminiProOptions();
       }
       if (request.method === 'POST') {
-        return geminiProPost({ request, env });
+        const mergedEnv: WorkerEnv = {
+          GEMINI_API_KEY:
+            env.GEMINI_API_KEY ||
+            env.VITE_GEMINI_API_KEY ||
+            WORKER_BUILD_ENV.GEMINI_API_KEY ||
+            '',
+          PRO_MODE_PASSWORD:
+            env.PRO_MODE_PASSWORD ||
+            env.PRO_PASSWORD ||
+            env.VITE_PRO_MODE_PASSWORD ||
+            WORKER_BUILD_ENV.PRO_MODE_PASSWORD ||
+            '',
+        };
+        return geminiProPost({ request, env: mergedEnv });
       }
       return new Response(
         JSON.stringify({ error: 'Method Not Allowed. Use POST.' }),
