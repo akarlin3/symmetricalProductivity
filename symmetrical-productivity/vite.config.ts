@@ -17,11 +17,38 @@ const INLINE_PRISM_ICON = `data:image/svg+xml;utf8,${encodeURIComponent(
 
 export default defineConfig({
   base: './',
+  server: {
+    host: true,
+    allowedHosts: true,
+  },
+  preview: {
+    host: true,
+    allowedHosts: true,
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        inlineDynamicImports: true,
+      },
+    },
+  },
   plugins: [
+    {
+      name: 'strip-inline-fallback-before-build',
+      apply: 'build',
+      enforce: 'pre',
+      transformIndexHtml(html) {
+        return html
+          .replace(/<!-- INLINE_FALLBACK_STYLE_START -->[\s\S]*?<!-- INLINE_FALLBACK_STYLE_END -->/g, '')
+          .replace(/<!-- INLINE_FALLBACK_ROOT_START -->[\s\S]*?<!-- INLINE_FALLBACK_ROOT_END -->/g, '')
+          .replace(/<!-- INLINE_FALLBACK_SCRIPT_START -->[\s\S]*?<!-- INLINE_FALLBACK_SCRIPT_END -->/g, '');
+      },
+    },
     react(),
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
+      injectRegister: false,
       includeAssets: ['favicon.svg'],
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],

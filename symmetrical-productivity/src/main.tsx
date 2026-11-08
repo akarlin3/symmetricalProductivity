@@ -58,10 +58,16 @@ class RootErrorBoundary extends React.Component<
   }
 }
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <RootErrorBoundary>
-      <App />
-    </RootErrorBoundary>
-  </StrictMode>
-);
+const win = window as unknown as { __SYMMETRY_MOUNTED__?: boolean };
+if (!win.__SYMMETRY_MOUNTED__) {
+  win.__SYMMETRY_MOUNTED__ = true;
+  const rootEl = document.getElementById('root')!;
+  rootEl.innerHTML = '';
+  createRoot(rootEl).render(
+    <StrictMode>
+      <RootErrorBoundary>
+        <App />
+      </RootErrorBoundary>
+    </StrictMode>
+  );
+}

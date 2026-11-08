@@ -75,13 +75,19 @@ export function App() {
 
   // Initialize Capacitor Android Notification Channel & check PWA Service Worker
   useEffect(() => {
-    initSymmetryNotifications().then((res) => {
-      setNotificationsGranted(res.granted);
-    });
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.ready
-        .then(() => setSwOfflineReady(true))
-        .catch(() => setSwOfflineReady(false));
+    initSymmetryNotifications()
+      .then((res) => {
+        setNotificationsGranted(res.granted);
+      })
+      .catch(() => {});
+    try {
+      if ('serviceWorker' in navigator && navigator.serviceWorker) {
+        navigator.serviceWorker.ready
+          .then(() => setSwOfflineReady(true))
+          .catch(() => setSwOfflineReady(false));
+      }
+    } catch {
+      // Restricted context; swOfflineReady remains false
     }
   }, []);
 
