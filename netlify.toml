@@ -1,0 +1,4 @@
+[build]
+  base = "symmetrical-productivity"
+  command = "npm run build"
+  publish = "dist"

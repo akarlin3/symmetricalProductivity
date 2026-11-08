@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -10,6 +10,43 @@
       content="Symmetrical Productivity — Mobile-first focus pipeline, two-stage 20m work timers, break triage router, evening recharge menu, and 4-rung roadmap ledger."
     />
     <title>Symmetrical Productivity</title>
+    <style>
+      html,
+      body {
+        background-color: #0f172a;
+        color: #f8fafc;
+        margin: 0;
+        min-height: 100%;
+      }
+    </style>
+    <script>
+      // Auto-recover if a stale Service Worker serves an outdated index.html whose assets 404
+      window.addEventListener(
+        'error',
+        function (e) {
+          var target = e && e.target;
+          if (target && (target.tagName === 'SCRIPT' || target.tagName === 'LINK')) {
+            if ('serviceWorker' in navigator && !sessionStorage.getItem('sw_recovered')) {
+              sessionStorage.setItem('sw_recovered', '1');
+              navigator.serviceWorker.getRegistrations().then(function (regs) {
+                Promise.all(regs.map(function (r) { return r.unregister(); }))
+                  .then(function () {
+                    if ('caches' in window) {
+                      return caches.keys().then(function (keys) {
+                        return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+                      });
+                    }
+                  })
+                  .finally(function () {
+                    window.location.reload();
+                  });
+              });
+            }
+          }
+        },
+        true
+      );
+    </script>
   </head>
   <body class="bg-slate-950 text-slate-100 antialiased selection:bg-sky-500/30 selection:text-sky-200">
     <div id="root"></div>

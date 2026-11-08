@@ -647,9 +647,24 @@ export function parseFromStateInput(rawText: string): SymmetryState {
     ...DEFAULT_SYMMETRY_STATE,
     ...parsed,
     upcomingMilestones:
-      parsed.upcomingMilestones && Array.isArray(parsed.upcomingMilestones)
+      Array.isArray(parsed.upcomingMilestones) && parsed.upcomingMilestones.length > 0
         ? parsed.upcomingMilestones
         : DEFAULT_SYMMETRY_STATE.upcomingMilestones,
+    baselineBlocks:
+      Array.isArray(parsed.baselineBlocks) && parsed.baselineBlocks.length > 0
+        ? parsed.baselineBlocks
+        : DEFAULT_SYMMETRY_STATE.baselineBlocks,
+    projectQueue: Array.isArray(parsed.projectQueue)
+      ? parsed.projectQueue
+      : DEFAULT_SYMMETRY_STATE.projectQueue,
+    pipelineDays:
+      Array.isArray(parsed.pipelineDays) && parsed.pipelineDays.length > 0
+        ? parsed.pipelineDays
+        : DEFAULT_SYMMETRY_STATE.pipelineDays,
+    roadmapTracks:
+      Array.isArray(parsed.roadmapTracks) && parsed.roadmapTracks.length > 0
+        ? parsed.roadmapTracks
+        : DEFAULT_SYMMETRY_STATE.roadmapTracks,
     timer: {
       ...DEFAULT_SYMMETRY_STATE.timer,
       ...(parsed.timer || {}),

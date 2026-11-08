@@ -1,0 +1,5 @@
+{
+  "installCommand": "npm --prefix symmetrical-productivity install",
+  "buildCommand": "npm --prefix symmetrical-productivity run build",
+  "outputDirectory": "symmetrical-productivity/dist"
+}

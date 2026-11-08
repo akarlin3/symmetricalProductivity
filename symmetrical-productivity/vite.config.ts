@@ -16,6 +16,7 @@ const INLINE_PRISM_ICON = `data:image/svg+xml;utf8,${encodeURIComponent(
 )}`;
 
 export default defineConfig({
+  base: './',
   plugins: [
     react(),
     tailwindcss(),
@@ -24,10 +25,13 @@ export default defineConfig({
       includeAssets: ['favicon.svg'],
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico,woff2}'],
-        importScripts: ['/sw-alarms.js'],
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
+        importScripts: ['sw-alarms.js'],
       },
       manifest: {
-        id: '/',
+        id: './',
         name: 'Symmetrical Productivity',
         short_name: 'Symmetrical',
         description:
@@ -35,8 +39,8 @@ export default defineConfig({
         theme_color: '#0f172a',
         background_color: '#0f172a',
         display: 'standalone',
-        start_url: '/',
-        scope: '/',
+        start_url: './',
+        scope: './',
         orientation: 'portrait-primary',
         categories: ['productivity', 'utilities'],
         icons: [
@@ -53,7 +57,7 @@ export default defineConfig({
             purpose: 'any maskable',
           },
           {
-            src: '/favicon.svg',
+            src: 'favicon.svg',
             sizes: 'any',
             type: 'image/svg+xml',
             purpose: 'any maskable',

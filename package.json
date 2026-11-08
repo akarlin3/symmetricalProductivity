@@ -1,0 +1,10 @@
+{
+  "name": "symmetrical-productivity-root",
+  "private": true,
+  "scripts": {
+    "install:app": "npm --prefix symmetrical-productivity install",
+    "dev": "npm --prefix symmetrical-productivity run dev",
+    "build": "npm --prefix symmetrical-productivity install && npm --prefix symmetrical-productivity run build",
+    "preview": "npm --prefix symmetrical-productivity run preview"
+  }
+}
