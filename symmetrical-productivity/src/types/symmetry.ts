@@ -1,0 +1,178 @@
+export type TabId = 'PIPELINE' | 'TIMER' | 'RECHARGE' | 'ROADMAP';
+
+export type LoadMode = 'CRUISE' | 'SURGE' | 'TAPER';
+
+export type FixedEventType = 'NONE' | 'LAB_2H' | 'VOLUNTEER' | 'EVENING_OUTING_6PM';
+
+export type BaselineCategory = 'FLASHCARDS_ANATOMY' | 'FLASHCARDS_COMP' | 'READING' | 'SYNTHESIS';
+
+export type ActiveTaskType = 'FLASHCARDS' | 'READING' | 'SYNTHESIS' | 'PROJECT';
+
+export type TrackId = 'science' | 'writing' | 'personal' | 'coding' | 'music';
+
+export interface BaselineBlock {
+  id: string;
+  title: string;
+  category: BaselineCategory;
+  completed: boolean;
+  bankedViaEarlyClearance?: boolean;
+  startupStep: string;
+  trackId: TrackId;
+}
+
+export type ProjectPresetType = 'PAPER_8' | 'SLIDES_4' | 'CUSTOM';
+
+export interface ProjectItem {
+  id: string;
+  slot: 1 | 2 | 3;
+  title: string;
+  presetType: ProjectPresetType;
+  completedBlocks: number;
+  totalBlocks: number;
+  trackId: TrackId;
+  startupStep: string;
+  nextStepNote: string;
+}
+
+export interface PipelineDay {
+  dayIndex: number;
+  dayLabel: string;
+  loadMode: LoadMode;
+  cruisePlus: boolean;
+  baseTargetBlocks: number;
+  deductedBlocksFromExtension: number;
+  completedBlocks: number;
+  fixedEvent: FixedEventType;
+  fixedEventTimeLabel?: string;
+  earlyMorningAnchor: boolean;
+  isToday: boolean;
+}
+
+export type TimerRunMode = 'WORK_20M' | 'BREAK_L1' | 'BREAK_L2' | 'BREAK_L3' | 'STRESS_RESET';
+
+export type WorkStage = 'IGNITION_5M' | 'MOMENTUM_15M';
+
+export type Level2BreakProtocol = 'ESPRESSO' | 'BASS_GUITAR_5M' | 'TENS_NORMATEC_15M';
+
+export type StressResetProtocol = 'BREATHING_478' | 'ESPRESSO' | 'COMPRESSION_BOOTS';
+
+export interface TimerConsoleState {
+  mode: TimerRunMode;
+  workStage: WorkStage;
+  secondsLeft: number;
+  isRunning: boolean;
+  activeBlockSourceId: string;
+  activeTaskTitle: string;
+  activeTaskType: ActiveTaskType;
+  activeStartupPrompt: string;
+  chainedBlocksCount: number; // 0, 1, or 2 (2 = 40m chained -> forces Level 2 10-15m break)
+  sessionDisplayDurationMinutes: 20 | 40;
+  l1DurationMinutes: 3 | 5;
+  l2DurationMinutes: 10 | 15;
+  l2Protocol: Level2BreakProtocol;
+  l3DurationMinutes: 60 | 90 | 120;
+  stressDurationMinutes: 15 | 20;
+  stressProtocol: StressResetProtocol;
+  queuedRecoveryFlashcard5m: boolean;
+  recoveryFlashcardRunning: boolean;
+  recoveryFlashcardSecondsLeft: number;
+}
+
+export type RechargeCategoryId =
+  | 'NONE'
+  | 'CAT1_MUSIC'
+  | 'CAT2_MAKER'
+  | 'CAT3_MEDIA'
+  | 'CAT4_COMFORT'
+  | 'CAT5_GAMING';
+
+export type MediaSubTrackId = '3A_FICTION' | '3B_NONFICTION' | '3C_VIDEO';
+
+export type StickyKey = 'CAT2_MAKER' | '3A_FICTION' | '3B_NONFICTION' | '3C_VIDEO' | 'CAT5_GAMING';
+
+export interface StickySlotState {
+  key: StickyKey;
+  label: string;
+  activeTitle: string;
+  backlogQueue: string[];
+  fiveMinStarts: number; // [X / 3] counter
+  unlockedViaCheckIn: boolean;
+}
+
+export type RechargePacingStage =
+  | 'STARTUP_5M'
+  | 'WINDOW_20M'
+  | 'WINDOW_40M'
+  | 'MANDATORY_BREAK_60M';
+
+export interface RechargeState {
+  endOfShiftLocked: boolean;
+  manualEveningPreview: boolean;
+  // Flow Extension
+  flowExtensionPromptOpen: boolean;
+  flowExtensionActive: boolean;
+  flowExtensionRunning: boolean;
+  flowExtensionElapsedSeconds: number;
+  flowExtensionBlocksLoggedToday: number;
+  weeklyExtensionsUsed: number; // Hard cap: < 2
+  lastChimeMinute: number;
+  // Option 0: Rest / Stillness (20m, 2-window cap -> Fork Check)
+  option0Running: boolean;
+  option0SecondsLeft: number;
+  option0ConsecutiveWindows: number; // Cap at 2 (40m)
+  forkCheckModalOpen: boolean;
+  // 5 Recharge Categories
+  activeCategory: RechargeCategoryId;
+  activeMediaTab: MediaSubTrackId;
+  fictionSpeed: '1.75x' | '2.00x' | '2.25x';
+  pacingStage: RechargePacingStage;
+  categorySecondsLeft: number;
+  categoryElapsedMinutes: number;
+  categoryRunning: boolean;
+  checkInModalOpen: boolean;
+  checkInMilestone: 20 | 40;
+  stickySlots: Record<StickyKey, StickySlotState>;
+}
+
+export interface RoadmapRung {
+  rungNumber: 1 | 2 | 3 | 4;
+  label: string;
+  description: string;
+  ledgerType: 'INPUT' | 'OUTPUT';
+  completedBlocks: number;
+  targetBlocks: number;
+}
+
+export interface RoadmapTrack {
+  id: TrackId;
+  name: string;
+  categoryLabel: 'CORE TRACK' | 'ZERO-QUOTA SANDBOX';
+  isSandbox: boolean;
+  activeThisWeek: boolean;
+  inputBlocksCredited: number;
+  inputWeeklyTarget: number;
+  outputBlocksCredited: number;
+  outputWeeklyTarget: number;
+  rungs: RoadmapRung[];
+}
+
+export interface SymmetryState {
+  version: string;
+  loadMode: LoadMode;
+  cruisePlus: boolean;
+  customModeBlockAdjustment: number; // e.g. 11 vs 12 for Cruise, 14 vs 15 for Surge, 7-9 for Taper
+  surgeConsecutiveDays: number; // Hard cap max 2 consecutive Surge days
+  midDayResetCompletedToday: boolean; // Mandatory 60-120m Mid-Day Reset after 7 blocks in Surge Mode
+  fixedEvent: FixedEventType;
+  flashcardsReviewedCount: number; // 250-card daily cap
+  flashcardsDailyCap: number;
+  earlyClearanceEnabled: boolean;
+  baselineBlocks: BaselineBlock[];
+  projectQueue: ProjectItem[];
+  projectBacklog: Omit<ProjectItem, 'slot'>[];
+  pipelineDays: PipelineDay[];
+  discretionaryBlocksCompletedToday: number;
+  timer: TimerConsoleState;
+  recharge: RechargeState;
+  roadmapTracks: RoadmapTrack[];
+}
