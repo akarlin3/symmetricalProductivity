@@ -13,6 +13,8 @@ interface DualRingTimerSvgProps {
   isMiniHudOpen?: boolean;
   cinemaFocusMode?: boolean;
   onToggleCinemaFocusMode?: () => void;
+  startupSeconds?: number;
+  momentumSeconds?: number;
 }
 
 export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
@@ -26,6 +28,8 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
   isMiniHudOpen = false,
   cinemaFocusMode = false,
   onToggleCinemaFocusMode,
+  startupSeconds,
+  momentumSeconds,
 }) => {
   const size = 280;
   const center = size / 2;
@@ -35,19 +39,33 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
   const outerCircumference = 2 * Math.PI * outerRadius;
   const innerCircumference = 2 * Math.PI * innerRadius;
 
-  // Compute progress (0..1) for Inner Ring (5m Startup Step) and Outer Ring (15m Momentum)
+  const mult = timer.elasticMultiplier ?? 1.0;
+  const totalStartupSec =
+    startupSeconds ?? (mult === 0.5 ? 180 : 300);
+  const totalMomentumSec =
+    momentumSeconds ?? (mult === 0.5 ? 420 : mult === 2.0 ? 2100 : 900);
+  const startupMinsLabel = Math.round(totalStartupSec / 60);
+  const momentumMinsLabel = Math.round(totalMomentumSec / 60);
+
+  // Compute progress (0..1) for Inner Ring (Startup Step) and Outer Ring (Momentum)
   let innerProgress = 0;
   let outerProgress = 0;
 
   if (timer.mode === 'WORK_20M') {
     if (timer.workStage === 'IGNITION_5M') {
-      const elapsed5m = Math.max(0, Math.min(300, 300 - timer.secondsLeft));
-      innerProgress = Math.max(0.03, elapsed5m / 300);
+      const elapsedStartup = Math.max(
+        0,
+        Math.min(totalStartupSec, totalStartupSec - timer.secondsLeft)
+      );
+      innerProgress = Math.max(0.03, elapsedStartup / totalStartupSec);
       outerProgress = 0;
     } else {
       innerProgress = 1;
-      const elapsed15m = Math.max(0, Math.min(900, 900 - timer.secondsLeft));
-      outerProgress = Math.max(0.03, elapsed15m / 900);
+      const elapsedMomentum = Math.max(
+        0,
+        Math.min(totalMomentumSec, totalMomentumSec - timer.secondsLeft)
+      );
+      outerProgress = Math.max(0.03, elapsedMomentum / totalMomentumSec);
     }
   } else {
     const totalBreakSec =
@@ -83,8 +101,8 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
   const compactPhaseLabel =
     timer.mode === 'WORK_20M'
       ? timer.workStage === 'IGNITION_5M'
-        ? '5M STARTUP'
-        : '15M MOMENTUM'
+        ? `${startupMinsLabel}M STARTUP (${mult}x)`
+        : `${momentumMinsLabel}M MOMENTUM (${mult}x)`
       : timer.mode === 'BREAK_L1'
       ? `${timer.l1DurationMinutes}M MICRO-RESET`
       : timer.mode === 'BREAK_L2'
@@ -418,7 +436,7 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
         >
           <span className="w-2 h-2 rounded-full bg-amber-400 inline-block shadow-[0_0_6px_#f59e0b]" />
           <span>
-            Inner: 5m Startup{' '}
+            Inner: {startupMinsLabel}m Startup{' '}
             {timer.mode === 'WORK_20M' && timer.workStage === 'MOMENTUM_15M'
               ? '(Done)'
               : '(IGNITION_5M)'}
@@ -439,7 +457,7 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
                 : 'bg-cyan-400 shadow-[0_0_6px_#22d3ee]'
             }`}
           />
-          <span>Outer: 15m Momentum</span>
+          <span>Outer: {momentumMinsLabel}m Momentum ({mult}x)</span>
         </span>
 
         {onOpenMiniHudPip && (

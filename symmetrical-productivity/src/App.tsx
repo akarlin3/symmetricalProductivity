@@ -30,7 +30,12 @@ import { triggerHaptic } from './utils/haptics';
 import {
   AudioEngineSettings,
   BaselineCategory,
+  BlockCadencePreset,
+  ClosedListLockMode,
   CompletedDeliverableEntry,
+  ElasticBlockMultiplier,
+  EnergyBandwidthState,
+  EveningPulseSensitivity,
   FixedEventType,
   Level2BreakProtocol,
   LoadMode,
@@ -39,10 +44,13 @@ import {
   ProfilePresetId,
   ProjectPresetType,
   RechargeCategoryId,
+  ShockAbsorberMode,
   SmartIntakePlanResult,
   SoundscapeMode,
+  StartupShrinkLevel,
   StickyKey,
   StressResetProtocol,
+  StructureFlexibilityConfig,
   SymmetryState,
   TabId,
   TimerRunMode,
@@ -54,12 +62,18 @@ import {
   computeShiftMetrics,
   createLogTimestamp,
   DEFAULT_AUDIO_ENGINE_SETTINGS,
+  cycleCognitiveDemandTag,
+  DEFAULT_FLEXIBILITY_TUNING,
   DEFAULT_SYMMETRY_STATE,
   formatRolloverHourLabel,
   generateSequentialChecklist,
+  getActiveBlockDurationsSeconds,
+  getActiveFocusProject,
+  getBaselineCognitiveDemand,
   getLogicalDayKey,
   getPreExamTaperSuggestion,
   loadExternalStateBackups,
+  getProjectCognitiveDemand,
   parseFromStateInput,
   pushStateBackup,
   serializeToStateMarkdown,
@@ -1087,7 +1101,8 @@ export function App() {
     prevTracks: SymmetryState['roadmapTracks'],
     trackId: TrackId,
     ledgerType: 'INPUT' | 'OUTPUT',
-    rungNumber: 1 | 2 | 3 | 4 = ledgerType === 'INPUT' ? 1 : 3
+    rungNumber: 1 | 2 | 3 | 4 = ledgerType === 'INPUT' ? 1 : 3,
+    blockCredit = 1
   ) => {
     return prevTracks.map((t) => {
       if (t.id !== trackId) return t;
@@ -1095,12 +1110,21 @@ export function App() {
         ...t,
         activeThisWeek: true,
         inputBlocksCredited:
-          ledgerType === 'INPUT' ? t.inputBlocksCredited + 1 : t.inputBlocksCredited,
+          ledgerType === 'INPUT'
+            ? Number((t.inputBlocksCredited + blockCredit).toFixed(2))
+            : t.inputBlocksCredited,
         outputBlocksCredited:
-          ledgerType === 'OUTPUT' ? t.outputBlocksCredited + 1 : t.outputBlocksCredited,
+          ledgerType === 'OUTPUT'
+            ? Number((t.outputBlocksCredited + blockCredit).toFixed(2))
+            : t.outputBlocksCredited,
         rungs: t.rungs.map((r) =>
           r.rungNumber === rungNumber
-            ? { ...r, completedBlocks: r.completedBlocks + 1 }
+            ? {
+                ...r,
+                completedBlocks: Number(
+                  (r.completedBlocks + blockCredit).toFixed(2)
+                ),
+              }
             : r
         ),
       };
@@ -1112,7 +1136,8 @@ export function App() {
     prevTracks: SymmetryState['roadmapTracks'],
     trackId: string,
     ledgerType: 'INPUT' | 'OUTPUT',
-    rungNumber: 1 | 2 | 3 | 4 = ledgerType === 'INPUT' ? 1 : 3
+    rungNumber: 1 | 2 | 3 | 4 = ledgerType === 'INPUT' ? 1 : 3,
+    blockCredit = 1
   ) => {
     return prevTracks.map((t) => {
       if (t.id !== trackId) return t;
@@ -1120,15 +1145,21 @@ export function App() {
         ...t,
         inputBlocksCredited:
           ledgerType === 'INPUT'
-            ? Math.max(0, t.inputBlocksCredited - 1)
+            ? Math.max(0, Number((t.inputBlocksCredited - blockCredit).toFixed(2)))
             : t.inputBlocksCredited,
         outputBlocksCredited:
           ledgerType === 'OUTPUT'
-            ? Math.max(0, t.outputBlocksCredited - 1)
+            ? Math.max(0, Number((t.outputBlocksCredited - blockCredit).toFixed(2)))
             : t.outputBlocksCredited,
         rungs: t.rungs.map((r) =>
           r.rungNumber === rungNumber
-            ? { ...r, completedBlocks: Math.max(0, r.completedBlocks - 1) }
+            ? {
+                ...r,
+                completedBlocks: Math.max(
+                  0,
+                  Number((r.completedBlocks - blockCredit).toFixed(2))
+                ),
+              }
             : r
         ),
       };
@@ -1160,6 +1191,7 @@ export function App() {
       category: TodayBlockLogCategory;
       title: string;
       durationMinutes: number;
+      blockCredit?: number;
       roadmapTrack: string;
       stroke: 'INPUT' | 'OUTPUT';
       sourceBlockId?: string;
@@ -1177,6 +1209,7 @@ export function App() {
       category: params.category,
       title: params.title,
       durationMinutes: params.durationMinutes,
+      blockCredit: params.blockCredit,
       roadmapTrack: params.roadmapTrack,
       stroke: params.stroke,
       sourceBlockId: params.sourceBlockId,
@@ -1185,9 +1218,11 @@ export function App() {
     };
   };
 
-  // Complete a 20m work block and route to the appropriate Break level
+  // Complete a work block (0.5x Micro-Block 10m, 1.0x Standard Block 20m, or 2.0x Chained Flow Block 40m) and route to the appropriate Break level
   const handleCompleteWorkBlockTransition = (prev: SymmetryState): SymmetryState => {
     soundEngine.playTactileClick('BLOCK_COMPLETE');
+    const mult = prev.timer.elasticMultiplier ?? 1.0;
+    const activeDurations = getActiveBlockDurationsSeconds(prev);
     const matchingBaseline = prev.baselineBlocks.find(
       (b) => b.id === prev.timer.activeBlockSourceId && !b.completed
     );
@@ -1199,9 +1234,37 @@ export function App() {
     let newLogEntry: TodayBlockLogEntry;
 
     if (matchingBaseline) {
-      updatedBaseline = prev.baselineBlocks.map((b) =>
-        b.id === matchingBaseline.id ? { ...b, completed: true } : b
-      );
+      if (mult === 0.5) {
+        const existingPartial = matchingBaseline.partialCredit || 0;
+        if (existingPartial >= 0.5) {
+          updatedBaseline = prev.baselineBlocks.map((b) =>
+            b.id === matchingBaseline.id
+              ? { ...b, completed: true, partialCredit: 0 }
+              : b
+          );
+        } else {
+          updatedBaseline = prev.baselineBlocks.map((b) =>
+            b.id === matchingBaseline.id
+              ? { ...b, partialCredit: 0.5 }
+              : b
+          );
+        }
+      } else {
+        updatedBaseline = prev.baselineBlocks.map((b) =>
+          b.id === matchingBaseline.id
+            ? { ...b, completed: true, partialCredit: 0 }
+            : b
+        );
+        // If 2.0x Chained Flow Block was run on a baseline block, credit the extra 1.0 block to discretionary/project
+        if (mult === 2.0) {
+          const remainingCredit = 1 - (matchingBaseline.partialCredit || 0);
+          const overflowCredit = Number((2.0 - remainingCredit).toFixed(2));
+          updatedDiscretionary = Number(
+            (updatedDiscretionary + overflowCredit).toFixed(2)
+          );
+        }
+      }
+
       const stroke: 'INPUT' | 'OUTPUT' =
         matchingBaseline.category === 'SYNTHESIS' ? 'OUTPUT' : 'INPUT';
       const rungNum: 1 | 2 | 3 | 4 =
@@ -1210,44 +1273,88 @@ export function App() {
         updatedTracks,
         matchingBaseline.trackId,
         stroke,
-        rungNum
+        rungNum,
+        mult
       );
       newLogEntry = createTodayLogEntry(prev, {
         category: baselineCategoryToLogCategory(matchingBaseline.category),
-        title: matchingBaseline.title,
-        durationMinutes: 20,
+        title:
+          mult === 0.5
+            ? `${matchingBaseline.title} (0.5x Micro-Block)`
+            : mult === 2.0
+            ? `${matchingBaseline.title} (2.0x Chained Flow Block)`
+            : matchingBaseline.title,
+        durationMinutes: activeDurations.totalMinutes,
+        blockCredit: mult,
         roadmapTrack: matchingBaseline.trackId,
         stroke,
         sourceBlockId: matchingBaseline.id,
         rungNumber: rungNum,
       });
+    } else if (prev.timer.activeBlockSourceId === 'sandbox_curiosity') {
+      updatedDiscretionary = Number((updatedDiscretionary + mult).toFixed(2));
+      const sandboxTrack: TrackId =
+        prev.roadmapTracks.find((t) => t.id === 'coding')?.id || 'science';
+      updatedTracks = creditRoadmapTrack(
+        updatedTracks,
+        sandboxTrack,
+        'INPUT',
+        2,
+        mult
+      );
+      newLogEntry = createTodayLogEntry(prev, {
+        category: 'SANDBOX_CURIOSITY',
+        title: `${prev.timer.activeTaskTitle} (${mult}x Block)`,
+        durationMinutes: activeDurations.totalMinutes,
+        blockCredit: mult,
+        roadmapTrack: sandboxTrack,
+        stroke: 'INPUT',
+        sourceBlockId: 'sandbox_curiosity',
+        rungNumber: 2,
+      });
     } else {
-      updatedDiscretionary += 1;
+      updatedDiscretionary = Number((updatedDiscretionary + mult).toFixed(2));
+      const activeFocusProj = getActiveFocusProject(prev);
+      const targetSlot = activeFocusProj?.slot ?? 1;
       updatedProjects = prev.projectQueue.map((p) =>
-        p.slot === 1
+        p.slot === targetSlot
           ? {
               ...p,
-              completedBlocks: Math.min(p.totalBlocks, p.completedBlocks + 1),
+              completedBlocks: Math.min(
+                p.totalBlocks,
+                Number((p.completedBlocks + mult).toFixed(2))
+              ),
             }
           : p
       );
-      const primaryProj = prev.projectQueue[0];
-      const primaryTrack = primaryProj?.trackId || 'writing';
-      updatedTracks = creditRoadmapTrack(updatedTracks, primaryTrack, 'OUTPUT', 3);
+      const primaryTrack = activeFocusProj?.trackId || 'writing';
+      updatedTracks = creditRoadmapTrack(
+        updatedTracks,
+        primaryTrack,
+        'OUTPUT',
+        3,
+        mult
+      );
       newLogEntry = createTodayLogEntry(prev, {
         category: 'PROJECT_FOCUS_1',
-        title: primaryProj?.title || prev.timer.activeTaskTitle,
-        durationMinutes: 20,
+        title:
+          mult === 0.5
+            ? `${activeFocusProj?.title || prev.timer.activeTaskTitle} (0.5x Micro-Block)`
+            : mult === 2.0
+            ? `${activeFocusProj?.title || prev.timer.activeTaskTitle} (2.0x Chained Flow Block)`
+            : activeFocusProj?.title || prev.timer.activeTaskTitle,
+        durationMinutes: activeDurations.totalMinutes,
+        blockCredit: mult,
         roadmapTrack: primaryTrack,
         stroke: 'OUTPUT',
-        sourceBlockId: primaryProj?.id,
+        sourceBlockId: activeFocusProj?.id,
         rungNumber: 3,
       });
     }
 
     pushUndoSnapshot(
       prev,
-      `Block Logged: ${newLogEntry.title} (${newLogEntry.durationMinutes}m)`
+      `Block Logged: ${newLogEntry.title} (${newLogEntry.durationMinutes}m • +${mult}b)`
     );
 
     const nextCandidate: SymmetryState = {
@@ -1277,12 +1384,13 @@ export function App() {
           targetEndTimeMs: null,
           isRunning: false,
           chainedBlocksCount: 0,
+          startupShrinkLevel: 1,
         },
       };
     }
 
-    // Check chained 20m block count (max 2 chained blocks [40m] before mandatory 10-15m Level 2 break)
-    if (prev.timer.chainedBlocksCount >= 2) {
+    // Rule: 2.0x Chained Flow Block (40m) or 2 chained 20m blocks immediately enforces mandatory 10-15m Level 2 Task-Switch Buffer
+    if (mult === 2.0 || prev.timer.chainedBlocksCount >= 2) {
       return {
         ...nextCandidate,
         timer: {
@@ -1293,6 +1401,7 @@ export function App() {
           targetEndTimeMs: null,
           isRunning: false,
           chainedBlocksCount: 0,
+          startupShrinkLevel: 1,
         },
       };
     }
@@ -1307,6 +1416,7 @@ export function App() {
         targetEndTimeMs: null,
         isRunning: false,
         chainedBlocksCount: 2,
+        startupShrinkLevel: 1,
       },
     };
   };
@@ -1317,6 +1427,8 @@ export function App() {
     now = Date.now()
   ): SymmetryState => {
     const r = prev.recharge;
+    const isGentleEveningPulse =
+      prev.flexibilityTuning?.eveningPulseSensitivity === 'GENTLE_40_60';
     if (r.pacingStage === 'STARTUP_5M') {
       dispatchLockScreenAlert(
         'ROLLOVER_5M_TO_15M',
@@ -1346,7 +1458,9 @@ export function App() {
     if (r.pacingStage === 'WINDOW_20M') {
       dispatchLockScreenAlert(
         'CHECKIN_20M_CHIME',
-        '20m Check-In Chime',
+        isGentleEveningPulse
+          ? '20m Gentle Milestone Chime (Auto-Rolling to 40m)'
+          : '20m Check-In Chime',
         'Keep going, switch, or rest? (Immediate Sticky swap unlocked).'
       );
       const stickyKey: StickyKey | null =
@@ -1363,6 +1477,27 @@ export function App() {
         updatedStickySlots[stickyKey] = {
           ...updatedStickySlots[stickyKey],
           unlockedViaCheckIn: true,
+        };
+      }
+
+      if (isGentleEveningPulse) {
+        const keepRunning = r.categoryRunning;
+        const nextEndTimeMs = keepRunning
+          ? (r.categoryTargetEndTimeMs ?? now) + 1200 * 1000
+          : null;
+        return {
+          ...prev,
+          recharge: {
+            ...r,
+            pacingStage: 'WINDOW_40M',
+            categorySecondsLeft: 1200,
+            categoryTargetEndTimeMs: nextEndTimeMs,
+            categoryElapsedMinutes: 20,
+            categoryRunning: keepRunning,
+            checkInModalOpen: false,
+            checkInMilestone: 20,
+            stickySlots: updatedStickySlots,
+          },
         };
       }
 
@@ -1435,8 +1570,9 @@ export function App() {
       setState((prev) => {
         let next = { ...prev };
         let changed = false;
+        const activeDurations = getActiveBlockDurationsSeconds(prev);
 
-        // 1. Primary Work (5m Startup / 15m Momentum) / Break (L1/L2/L3) / Stress Reset Timer
+        // 1. Primary Work (Startup / Momentum) / Break (L1/L2/L3) / Stress Reset Timer
         if (prev.timer.isRunning) {
           const endTimeMs =
             prev.timer.targetEndTimeMs ?? now + prev.timer.secondsLeft * 1000;
@@ -1459,13 +1595,14 @@ export function App() {
             changed = true;
             // Stage reached targetEndTimeMs -> deterministic state transition
             if (prev.timer.mode === 'WORK_20M' && prev.timer.workStage === 'IGNITION_5M') {
-              // Rule 2: Auto-roll 5m Startup Step (IGNITION_5M) into 15m Momentum (MOMENTUM_15M) without stopping the timer
+              // Rule 2: Auto-roll Startup Step (IGNITION_5M) into Momentum (MOMENTUM_15M) without stopping the timer
               dispatchLockScreenAlert(
                 'ROLLOVER_5M_TO_15M',
-                '5m Startup Step Complete → 15m Momentum',
-                `Auto-rolling into 15m Momentum (MOMENTUM_15M) for "${prev.timer.activeTaskTitle}".`
+                `${activeDurations.startupMinutes}m Startup Step Complete → ${activeDurations.momentumMinutes}m Momentum`,
+                `Auto-rolling into ${activeDurations.momentumMinutes}m Momentum (MOMENTUM_15M) for "${prev.timer.activeTaskTitle}".`
               );
-              const nextEndTimeMs = endTimeMs + 900 * 1000;
+              const nextEndTimeMs =
+                endTimeMs + activeDurations.momentumSeconds * 1000;
               const nextSecondsLeft = Math.max(
                 1,
                 Math.ceil((nextEndTimeMs - now) / 1000)
@@ -1483,8 +1620,8 @@ export function App() {
             ) {
               dispatchLockScreenAlert(
                 'WORK_BLOCK_COMPLETE',
-                '20m Work Block Complete',
-                `Completed 20m block for "${prev.timer.activeTaskTitle}".`
+                `${activeDurations.totalMinutes}m Work Block Complete`,
+                `Completed ${activeDurations.totalMinutes}m (${activeDurations.blockCredit}x) block for "${prev.timer.activeTaskTitle}".`
               );
               next = handleCompleteWorkBlockTransition(prev);
             } else if (prev.timer.mode === 'STRESS_RESET') {
@@ -1505,19 +1642,20 @@ export function App() {
                 recoveryFlashcardRunning: false,
               };
             } else {
-              // Level 1 / 2 / 3 Break completed -> chime + return to 5m Startup Step
+              // Level 1 / 2 / 3 Break completed -> chime + return to Startup Step
               dispatchLockScreenAlert(
                 'BREAK_COMPLETE',
-                'Break Complete → Ready for 5m Startup Step',
-                'Break finished. Ready to start next 5m Startup Step (IGNITION_5M).'
+                `Break Complete → Ready for ${activeDurations.startupMinutes}m Startup Step`,
+                `Break finished. Ready to start next ${activeDurations.startupMinutes}m Startup Step (IGNITION_5M).`
               );
               next.timer = {
                 ...prev.timer,
                 mode: 'WORK_20M',
                 workStage: 'IGNITION_5M',
-                secondsLeft: 300,
+                secondsLeft: activeDurations.startupSeconds,
                 targetEndTimeMs: null,
                 isRunning: false,
+                startupShrinkLevel: 1,
               };
               if (prev.timer.mode === 'BREAK_L3') {
                 next.midDayResetCompletedToday = true;
@@ -1918,34 +2056,38 @@ export function App() {
     const now = Date.now();
     setState((prev) => {
       const isTaskSwitch = prev.timer.activeTaskType !== taskType;
+      const activeDurations = getActiveBlockDurationsSeconds(prev);
       return {
         ...prev,
         timer: {
           ...prev.timer,
           mode: 'WORK_20M',
           workStage: 'IGNITION_5M',
-          secondsLeft: 300,
-          targetEndTimeMs: now + 300 * 1000,
+          secondsLeft: activeDurations.startupSeconds,
+          targetEndTimeMs: now + activeDurations.startupSeconds * 1000,
           isRunning: true,
           activeBlockSourceId: sourceId,
           activeTaskTitle: title,
           activeTaskType: taskType,
           activeStartupPrompt: startupPrompt,
           chainedBlocksCount: isTaskSwitch ? 1 : prev.timer.chainedBlocksCount,
+          startupShrinkLevel: 1,
         },
       };
     });
     setActiveTab('TIMER');
-    showNotice(`Started 5m Startup Step (IGNITION_5M) for "${title}".`);
+    showNotice(`Started Startup Step (IGNITION_5M) for "${title}".`);
   };
 
   const handleIncrementProjectBlock = (projectId: string) => {
     soundEngine.playTactileClick('BLOCK_COMPLETE');
     setState((prev) => {
-      const primary = prev.projectQueue.find((p) => p.id === projectId && p.slot === 1);
-      if (!primary) return prev;
+      const targetProj =
+        prev.projectQueue.find((p) => p.id === projectId) ||
+        getActiveFocusProject(prev);
+      if (!targetProj) return prev;
       const updatedQueue = prev.projectQueue.map((p) =>
-        p.slot === 1
+        p.id === targetProj.id
           ? {
               ...p,
               completedBlocks: Math.min(p.totalBlocks, p.completedBlocks + 1),
@@ -1954,20 +2096,22 @@ export function App() {
       );
       const updatedTracks = creditRoadmapTrack(
         prev.roadmapTracks,
-        primary.trackId,
+        targetProj.trackId,
         'OUTPUT',
-        3
+        3,
+        1
       );
       const newEntry = createTodayLogEntry(prev, {
         category: 'PROJECT_FOCUS_1',
-        title: primary.title,
+        title: targetProj.title,
         durationMinutes: 20,
-        roadmapTrack: primary.trackId,
+        blockCredit: 1,
+        roadmapTrack: targetProj.trackId,
         stroke: 'OUTPUT',
-        sourceBlockId: primary.id,
+        sourceBlockId: targetProj.id,
         rungNumber: 3,
       });
-      pushUndoSnapshot(prev, `Block Logged: ${primary.title} (20m)`);
+      pushUndoSnapshot(prev, `Block Logged: ${targetProj.title} (20m)`);
       return {
         ...prev,
         todayBlockLog: [...(prev.todayBlockLog || []), newEntry],
@@ -1976,7 +2120,7 @@ export function App() {
         roadmapTracks: updatedTracks,
       };
     });
-    showNotice('Logged +1 discretionary project block on Item #1 (Credited to Output).');
+    showNotice('Logged +1 discretionary project block (Credited to Output).');
   };
 
   // Handlers for Today's Log Slide-Over Drawer (Reassign, Edit Title, Delete, + Manual Block)
@@ -2646,16 +2790,18 @@ export function App() {
       const nextWorkStep = steps.find(
         (s) => s.kind === 'WORK_BLOCK' && !s.completed && !s.banked
       );
+      const activeDurations = getActiveBlockDurationsSeconds(prev);
       return {
         ...prev,
         timer: {
           ...prev.timer,
           mode: 'WORK_20M',
           workStage: 'IGNITION_5M',
-          secondsLeft: 300,
+          secondsLeft: activeDurations.startupSeconds,
           targetEndTimeMs: null,
           isRunning: false,
           chainedBlocksCount: 0,
+          startupShrinkLevel: 1,
           activeBlockSourceId:
             nextWorkStep?.sourceId || prev.timer.activeBlockSourceId,
           activeTaskTitle: nextWorkStep?.title || prev.timer.activeTaskTitle,
@@ -2695,6 +2841,395 @@ export function App() {
     });
     setActiveTab('TIMER');
     showNotice(`Launched ${breakMode} timer from Sequential Checklist.`);
+  };
+
+  // ===========================================================================
+  // 5 "STRUCTURED ELASTICITY" SYSTEMS — HANDLERS
+  // ===========================================================================
+
+  // 1. Energy-State Bandwidth Router (Sharp | Steady | Low / Foggy) & Cognitive Demand Tags
+  const handleSetEnergyBandwidth = (bandwidth: EnergyBandwidthState) => {
+    setState((prev) => {
+      const candidate: SymmetryState = {
+        ...prev,
+        energyBandwidth: bandwidth,
+      };
+      const steps = generateSequentialChecklist(candidate);
+      const nextWorkStep = steps.find(
+        (s) => s.kind === 'WORK_BLOCK' && !s.completed && !s.banked
+      );
+      if (!prev.timer.isRunning && nextWorkStep) {
+        return {
+          ...candidate,
+          timer: {
+            ...candidate.timer,
+            activeBlockSourceId:
+              nextWorkStep.sourceId || candidate.timer.activeBlockSourceId,
+            activeTaskTitle: nextWorkStep.title,
+            activeTaskType: nextWorkStep.taskType || candidate.timer.activeTaskType,
+            activeStartupPrompt: nextWorkStep.startupStep,
+            startupShrinkLevel: 1,
+          },
+        };
+      }
+      return candidate;
+    });
+    const labelMap: Record<EnergyBandwidthState, string> = {
+      SHARP:
+        'Bandwidth → Sharp: Prioritizing DEEP_SYNTHESIS (Closed List Focus #1 & Half-Chapter synthesis) early in shift.',
+      STEADY:
+        'Bandwidth → Steady: Interleaving MECHANICAL_RECALL sprints and DEEP_SYNTHESIS normally.',
+      LOW_FOGGY:
+        'Bandwidth → Low / Foggy: Routing next block to MECHANICAL_RECALL or LIGHT_ADMIN (with 15m Stress/Fatigue Reset option).',
+    };
+    showNotice(labelMap[bandwidth]);
+  };
+
+  const handleCycleCognitiveDemand = (
+    targetKind: 'BASELINE' | 'PROJECT',
+    targetId: string
+  ) => {
+    setState((prev) => {
+      if (targetKind === 'BASELINE') {
+        return {
+          ...prev,
+          baselineBlocks: prev.baselineBlocks.map((b) => {
+            if (b.id !== targetId) return b;
+            const current = getBaselineCognitiveDemand(b);
+            return {
+              ...b,
+              cognitiveDemand: cycleCognitiveDemandTag(current),
+            };
+          }),
+        };
+      }
+      return {
+        ...prev,
+        projectQueue: prev.projectQueue.map((p) => {
+          if (p.id !== targetId) return p;
+          const current = getProjectCognitiveDemand(p);
+          return {
+            ...p,
+            cognitiveDemand: cycleCognitiveDemandTag(current),
+          };
+        }),
+      };
+    });
+  };
+
+  // 2. Elastic Block Accordion (0.5x Half-Block 10m | 1.0x Standard 20m | 2.0x Double-Block 40m)
+  const handleSelectElasticMultiplier = (multiplier: ElasticBlockMultiplier) => {
+    const now = Date.now();
+    setState((prev) => {
+      const candidate: SymmetryState = {
+        ...prev,
+        timer: {
+          ...prev.timer,
+          elasticMultiplier: multiplier,
+        },
+      };
+      const durations = getActiveBlockDurationsSeconds(candidate);
+      if (prev.timer.mode !== 'WORK_20M') {
+        return candidate;
+      }
+      const nextSec =
+        prev.timer.workStage === 'IGNITION_5M'
+          ? durations.startupSeconds
+          : durations.momentumSeconds;
+      return {
+        ...candidate,
+        timer: {
+          ...candidate.timer,
+          secondsLeft: nextSec,
+          targetEndTimeMs: prev.timer.isRunning
+            ? now + nextSec * 1000
+            : null,
+        },
+      };
+    });
+    if (multiplier === 0.5) {
+      showNotice(
+        'Elastic Block Accordion → 0.5x Micro-Block (10m = 3m Startup + 7m Momentum • Logs 0.5b).'
+      );
+    } else if (multiplier === 2.0) {
+      showNotice(
+        'Elastic Block Accordion → 2.0x Chained Flow Block (40m = 5m Startup + 35m Momentum • Logs 2.0b + enforces L2 Buffer).'
+      );
+    } else {
+      showNotice(
+        'Elastic Block Accordion → 1.0x Standard Block (5m Startup + 15m Momentum • Logs 1.0b).'
+      );
+    }
+  };
+
+  // 3. "Shrink Startup Step" (3-Tier Friction De-Escalator on Timer HUD: Level 1 -> Level 2 -> Level 3)
+  const handleShrinkStartupStep = (targetLevel?: StartupShrinkLevel) => {
+    setState((prev) => {
+      const currentLevel = prev.timer.startupShrinkLevel ?? 1;
+      const nextLevel: StartupShrinkLevel =
+        targetLevel ??
+        (currentLevel === 1 ? 2 : currentLevel === 2 ? 3 : 1);
+      return {
+        ...prev,
+        timer: {
+          ...prev.timer,
+          startupShrinkLevel: nextLevel,
+        },
+      };
+    });
+  };
+
+  // 4. One-Tap "Life Happened" Shock Absorber (Compress Remainder of Day)
+  const handleApplyShockAbsorber = (
+    mode: ShockAbsorberMode,
+    targetCeiling?: number
+  ) => {
+    setState((prev) => {
+      const completedBaselineCount = prev.baselineBlocks.reduce(
+        (acc, b) => acc + (b.completed ? 1 : b.partialCredit || 0),
+        0
+      );
+      const totalAlreadyDone =
+        completedBaselineCount + prev.discretionaryBlocksCompletedToday;
+
+      const rawTarget =
+        targetCeiling ??
+        (mode === 'FULL_SHIFT' ? 12 : mode === 'HALF_SHIFT' ? 6 : 4);
+      const realisticCeiling = Math.max(
+        Math.ceil(totalAlreadyDone),
+        rawTarget
+      );
+
+      // How many discretionary Focus #1 project blocks were originally planned vs now fit
+      const prevDiscretionaryPlanned = Math.max(
+        0,
+        prev.customModeBlockAdjustment - prev.baselineBlocks.length
+      );
+      const newDiscretionaryPlanned = Math.max(
+        0,
+        realisticCeiling - prev.baselineBlocks.length
+      );
+      const deferredProjectBlocks = Math.max(
+        0,
+        prevDiscretionaryPlanned - newDiscretionaryPlanned
+      );
+
+      // Prioritize highest-yield Baseline Floor blocks first (1 block per core category, then remaining)
+      // and bank excess uncompleted baseline blocks above realisticCeiling so [0m work left] is achievable with zero overdue warnings
+      const remainingBudgetForBaseline = Math.max(
+        0,
+        Math.round(realisticCeiling - totalAlreadyDone)
+      );
+
+      // High-yield priority order for uncompleted baseline slots
+      const uncompletedBlocks = prev.baselineBlocks.filter((b) => !b.completed);
+      const priorityOrderedIds: string[] = [];
+      const seenCategories = new Set<string>();
+      for (const b of uncompletedBlocks) {
+        if (!seenCategories.has(b.category)) {
+          seenCategories.add(b.category);
+          priorityOrderedIds.push(b.id);
+        }
+      }
+      for (const b of uncompletedBlocks) {
+        if (!priorityOrderedIds.includes(b.id)) {
+          priorityOrderedIds.push(b.id);
+        }
+      }
+      const keepActiveBaselineIds = new Set(
+        priorityOrderedIds.slice(0, remainingBudgetForBaseline)
+      );
+
+      const updatedBaseline = prev.baselineBlocks.map((b) => {
+        if (b.completed) return { ...b, bankedViaEarlyClearance: false };
+        if (mode === 'FULL_SHIFT') {
+          return { ...b, bankedViaEarlyClearance: false };
+        }
+        return {
+          ...b,
+          bankedViaEarlyClearance: !keepActiveBaselineIds.has(b.id),
+        };
+      });
+
+      const primaryProjTitle =
+        prev.projectQueue[0]?.title || 'Focus #1 Project Blocks';
+
+      const updatedPipelineDays: PipelineDay[] = prev.pipelineDays.map((d, idx) => {
+        if (idx === 0) {
+          return {
+            ...d,
+            loadMode: (mode === 'FULL_SHIFT' ? 'CRUISE' : 'TAPER') as LoadMode,
+            cruisePlus: false,
+            baseTargetBlocks: realisticCeiling,
+          };
+        }
+        if (idx === 1 && deferredProjectBlocks > 0 && mode !== 'FULL_SHIFT') {
+          const shiftNote = `+${deferredProjectBlocks}b shifted from today (${primaryProjTitle})`;
+          const cleanPrevDeliverable = (
+            d.primaryDeliverable ||
+            d.projectBlocksSummary ||
+            ''
+          ).replace(/\s*\(\+\d+b shifted from today[^)]*\)/g, '');
+          return {
+            ...d,
+            baseTargetBlocks: Math.min(
+              14,
+              Math.max(
+                d.baseTargetBlocks,
+                d.baseTargetBlocks + Math.min(2, deferredProjectBlocks)
+              )
+            ),
+            primaryDeliverable: `${cleanPrevDeliverable} (${shiftNote})`.trim(),
+            projectBlocksSummary: `${cleanPrevDeliverable} (${shiftNote})`.trim(),
+          };
+        }
+        return d;
+      });
+
+      const nextCandidate: SymmetryState = {
+        ...prev,
+        shockAbsorberMode: mode,
+        shockAbsorberDeferredBlocks: deferredProjectBlocks,
+        loadMode: mode === 'FULL_SHIFT' ? 'CRUISE' : 'TAPER',
+        cruisePlus: false,
+        customModeBlockAdjustment: realisticCeiling,
+        earlyClearanceEnabled: mode !== 'FULL_SHIFT',
+        baselineBlocks: updatedBaseline,
+        pipelineDays: updatedPipelineDays,
+      };
+
+      const nextSteps = generateSequentialChecklist(nextCandidate);
+      const nextWork = nextSteps.find(
+        (s) => s.kind === 'WORK_BLOCK' && !s.completed && !s.banked
+      );
+
+      pushUndoSnapshot(
+        prev,
+        `Shock Absorber Applied (${mode} → ${realisticCeiling}b ceiling)`
+      );
+
+      return {
+        ...nextCandidate,
+        timer: nextWork
+          ? {
+              ...nextCandidate.timer,
+              activeBlockSourceId:
+                nextWork.sourceId || nextCandidate.timer.activeBlockSourceId,
+              activeTaskTitle: nextWork.title,
+              activeTaskType:
+                nextWork.taskType || nextCandidate.timer.activeTaskType,
+              activeStartupPrompt: nextWork.startupStep,
+              startupShrinkLevel: 1,
+            }
+          : nextCandidate.timer,
+      };
+    });
+
+    const modeSummary =
+      mode === 'FULL_SHIFT'
+        ? `Restored Full Shift (${targetCeiling ?? 12} blocks).`
+        : mode === 'HALF_SHIFT'
+        ? `Shock Absorber: Re-capped today to Half Shift (${targetCeiling ?? 6} blocks), prioritized highest-yield Floor blocks, and shifted deferred Focus #1 blocks to tomorrow.`
+        : `Shock Absorber: Re-capped today to Minimum Viable Floor (${targetCeiling ?? 4} blocks), banked remaining slots cleanly, and shifted Focus #1 project blocks to tomorrow.`;
+    showNotice(modeSummary);
+  };
+
+  // 5. "Bounded Curiosity" Sandbox Block & Flexible Custom Rules Toggle
+  const handleSetActiveDualSlotNumber = (slot: 1 | 2) => {
+    setState((prev) => {
+      const targetProj =
+        prev.projectQueue.find((p) => p.slot === slot) || prev.projectQueue[0];
+      const nextState: SymmetryState = {
+        ...prev,
+        activeDualSlotNumber: slot,
+        flexibilityTuning: {
+          ...(prev.flexibilityTuning ?? DEFAULT_FLEXIBILITY_TUNING),
+          activeFocusSlot: slot,
+          activeDualSlotNumber: slot,
+        },
+      };
+      if (!prev.timer.isRunning && targetProj) {
+        return {
+          ...nextState,
+          timer: {
+            ...nextState.timer,
+            activeBlockSourceId: targetProj.id,
+            activeTaskTitle: `${targetProj.title} — Active Dual-Slot #${slot}`,
+            activeTaskType: 'PROJECT',
+            activeStartupPrompt: targetProj.startupStep,
+            startupShrinkLevel: 1,
+          },
+        };
+      }
+      return nextState;
+    });
+    showNotice(
+      `Dual-Slot Closed List Lock: Switched active discretionary focus to Slot #${slot}.`
+    );
+  };
+
+  const handleLaunchBoundedCuriosityBlock = () => {
+    const now = Date.now();
+    setState((prev) => {
+      const activeDurations = getActiveBlockDurationsSeconds(prev);
+      return {
+        ...prev,
+        timer: {
+          ...prev.timer,
+          mode: 'WORK_20M',
+          workStage: 'IGNITION_5M',
+          secondsLeft: activeDurations.startupSeconds,
+          targetEndTimeMs: now + activeDurations.startupSeconds * 1000,
+          isRunning: true,
+          activeBlockSourceId: 'sandbox_curiosity',
+          activeTaskTitle:
+            'Bounded Curiosity Sandbox — Time-Boxed Exploratory Rabbit-Hole',
+          activeTaskType: 'PROJECT',
+          activeStartupPrompt:
+            'Write 1 specific question or hypothesis to explore for 15m, then return to main pipeline when chime rings',
+          startupShrinkLevel: 1,
+        },
+      };
+    });
+    setActiveTab('TIMER');
+    showNotice(
+      'Launched Bounded Curiosity Sandbox Block (counts toward daily ceiling & auto-returns to pipeline on completion).'
+    );
+  };
+
+  const handleUpdateFlexibilityTuning = (
+    patch: Partial<StructureFlexibilityConfig>
+  ) => {
+    setState((prev) => {
+      const nextTuning: StructureFlexibilityConfig = {
+        ...(prev.flexibilityTuning ?? DEFAULT_FLEXIBILITY_TUNING),
+        ...patch,
+      };
+      const nextCandidate: SymmetryState = {
+        ...prev,
+        flexibilityTuning: nextTuning,
+        activeDualSlotNumber:
+          nextTuning.closedListLockMode === 'STRICT_SERIALIZED'
+            ? 1
+            : prev.activeDualSlotNumber ?? 1,
+      };
+      const durations = getActiveBlockDurationsSeconds(nextCandidate);
+      const shouldSyncIdleTimer =
+        !prev.timer.isRunning && prev.timer.mode === 'WORK_20M';
+      return {
+        ...nextCandidate,
+        timer: shouldSyncIdleTimer
+          ? {
+              ...nextCandidate.timer,
+              secondsLeft:
+                prev.timer.workStage === 'IGNITION_5M'
+                  ? durations.startupSeconds
+                  : durations.momentumSeconds,
+            }
+          : nextCandidate.timer,
+      };
+    });
+    showNotice('Updated Structure vs. Flexibility Tuning configuration.');
   };
 
   const handleApplyStatePatch = (
@@ -2831,24 +3366,27 @@ export function App() {
     });
   };
 
-  // Fast-forward current timer stage (5m -> 15m -> Break Router / Stress Reset -> 5m Flashcards)
+  // Fast-forward current timer stage (Startup -> Momentum -> Break Router / Stress Reset -> 5m Flashcards)
   const handleFastForwardTimerStage = () => {
     const now = Date.now();
     setState((prev) => {
+      const activeDurations = getActiveBlockDurationsSeconds(prev);
       if (prev.timer.mode === 'WORK_20M' && prev.timer.workStage === 'IGNITION_5M') {
         dispatchLockScreenAlert(
           'ROLLOVER_5M_TO_15M',
-          '5m Startup Step Complete → 15m Momentum',
-          `Auto-rolling into 15m Momentum (MOMENTUM_15M) for "${prev.timer.activeTaskTitle}".`
+          `${activeDurations.startupMinutes}m Startup Step Complete → ${activeDurations.momentumMinutes}m Momentum`,
+          `Auto-rolling into ${activeDurations.momentumMinutes}m Momentum (MOMENTUM_15M) for "${prev.timer.activeTaskTitle}".`
         );
-        showNotice('5m Startup Step complete → Auto-rolled into 15m Momentum (MOMENTUM_15M).');
+        showNotice(
+          `${activeDurations.startupMinutes}m Startup Step complete → Auto-rolled into ${activeDurations.momentumMinutes}m Momentum (MOMENTUM_15M).`
+        );
         return {
           ...prev,
           timer: {
             ...prev.timer,
             workStage: 'MOMENTUM_15M',
-            secondsLeft: 900,
-            targetEndTimeMs: now + 900 * 1000,
+            secondsLeft: activeDurations.momentumSeconds,
+            targetEndTimeMs: now + activeDurations.momentumSeconds * 1000,
             isRunning: true,
           },
         };
@@ -2856,8 +3394,8 @@ export function App() {
       if (prev.timer.mode === 'WORK_20M' && prev.timer.workStage === 'MOMENTUM_15M') {
         dispatchLockScreenAlert(
           'WORK_BLOCK_COMPLETE',
-          '20m Work Block Complete',
-          `Completed 20m block for "${prev.timer.activeTaskTitle}".`
+          `${activeDurations.totalMinutes}m Work Block Complete`,
+          `Completed ${activeDurations.totalMinutes}m (${activeDurations.blockCredit}x) block for "${prev.timer.activeTaskTitle}".`
         );
         const next = handleCompleteWorkBlockTransition(prev);
         const nextM = computeShiftMetrics(next);
@@ -2866,7 +3404,7 @@ export function App() {
           setActiveTab('RECHARGE');
         } else {
           showNotice(
-            `20m Block complete! Auto-routed to ${
+            `${activeDurations.totalMinutes}m (${activeDurations.blockCredit}x) Block complete! Auto-routed to ${
               next.timer.mode === 'BREAK_L3'
                 ? 'Level 3 Mid-Day Reset (60m)'
                 : next.timer.mode === 'BREAK_L2'
@@ -2898,13 +3436,15 @@ export function App() {
           },
         };
       }
-      // Break complete -> chime + return to 5m Startup Step
+      // Break complete -> chime + return to Startup Step
       dispatchLockScreenAlert(
         'BREAK_COMPLETE',
-        'Break Complete → Ready for 5m Startup Step',
-        'Break finished. Ready to start next 5m Startup Step (IGNITION_5M).'
+        `Break Complete → Ready for ${activeDurations.startupMinutes}m Startup Step`,
+        `Break finished. Ready to start next ${activeDurations.startupMinutes}m Startup Step (IGNITION_5M).`
       );
-      showNotice('Break complete → Ready for next 5m Startup Step (IGNITION_5M).');
+      showNotice(
+        `Break complete → Ready for next ${activeDurations.startupMinutes}m Startup Step (IGNITION_5M).`
+      );
       return {
         ...prev,
         midDayResetCompletedToday:
@@ -2913,9 +3453,10 @@ export function App() {
           ...prev.timer,
           mode: 'WORK_20M',
           workStage: 'IGNITION_5M',
-          secondsLeft: 300,
+          secondsLeft: activeDurations.startupSeconds,
           targetEndTimeMs: null,
           isRunning: false,
+          startupShrinkLevel: 1,
         },
       };
     });
@@ -3108,49 +3649,55 @@ export function App() {
                 });
               }}
               onResetCurrentStage={() =>
-                setState((prev) => ({
-                  ...prev,
-                  timer: {
-                    ...prev.timer,
-                    isRunning: false,
-                    targetEndTimeMs: null,
-                    secondsLeft:
-                      prev.timer.mode === 'WORK_20M'
-                        ? prev.timer.workStage === 'IGNITION_5M'
-                          ? 300
-                          : 900
-                        : prev.timer.mode === 'BREAK_L1'
-                        ? prev.timer.l1DurationMinutes * 60
-                        : prev.timer.mode === 'BREAK_L2'
-                        ? prev.timer.l2DurationMinutes * 60
-                        : prev.timer.mode === 'BREAK_L3'
-                        ? prev.timer.l3DurationMinutes * 60
-                        : prev.timer.stressDurationMinutes * 60,
-                  },
-                }))
+                setState((prev) => {
+                  const durations = getActiveBlockDurationsSeconds(prev);
+                  return {
+                    ...prev,
+                    timer: {
+                      ...prev.timer,
+                      isRunning: false,
+                      targetEndTimeMs: null,
+                      secondsLeft:
+                        prev.timer.mode === 'WORK_20M'
+                          ? prev.timer.workStage === 'IGNITION_5M'
+                            ? durations.startupSeconds
+                            : durations.momentumSeconds
+                          : prev.timer.mode === 'BREAK_L1'
+                          ? prev.timer.l1DurationMinutes * 60
+                          : prev.timer.mode === 'BREAK_L2'
+                          ? prev.timer.l2DurationMinutes * 60
+                          : prev.timer.mode === 'BREAK_L3'
+                          ? prev.timer.l3DurationMinutes * 60
+                          : prev.timer.stressDurationMinutes * 60,
+                    },
+                  };
+                })
               }
               onFastForwardCurrentStage={handleFastForwardTimerStage}
               onSwitchTimerMode={(mode: TimerRunMode) =>
-                setState((prev) => ({
-                  ...prev,
-                  timer: {
-                    ...prev.timer,
-                    mode,
-                    isRunning: false,
-                    targetEndTimeMs: null,
-                    workStage: 'IGNITION_5M',
-                    secondsLeft:
-                      mode === 'WORK_20M'
-                        ? 300
-                        : mode === 'BREAK_L1'
-                        ? prev.timer.l1DurationMinutes * 60
-                        : mode === 'BREAK_L2'
-                        ? prev.timer.l2DurationMinutes * 60
-                        : mode === 'BREAK_L3'
-                        ? prev.timer.l3DurationMinutes * 60
-                        : prev.timer.stressDurationMinutes * 60,
-                  },
-                }))
+                setState((prev) => {
+                  const durations = getActiveBlockDurationsSeconds(prev);
+                  return {
+                    ...prev,
+                    timer: {
+                      ...prev.timer,
+                      mode,
+                      isRunning: false,
+                      targetEndTimeMs: null,
+                      workStage: 'IGNITION_5M',
+                      secondsLeft:
+                        mode === 'WORK_20M'
+                          ? durations.startupSeconds
+                          : mode === 'BREAK_L1'
+                          ? prev.timer.l1DurationMinutes * 60
+                          : mode === 'BREAK_L2'
+                          ? prev.timer.l2DurationMinutes * 60
+                          : mode === 'BREAK_L3'
+                          ? prev.timer.l3DurationMinutes * 60
+                          : prev.timer.stressDurationMinutes * 60,
+                    },
+                  };
+                })
               }
               onSelectL1Minutes={(mins) =>
                 setState((prev) => ({
@@ -3315,6 +3862,13 @@ export function App() {
                 showNotice('Completed 5m Flashcard recovery block.');
               }}
               onGoToRecharge={() => setActiveTab('RECHARGE')}
+              onSetEnergyBandwidth={handleSetEnergyBandwidth}
+              onCycleCognitiveDemand={handleCycleCognitiveDemand}
+              onSelectElasticMultiplier={handleSelectElasticMultiplier}
+              onShrinkStartupStep={handleShrinkStartupStep}
+              onApplyShockAbsorber={handleApplyShockAbsorber}
+              onSetActiveDualSlotNumber={handleSetActiveDualSlotNumber}
+              onLaunchBoundedCuriosityBlock={handleLaunchBoundedCuriosityBlock}
             />
           )}
 
@@ -3343,49 +3897,55 @@ export function App() {
                 });
               }}
               onResetCurrentStage={() =>
-                setState((prev) => ({
-                  ...prev,
-                  timer: {
-                    ...prev.timer,
-                    isRunning: false,
-                    targetEndTimeMs: null,
-                    secondsLeft:
-                      prev.timer.mode === 'WORK_20M'
-                        ? prev.timer.workStage === 'IGNITION_5M'
-                          ? 300
-                          : 900
-                        : prev.timer.mode === 'BREAK_L1'
-                        ? prev.timer.l1DurationMinutes * 60
-                        : prev.timer.mode === 'BREAK_L2'
-                        ? prev.timer.l2DurationMinutes * 60
-                        : prev.timer.mode === 'BREAK_L3'
-                        ? prev.timer.l3DurationMinutes * 60
-                        : prev.timer.stressDurationMinutes * 60,
-                  },
-                }))
+                setState((prev) => {
+                  const durations = getActiveBlockDurationsSeconds(prev);
+                  return {
+                    ...prev,
+                    timer: {
+                      ...prev.timer,
+                      isRunning: false,
+                      targetEndTimeMs: null,
+                      secondsLeft:
+                        prev.timer.mode === 'WORK_20M'
+                          ? prev.timer.workStage === 'IGNITION_5M'
+                            ? durations.startupSeconds
+                            : durations.momentumSeconds
+                          : prev.timer.mode === 'BREAK_L1'
+                          ? prev.timer.l1DurationMinutes * 60
+                          : prev.timer.mode === 'BREAK_L2'
+                          ? prev.timer.l2DurationMinutes * 60
+                          : prev.timer.mode === 'BREAK_L3'
+                          ? prev.timer.l3DurationMinutes * 60
+                          : prev.timer.stressDurationMinutes * 60,
+                    },
+                  };
+                })
               }
               onFastForwardCurrentStage={handleFastForwardTimerStage}
               onSwitchTimerMode={(mode: TimerRunMode) =>
-                setState((prev) => ({
-                  ...prev,
-                  timer: {
-                    ...prev.timer,
-                    mode,
-                    isRunning: false,
-                    targetEndTimeMs: null,
-                    workStage: 'IGNITION_5M',
-                    secondsLeft:
-                      mode === 'WORK_20M'
-                        ? 300
-                        : mode === 'BREAK_L1'
-                        ? prev.timer.l1DurationMinutes * 60
-                        : mode === 'BREAK_L2'
-                        ? prev.timer.l2DurationMinutes * 60
-                        : mode === 'BREAK_L3'
-                        ? prev.timer.l3DurationMinutes * 60
-                        : prev.timer.stressDurationMinutes * 60,
-                  },
-                }))
+                setState((prev) => {
+                  const durations = getActiveBlockDurationsSeconds(prev);
+                  return {
+                    ...prev,
+                    timer: {
+                      ...prev.timer,
+                      mode,
+                      isRunning: false,
+                      targetEndTimeMs: null,
+                      workStage: 'IGNITION_5M',
+                      secondsLeft:
+                        mode === 'WORK_20M'
+                          ? durations.startupSeconds
+                          : mode === 'BREAK_L1'
+                          ? prev.timer.l1DurationMinutes * 60
+                          : mode === 'BREAK_L2'
+                          ? prev.timer.l2DurationMinutes * 60
+                          : mode === 'BREAK_L3'
+                          ? prev.timer.l3DurationMinutes * 60
+                          : prev.timer.stressDurationMinutes * 60,
+                    },
+                  };
+                })
               }
               onSelectL1Minutes={(mins) =>
                 setState((prev) => ({
@@ -3565,6 +4125,8 @@ export function App() {
               }}
               onOpenMiniHudPip={handleToggleMiniHudPip}
               isMiniHudOpen={Boolean(pipWindow) || floatingMiniHudOpen}
+              onSelectElasticMultiplier={handleSelectElasticMultiplier}
+              onShrinkStartupStep={handleShrinkStartupStep}
             />
           )}
 
@@ -4767,6 +5329,189 @@ export function App() {
             </div>
           </div>
 
+          {/* 5. "Structure vs. Flexibility Tuning" Panel (3 Ergonomic Dials within Safe Bounds) */}
+          <div
+            id="settings-flexibility-tuning-panel"
+            className="p-3.5 rounded-xl bg-slate-950 border border-cyan-500/40 space-y-3"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-xs font-mono font-bold text-cyan-300 flex items-center gap-1.5">
+                  <Sliders className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Structure vs. Flexibility Tuning (Structured Elasticity)</span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Tune 3 ergonomic dials within safe bounds while keeping the core state-machine architecture intact.
+                </p>
+              </div>
+              <span className="px-2 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-400/40 text-[10px] font-mono font-bold text-cyan-200">
+                1.0x Unit = 20m Default
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+              {/* Dial 1: Block Cadence Preset */}
+              <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5">
+                <div className="text-[11px] font-mono font-bold text-slate-200">
+                  1. Block Cadence Preset
+                </div>
+                <div className="flex flex-col gap-1">
+                  {(
+                    [
+                      {
+                        id: 'CADENCE_15_3_12' as BlockCadencePreset,
+                        label: '15m (3m+12m)',
+                      },
+                      {
+                        id: 'CADENCE_20_5_15' as BlockCadencePreset,
+                        label: '20m Default (5m+15m)',
+                      },
+                      {
+                        id: 'CADENCE_25_5_20' as BlockCadencePreset,
+                        label: '25m (5m+20m)',
+                      },
+                    ]
+                  ).map((opt) => {
+                    const activePreset =
+                      state.flexibilityTuning?.blockCadencePreset ??
+                      'CADENCE_20_5_15';
+                    const isSelected = activePreset === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        id={`btn-cadence-preset-${opt.id}`}
+                        type="button"
+                        onClick={() =>
+                          handleUpdateFlexibilityTuning({
+                            blockCadencePreset: opt.id,
+                          })
+                        }
+                        className={`px-2.5 py-1.5 rounded-lg font-mono text-[11px] text-left border transition cursor-pointer flex items-center justify-between ${
+                          isSelected
+                            ? 'bg-cyan-500/20 border-cyan-400 text-cyan-100 font-bold'
+                            : 'bg-slate-950/80 hover:bg-slate-800 border-slate-800 text-slate-300'
+                        }`}
+                      >
+                        <span>{opt.label}</span>
+                        {isSelected && <Check className="w-3 h-3 text-cyan-300 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Dial 2: Closed List Lock Mode */}
+              <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5">
+                <div className="text-[11px] font-mono font-bold text-slate-200">
+                  2. Closed List Lock Mode
+                </div>
+                <div className="flex flex-col gap-1">
+                  {(
+                    [
+                      {
+                        id: 'STRICT_SERIALIZED' as ClosedListLockMode,
+                        label: 'Strict Serialized (#1 Only — Default)',
+                        sub: '100% of discretionary blocks locked on Slot #1',
+                      },
+                      {
+                        id: 'DUAL_SLOT' as ClosedListLockMode,
+                        label: 'Dual-Slot (#1 & #2 Toggle)',
+                        sub: 'Allow toggling between #1 and #2 when blocked on external feedback',
+                      },
+                    ]
+                  ).map((opt) => {
+                    const activeLock =
+                      state.flexibilityTuning?.closedListLockMode ??
+                      'STRICT_SERIALIZED';
+                    const isSelected = activeLock === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        id={`btn-closed-list-lock-${opt.id}`}
+                        type="button"
+                        onClick={() =>
+                          handleUpdateFlexibilityTuning({
+                            closedListLockMode: opt.id,
+                          })
+                        }
+                        className={`px-2.5 py-1.5 rounded-lg font-mono text-left border transition cursor-pointer ${
+                          isSelected
+                            ? 'bg-amber-500/20 border-amber-400 text-amber-100 font-bold'
+                            : 'bg-slate-950/80 hover:bg-slate-800 border-slate-800 text-slate-300'
+                        }`}
+                      >
+                        <div className="text-[11px] flex items-center justify-between gap-1">
+                          <span>{opt.label}</span>
+                          {isSelected && (
+                            <Check className="w-3 h-3 text-amber-300 shrink-0" />
+                          )}
+                        </div>
+                        <div className="text-[9px] text-slate-400 font-normal mt-0.5 leading-snug">
+                          {opt.sub}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Dial 3: Evening Pulse Check Sensitivity */}
+              <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5">
+                <div className="text-[11px] font-mono font-bold text-slate-200">
+                  3. Evening Pulse Check Sensitivity
+                </div>
+                <div className="flex flex-col gap-1">
+                  {(
+                    [
+                      {
+                        id: 'STANDARD_20_40_60' as EveningPulseSensitivity,
+                        label: 'Standard (20m & 40m soft prompts, 60m hard break)',
+                        sub: 'Default check-in modal at 20m & 40m marks',
+                      },
+                      {
+                        id: 'GENTLE_40_60' as EveningPulseSensitivity,
+                        label: 'Gentle (40m soft prompt, 60m hard break)',
+                        sub: 'Auto-rolls 20m milestone chime into 40m prompt',
+                      },
+                    ]
+                  ).map((opt) => {
+                    const activePulse =
+                      state.flexibilityTuning?.eveningPulseSensitivity ??
+                      'STANDARD_20_40_60';
+                    const isSelected = activePulse === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        id={`btn-evening-pulse-${opt.id}`}
+                        type="button"
+                        onClick={() =>
+                          handleUpdateFlexibilityTuning({
+                            eveningPulseSensitivity: opt.id,
+                          })
+                        }
+                        className={`px-2.5 py-1.5 rounded-lg font-mono text-left border transition cursor-pointer ${
+                          isSelected
+                            ? 'bg-emerald-500/20 border-emerald-400 text-emerald-100 font-bold'
+                            : 'bg-slate-950/80 hover:bg-slate-800 border-slate-800 text-slate-300'
+                        }`}
+                      >
+                        <div className="text-[11px] flex items-center justify-between gap-1">
+                          <span>{opt.label}</span>
+                          {isSelected && (
+                            <Check className="w-3 h-3 text-emerald-300 shrink-0" />
+                          )}
+                        </div>
+                        <div className="text-[9px] text-slate-400 font-normal mt-0.5 leading-snug">
+                          {opt.sub}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Gemini API Key Storage & Fallback Section */}
           <div
             id="settings-gemini-api-key-section"
@@ -4965,6 +5710,7 @@ export function App() {
                   roadmapTracks: state.roadmapTracks,
                   // Apply today's block ceiling (with Flow Extension deductions from last night)
                   customModeBlockAdjustment: newCeiling,
+                  shockAbsorberMode: 'FULL_SHIFT',
                   // Reset daily floor checkboxes & daily counters to 0
                   midDayResetCompletedToday: false,
                   flashcardsReviewedCount: 0,
@@ -4974,6 +5720,7 @@ export function App() {
                   baselineBlocks: state.baselineBlocks.map((b) => ({
                     ...b,
                     completed: false,
+                    partialCredit: 0,
                     bankedViaEarlyClearance: false,
                   })),
                   pipelineDays: state.pipelineDays.map((d, idx) =>
@@ -4999,6 +5746,8 @@ export function App() {
                     targetEndTimeMs: null,
                     isRunning: false,
                     chainedBlocksCount: 0,
+                    elasticMultiplier: 1.0,
+                    startupShrinkLevel: 1,
                     activeBlockSourceId: primaryProject?.id || 'fc_anat_1',
                     activeTaskTitle:
                       primaryProject?.title || 'Anatomy Flashcards — Block 1/1',

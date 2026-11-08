@@ -43,6 +43,7 @@ const CATEGORY_LABELS: Record<TodayBlockLogCategory, string> = {
   PROJECT_FOCUS_1: 'Focus #1 Project',
   FLOW_EXTENSION: 'Flow Extension',
   EVENING_RECHARGE: 'Evening Recharge',
+  SANDBOX_CURIOSITY: 'Bounded Curiosity Sandbox',
 };
 
 const WORK_REASSIGN_CATEGORIES: TodayBlockLogCategory[] = [
