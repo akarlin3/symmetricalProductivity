@@ -25,6 +25,7 @@ import {
   RotateCcw,
   X,
 } from 'lucide-react';
+import { MobileBottomSheet } from './MobileBottomSheet';
 
 interface OnboardingWizardModalProps {
   isOpen: boolean;
@@ -156,18 +157,20 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
   };
 
   return (
-    <div
+    <MobileBottomSheet
+      isOpen={isOpen}
+      onClose={onClose}
       id="modal-onboarding-wizard"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Profile Archetype & Onboarding Wizard"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto"
+      ariaLabel="Profile Archetype & Onboarding Wizard"
+      desktopVariant="modal"
+      maxWidthClass="max-w-5xl"
+      isEvening={isEveningTheme}
     >
       <div
-        className={`w-full max-w-5xl rounded-2xl border shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col ${
+        className={`w-full flex-1 flex flex-col overflow-hidden ${
           isEveningTheme
-            ? 'bg-stone-950 border-stone-800 text-stone-100'
-            : 'bg-white border-slate-200 text-slate-900'
+            ? 'bg-stone-950 text-stone-100'
+            : 'bg-white text-slate-900'
         }`}
       >
         {/* Top Modal Header */}
@@ -1267,6 +1270,6 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
           </div>
         </div>
       </div>
-    </div>
+    </MobileBottomSheet>
   );
 };

@@ -20,6 +20,7 @@ import {
   generateSequentialChecklist,
 } from '../state/defaultState';
 import { triggerHaptic } from '../utils/haptics';
+import { MobileBottomSheet } from './MobileBottomSheet';
 
 export const GEMINI_API_KEY_STORAGE = 'symmetry_gemini_api_key_v1';
 
@@ -489,19 +490,16 @@ Return ONLY valid JSON matching:
   if (!isOpen) return null;
 
   return (
-    <div
+    <MobileBottomSheet
+      isOpen={isOpen}
+      onClose={onClose}
       id="planning-assistant-drawer"
-      role="dialog"
-      aria-label="Planning Assistant AI Side-Panel"
-      className="fixed inset-0 z-50 flex justify-end bg-black/65 backdrop-blur-sm"
+      ariaLabel="Planning Assistant AI Side-Panel"
+      desktopVariant="drawer"
+      maxWidthClass="max-w-md"
+      isEvening={isEveningTheme}
     >
-      <div
-        className={`w-full max-w-md h-full flex flex-col justify-between border-l shadow-2xl transition-colors ${
-          isEveningTheme
-            ? 'bg-[#0c0908] border-amber-500/30 text-amber-50'
-            : 'bg-[#080d18] border-cyan-500/30 text-slate-100'
-        }`}
-      >
+      <div className="flex-1 flex flex-col justify-between overflow-hidden">
         {/* Top Header */}
         <div className="p-4 border-b border-white/[0.08] space-y-2.5">
           <div className="flex items-center justify-between gap-2">
@@ -688,6 +686,6 @@ Return ONLY valid JSON matching:
           </div>
         </form>
       </div>
-    </div>
+    </MobileBottomSheet>
   );
 };

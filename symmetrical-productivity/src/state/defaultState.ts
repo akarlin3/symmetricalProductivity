@@ -1,6 +1,210 @@
-import { SymmetryState, TodayBlockLogEntry } from '../types/symmetry';
+import {
+  ActiveTaskType,
+  AudioEngineSettings,
+  BackupTriggerReason,
+  BaselineBlock,
+  CognitiveDemandTag,
+  DailyHistoryEntry,
+  ElasticBlockMultiplier,
+  LoadMode,
+  ProjectItem,
+  StartupShrinkLevel,
+  StateBackupSnapshot,
+  StructureFlexibilityConfig,
+  SymmetryState,
+  TodayBlockLogEntry,
+} from '../types/symmetry';
 
 export const STORAGE_KEY = 'symmetry_manager_state_v1';
+export const BACKUP_STORAGE_KEY = 'symmetry_state_backups_v1';
+export const MAX_STATE_BACKUPS = 7;
+
+export const DEFAULT_AUDIO_ENGINE_SETTINGS: AudioEngineSettings = {
+  muted: false,
+  volume: 0.45,
+  soundscapeEnabled: true,
+  soundscapeMode: 'WARM_BROWN_NOISE',
+};
+
+
+export const DEFAULT_FLEXIBILITY_TUNING: StructureFlexibilityConfig = {
+  blockCadencePreset: '20_5_15',
+  closedListLockMode: 'STRICT_SERIALIZED',
+  activeFocusSlot: 1,
+  slot1BlockedOnExternalFeedback: false,
+  eveningPulseSensitivity: 'STANDARD_20_40_60',
+  boundedCuriositySandboxUsedToday: false,
+};
+
+export function getBaselineCognitiveDemand(
+  block: Pick<BaselineBlock, 'category' | 'cognitiveDemand'>
+): CognitiveDemandTag {
+  if (block.cognitiveDemand) return block.cognitiveDemand;
+  if (
+    block.category === 'FLASHCARDS_ANATOMY' ||
+    block.category === 'FLASHCARDS_COMP'
+  ) {
+    return 'MECHANICAL_RECALL';
+  }
+  return 'DEEP_SYNTHESIS';
+}
+
+export function getProjectCognitiveDemand(
+  project: Pick<ProjectItem, 'cognitiveDemand' | 'trackId' | 'presetType'>
+): CognitiveDemandTag {
+  if (project.cognitiveDemand) return project.cognitiveDemand;
+  if (project.trackId === 'personal') return 'LIGHT_ADMIN';
+  return 'DEEP_SYNTHESIS';
+}
+
+export function cycleCognitiveDemandTag(
+  current: CognitiveDemandTag = 'DEEP_SYNTHESIS'
+): CognitiveDemandTag {
+  if (current === 'DEEP_SYNTHESIS') return 'MECHANICAL_RECALL';
+  if (current === 'MECHANICAL_RECALL') return 'LIGHT_ADMIN';
+  return 'DEEP_SYNTHESIS';
+}
+
+export function getActiveFocusProject(
+  state: SymmetryState
+): ProjectItem | undefined {
+  const lockMode =
+    state.flexibilityTuning?.closedListLockMode || 'STRICT_SERIALIZED';
+  const activeSlot =
+    state.activeDualSlotNumber ??
+    state.flexibilityTuning?.activeDualSlotNumber ??
+    state.flexibilityTuning?.activeFocusSlot ??
+    1;
+  if (lockMode === 'DUAL_SLOT' && activeSlot === 2 && state.projectQueue[1]) {
+    return state.projectQueue[1];
+  }
+  return state.projectQueue[0];
+}
+
+export function getActiveBlockDurationsSeconds(state: SymmetryState): {
+  startupSeconds: number;
+  momentumSeconds: number;
+  totalMinutes: number;
+  startupMinutes: number;
+  momentumMinutes: number;
+  startupLabel: string;
+  momentumLabel: string;
+  multiplier: ElasticBlockMultiplier;
+  blockCredit: ElasticBlockMultiplier;
+} {
+  const multiplier: ElasticBlockMultiplier =
+    state.timer.elasticMultiplier === 0.5 || state.timer.elasticMultiplier === 2.0
+      ? state.timer.elasticMultiplier
+      : 1.0;
+
+  if (multiplier === 0.5) {
+    return {
+      startupSeconds: 180,
+      momentumSeconds: 420,
+      totalMinutes: 10,
+      startupMinutes: 3,
+      momentumMinutes: 7,
+      startupLabel: '3m Startup',
+      momentumLabel: '7m Momentum',
+      multiplier: 0.5,
+      blockCredit: 0.5,
+    };
+  }
+
+  if (multiplier === 2.0) {
+    return {
+      startupSeconds: 300,
+      momentumSeconds: 2100,
+      totalMinutes: 40,
+      startupMinutes: 5,
+      momentumMinutes: 35,
+      startupLabel: '5m Startup',
+      momentumLabel: '35m Momentum',
+      multiplier: 2.0,
+      blockCredit: 2.0,
+    };
+  }
+
+  const preset = state.flexibilityTuning?.blockCadencePreset || '20_5_15';
+  if (
+    preset === '15_3_12' ||
+    preset === '15M_3_12' ||
+    preset === 'CADENCE_15_3_12'
+  ) {
+    return {
+      startupSeconds: 180,
+      momentumSeconds: 720,
+      totalMinutes: 15,
+      startupMinutes: 3,
+      momentumMinutes: 12,
+      startupLabel: '3m Startup',
+      momentumLabel: '12m Momentum',
+      multiplier: 1.0,
+      blockCredit: 1.0,
+    };
+  }
+  if (
+    preset === '25_5_20' ||
+    preset === '25M_5_20' ||
+    preset === 'CADENCE_25_5_20'
+  ) {
+    return {
+      startupSeconds: 300,
+      momentumSeconds: 1200,
+      totalMinutes: 25,
+      startupMinutes: 5,
+      momentumMinutes: 20,
+      startupLabel: '5m Startup',
+      momentumLabel: '20m Momentum',
+      multiplier: 1.0,
+      blockCredit: 1.0,
+    };
+  }
+
+  return {
+    startupSeconds: 300,
+    momentumSeconds: 900,
+    totalMinutes: 20,
+    startupMinutes: 5,
+    momentumMinutes: 15,
+    startupLabel: '5m Startup',
+    momentumLabel: '15m Momentum',
+    multiplier: 1.0,
+    blockCredit: 1.0,
+  };
+}
+
+export function getShrunkStartupPrompt(
+  basePrompt: string,
+  taskTitleOrType: string,
+  taskTypeOrLevel?: ActiveTaskType | StartupShrinkLevel,
+  maybeLevel?: StartupShrinkLevel
+): string {
+  const level: StartupShrinkLevel =
+    typeof maybeLevel === 'number'
+      ? maybeLevel
+      : typeof taskTypeOrLevel === 'number'
+      ? taskTypeOrLevel
+      : 1;
+  const taskType: ActiveTaskType =
+    typeof taskTypeOrLevel === 'string'
+      ? taskTypeOrLevel
+      : (taskTitleOrType as ActiveTaskType) || 'PROJECT';
+
+  if (level === 2) {
+    if (taskType === 'FLASHCARDS') {
+      return 'Just open the deck on screen and read 1 single card without grading speed.';
+    }
+    if (taskType === 'READING') {
+      return 'Just open the chapter/document on screen and write one messy header or read 1 paragraph.';
+    }
+    return 'Just open the document/deck on screen and write one messy header or read 1 card.';
+  }
+  if (level === 3) {
+    return 'Take 1 deep breath, put hands on keyboard, and look at the current paragraph for 60 seconds.';
+  }
+  return basePrompt;
+}
 
 /**
  * Logical Day-Rollover Boundary (Default 4:00 AM, adjustable 12:00 AM – 6:00 AM):
@@ -91,6 +295,7 @@ const DEFAULT_OPEN_LIST_BACKLOG: SymmetryState['openListBacklog'] = [
     trackId: 'science',
     startupStep: 'Set up 2-column receptor table and fill first 3 rows.',
     nextStepNote: 'Ready to promote when an active queue slot opens.',
+    cognitiveDemand: 'DEEP_SYNTHESIS',
   },
   {
     id: 'proj_5',
@@ -101,6 +306,7 @@ const DEFAULT_OPEN_LIST_BACKLOG: SymmetryState['openListBacklog'] = [
     trackId: 'writing',
     startupStep: 'Paste primary figure panels into slides 2 and 3.',
     nextStepNote: 'Queued in project backlog.',
+    cognitiveDemand: 'DEEP_SYNTHESIS',
   },
   {
     id: 'proj_6',
@@ -111,6 +317,7 @@ const DEFAULT_OPEN_LIST_BACKLOG: SymmetryState['openListBacklog'] = [
     trackId: 'science',
     startupStep: 'Draft 4-slide diagnostic differential outline.',
     nextStepNote: 'Queued in project backlog.',
+    cognitiveDemand: 'LIGHT_ADMIN',
   },
 ];
 
@@ -161,6 +368,7 @@ export const DEFAULT_TODAY_BLOCK_LOG: TodayBlockLogEntry[] = [
     category: 'FLOOR_ANATOMY',
     title: 'Anatomy Flashcards — Block 1/1',
     durationMinutes: 20,
+    blockUnits: 1.0,
     roadmapTrack: 'science',
     stroke: 'INPUT',
     sourceBlockId: 'fc_anat_1',
@@ -173,6 +381,7 @@ export const DEFAULT_TODAY_BLOCK_LOG: TodayBlockLogEntry[] = [
     category: 'FLOOR_COMP',
     title: 'Comp Flashcards — Block 1/3',
     durationMinutes: 20,
+    blockUnits: 1.0,
     roadmapTrack: 'science',
     stroke: 'INPUT',
     sourceBlockId: 'fc_comp_1',
@@ -185,12 +394,116 @@ export const DEFAULT_TODAY_BLOCK_LOG: TodayBlockLogEntry[] = [
     category: 'FLOOR_READING',
     title: 'Half-Chapter Reading / Equations — Block 1/2',
     durationMinutes: 20,
+    blockUnits: 1.0,
     roadmapTrack: 'science',
     stroke: 'INPUT',
     sourceBlockId: 'hc_read_1',
     rungNumber: 1,
   },
 ];
+
+export function buildDefault90DayHistory(
+  anchorLogicalDay: string = initialLogicalDay
+): DailyHistoryEntry[] {
+  const parts = anchorLogicalDay.split('-').map(Number);
+  const baseDate =
+    parts.length === 3 && !parts.some(Number.isNaN)
+      ? new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0)
+      : new Date();
+
+  const entries: DailyHistoryEntry[] = [];
+  for (let offset = 89; offset >= 0; offset--) {
+    const d = new Date(baseDate.getTime());
+    d.setDate(d.getDate() - offset);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const dateKey = `${y}-${m}-${day}`;
+
+    if (offset === 0) {
+      entries.push({
+        logicalDate: dateKey,
+        mode: 'CRUISE',
+        blocksCompleted: 5,
+        inputBlocks: 3,
+        outputBlocks: 2,
+        eveningSessions: 3,
+      });
+      continue;
+    }
+
+    // Deterministic 7-day cycle strictly honoring <= 2 consecutive Surge days
+    const cycle = offset % 7;
+    if (cycle === 0) {
+      entries.push({
+        logicalDate: dateKey,
+        mode: 'CRUISE',
+        blocksCompleted: 12,
+        inputBlocks: 6,
+        outputBlocks: 6,
+        eveningSessions: 2,
+      });
+    } else if (cycle === 1) {
+      entries.push({
+        logicalDate: dateKey,
+        mode: 'TAPER',
+        blocksCompleted: 8,
+        inputBlocks: 5,
+        outputBlocks: 3,
+        eveningSessions: 2,
+      });
+    } else if (cycle === 2) {
+      entries.push({
+        logicalDate: dateKey,
+        mode: 'SURGE',
+        blocksCompleted: 14,
+        inputBlocks: 7,
+        outputBlocks: 7,
+        eveningSessions: 1,
+      });
+    } else if (cycle === 3) {
+      entries.push({
+        logicalDate: dateKey,
+        mode: 'SURGE',
+        blocksCompleted: 15,
+        inputBlocks: 7,
+        outputBlocks: 8,
+        eveningSessions: 2,
+      });
+    } else if (cycle === 4) {
+      entries.push({
+        logicalDate: dateKey,
+        mode: 'CRUISE',
+        blocksCompleted: 11,
+        inputBlocks: 6,
+        outputBlocks: 5,
+        eveningSessions: 2,
+      });
+    } else if (cycle === 5) {
+      entries.push({
+        logicalDate: dateKey,
+        mode: 'EVENING_RECHARGE',
+        blocksCompleted: 9,
+        inputBlocks: 5,
+        outputBlocks: 4,
+        eveningSessions: 3,
+      });
+    } else {
+      entries.push({
+        logicalDate: dateKey,
+        mode: offset % 14 === 6 ? 'TAPER' : 'CRUISE',
+        blocksCompleted: offset % 14 === 6 ? 8 : 12,
+        inputBlocks: offset % 14 === 6 ? 4 : 6,
+        outputBlocks: offset % 14 === 6 ? 4 : 6,
+        eveningSessions: 2,
+      });
+    }
+  }
+  return entries;
+}
+
+export const DEFAULT_DAILY_HISTORY: DailyHistoryEntry[] =
+  buildDefault90DayHistory(initialLogicalDay);
 
 export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
   version: '1.0.0',
@@ -213,14 +526,22 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     stressEspressoLabel: 'Espresso Shot',
     stressBootsLabel: 'Compression Boots',
   },
+  energyBandwidth: 'STEADY',
+  shockAbsorberMode: 'FULL_SHIFT',
+  shockAbsorberDeferredBlocks: 0,
+  flexibilityTuning: { ...DEFAULT_FLEXIBILITY_TUNING },
   logicalDayKey: initialLogicalDay,
   todayBlockLog: DEFAULT_TODAY_BLOCK_LOG,
+  dailyHistory: DEFAULT_DAILY_HISTORY,
+  stateBackups: [],
+  audioSettings: DEFAULT_AUDIO_ENGINE_SETTINGS,
   upcomingMilestones: ['Nov 12: Anatomy Exam', 'Dec 8–9: Comp Exam'],
   bandwidth: 'Sharp',
   loadMode: 'CRUISE',
   preExamTaperActive: false,
   cruisePlus: false,
   customModeBlockAdjustment: 12, // 12 total blocks in Cruise; 3 completed = 9 left = 180m (3h 00m work left)
+
   surgeConsecutiveDays: 1,
   midDayResetCompletedToday: false,
   fixedEvent: 'NONE',
@@ -236,6 +557,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
       bankedViaEarlyClearance: false,
       startupStep: 'Open deck + clear first 15 cards',
       trackId: 'science',
+      cognitiveDemand: 'MECHANICAL_RECALL',
     },
     {
       id: 'fc_comp_1',
@@ -245,6 +567,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
       bankedViaEarlyClearance: false,
       startupStep: 'Open deck + clear first 15 cards',
       trackId: 'science',
+      cognitiveDemand: 'MECHANICAL_RECALL',
     },
     {
       id: 'fc_comp_2',
@@ -254,6 +577,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
       bankedViaEarlyClearance: false,
       startupStep: 'Clear 20 due cards in the Comp deck without pausing on flags.',
       trackId: 'science',
+      cognitiveDemand: 'MECHANICAL_RECALL',
     },
     {
       id: 'fc_comp_3',
@@ -263,6 +587,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
       bankedViaEarlyClearance: false,
       startupStep: 'Finish remaining Comp review queue or toggle Early Clearance if zeroed.',
       trackId: 'science',
+      cognitiveDemand: 'MECHANICAL_RECALL',
     },
     {
       id: 'hc_read_1',
@@ -271,6 +596,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
       completed: true,
       startupStep: 'Open assigned section, read first 2 pages, and write down core equations.',
       trackId: 'science',
+      cognitiveDemand: 'DEEP_SYNTHESIS',
     },
     {
       id: 'hc_read_2',
@@ -279,6 +605,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
       completed: false,
       startupStep: 'Work through 2 worked problem derivations from the current half-chapter.',
       trackId: 'science',
+      cognitiveDemand: 'DEEP_SYNTHESIS',
     },
     {
       id: 'hc_synth_1',
@@ -287,6 +614,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
       completed: false,
       startupStep: 'Condense today’s half-chapter into 5 bulleted mechanisms from memory.',
       trackId: 'writing',
+      cognitiveDemand: 'DEEP_SYNTHESIS',
     },
   ],
   projectQueue: [
@@ -300,6 +628,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
       trackId: 'science',
       startupStep: 'Open deck + clear first 15 cards',
       nextStepNote: 'Primary focus target for Nov 12 Anatomy Exam & Dec 8–9 Comp Exam.',
+      cognitiveDemand: 'DEEP_SYNTHESIS',
     },
     {
       id: 'proj_2',
@@ -311,6 +640,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
       trackId: 'science',
       startupStep: 'Open draft + write 2 bullet lines',
       nextStepNote: 'Locked until Item #1 completes.',
+      cognitiveDemand: 'DEEP_SYNTHESIS',
     },
     {
       id: 'proj_3',
@@ -322,6 +652,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
       trackId: 'science',
       startupStep: 'Open manuscript + review 1 figure/paragraph',
       nextStepNote: 'Locked until Item #1 and Item #2 complete.',
+      cognitiveDemand: 'LIGHT_ADMIN',
     },
   ],
   projectBacklog: DEFAULT_OPEN_LIST_BACKLOG,
@@ -428,6 +759,8 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     activeTaskTitle: 'Anatomy & Comp Exam Prep Sprint',
     activeTaskType: 'PROJECT',
     activeStartupPrompt: 'Open deck + clear first 15 cards',
+    elasticMultiplier: 1.0,
+    startupShrinkLevel: 1,
     chainedBlocksCount: 1,
     sessionDisplayDurationMinutes: 40,
     l1DurationMinutes: 5,
@@ -795,16 +1128,27 @@ export function formatMinutesAsWorkLeft(minutes: number): string {
 
 export function computeShiftMetrics(state: SymmetryState) {
   const floorLen = state.baselineBlocks?.length || 7;
+  const rawTarget = Math.max(1, state.customModeBlockAdjustment || floorLen);
   const totalTargetBlocks = state.preExamTaperActive
-    ? Math.min(9, Math.max(floorLen, state.customModeBlockAdjustment))
-    : state.customModeBlockAdjustment;
-  const completedBaselineCount = state.baselineBlocks.filter(
-    (b) => b.completed || b.bankedViaEarlyClearance
-  ).length;
+    ? Math.min(9, rawTarget)
+    : rawTarget;
+  const completedBaselineCount =
+    Math.round(
+      state.baselineBlocks.reduce((acc, b) => {
+        if (b.completed || b.bankedViaEarlyClearance) return acc + 1;
+        if (typeof b.partialCredit === 'number' && b.partialCredit > 0) {
+          return acc + Math.min(1, b.partialCredit);
+        }
+        return acc;
+      }, 0) * 10
+    ) / 10;
   const totalCompletedBlocks =
-    completedBaselineCount + state.discretionaryBlocksCompletedToday;
-  const remainingBlocks = Math.max(0, totalTargetBlocks - totalCompletedBlocks);
-  const remainingMinutes = remainingBlocks * 20;
+    Math.round((completedBaselineCount + state.discretionaryBlocksCompletedToday) * 10) / 10;
+  const remainingBlocks = Math.max(
+    0,
+    Math.round((totalTargetBlocks - totalCompletedBlocks) * 10) / 10
+  );
+  const remainingMinutes = Math.round(remainingBlocks * 20);
 
   const remainingWorkFormatted = formatMinutesAsWorkLeft(remainingMinutes);
 
@@ -831,22 +1175,23 @@ export function computeShiftMetrics(state: SymmetryState) {
  *
  * Rules enforced:
  * 1. Spaces Flashcard blocks across early and mid-shift so flashcards are NEVER scheduled as the final blocks of the night.
- * 2. Groups Reading and Synthesis blocks in the baseline floor, and locks 100% of
- *    remaining discretionary blocks to Closed List Focus #1.
- * 3. Interleaves Break rows automatically:
+ * 2. Groups Reading and Synthesis blocks in the baseline floor, and locks remaining discretionary blocks to the active Closed List project.
+ * 3. Adapts uncompleted block order when Energy-State Bandwidth Router is `SHARP` or `LOW_FOGGY`, and respects Shock Absorber ceiling compression.
+ * 4. Interleaves Break rows automatically:
  *    - `Level 1 Micro-Reset (3–5m: Window gaze / water / 3 dishes)` between two blocks of the same task.
  *    - `Level 2 Task-Switch Buffer (10–15m: Espresso / 1-Song Riff / 15m TENS)` after any 2 chained blocks (40m)
  *      or whenever switching task types.
  *    - Mandatory `Level 3 Mid-Shift Reset (60–120m: 30m meal + walk/boots)` after Block 7 on Surge days (14-15 blocks).
- * 4. Running countdown badge on every work row (`[20m | 3h 40m work left]` -> `[40m | 3h 20m work left]` -> ... -> `[0m work left — End-of-Shift Bridge]`).
+ * 5. Running countdown badge on every work row (`[20m | 3h 40m work left]` -> `[40m | 3h 20m work left]` -> ... -> `[0m work left — End-of-Shift Bridge]`).
  */
 export function generateSequentialChecklist(
   state: SymmetryState
 ): import('../types/symmetry').SequentialChecklistStep[] {
   const baselineCount = state.baselineBlocks?.length || 7;
-  const totalTargetBlocks = Math.max(baselineCount, state.customModeBlockAdjustment);
-  const primaryProject = state.projectQueue[0];
+  const totalTargetBlocks = Math.max(1, state.customModeBlockAdjustment || baselineCount);
+  const primaryProject = getActiveFocusProject(state);
   const discretionaryCount = Math.max(0, totalTargetBlocks - baselineCount);
+  const bandwidth = state.energyBandwidth || 'STEADY';
 
   interface RawWorkSpec {
     blockNumber: number;
@@ -854,6 +1199,7 @@ export function generateSequentialChecklist(
     title: string;
     categoryBadge: string;
     taskType: import('../types/symmetry').ActiveTaskType;
+    cognitiveDemand: CognitiveDemandTag;
     startupStep: string;
     completed: boolean;
     banked: boolean;
@@ -875,6 +1221,7 @@ export function generateSequentialChecklist(
       title: b.title,
       categoryBadge: `EARLY SHIFT • FLASHCARDS (${idx + 1}/${fcBlocks.length})`,
       taskType: 'FLASHCARDS' as const,
+      cognitiveDemand: getBaselineCognitiveDemand(b),
       startupStep: b.startupStep,
       completed: b.completed,
       banked: Boolean(b.bankedViaEarlyClearance),
@@ -884,15 +1231,17 @@ export function generateSequentialChecklist(
       title: b.title,
       categoryBadge: `BASELINE FLOOR • HALF-CHAPTER READ (${idx + 1}/${readBlocks.length})`,
       taskType: 'READING' as const,
+      cognitiveDemand: getBaselineCognitiveDemand(b),
       startupStep: b.startupStep,
       completed: b.completed,
-      banked: false,
+      banked: Boolean(b.bankedViaEarlyClearance),
     })),
     ...midFc.map((b, idx) => ({
       sourceId: b.id,
       title: b.title,
       categoryBadge: `MID-SHIFT • FLASHCARDS (${earlyFcCount + idx + 1}/${fcBlocks.length})`,
       taskType: 'FLASHCARDS' as const,
+      cognitiveDemand: getBaselineCognitiveDemand(b),
       startupStep: b.startupStep,
       completed: b.completed,
       banked: Boolean(b.bankedViaEarlyClearance),
@@ -902,35 +1251,83 @@ export function generateSequentialChecklist(
       title: b.title,
       categoryBadge: 'BASELINE FLOOR • HALF-CHAPTER SYNTHESIS',
       taskType: 'SYNTHESIS' as const,
+      cognitiveDemand: getBaselineCognitiveDemand(b),
       startupStep: b.startupStep,
       completed: b.completed,
-      banked: false,
+      banked: Boolean(b.bankedViaEarlyClearance),
     })),
   ];
 
-  const workSpecs: RawWorkSpec[] = orderedBaselineSpecs.map((spec, idx) => ({
-    ...spec,
-    blockNumber: idx + 1,
-  }));
+  // If Shock Absorber compressed totalTargetBlocks below baselineCount, keep completed first + highest-yield remaining baseline specs
+  let activeBaselineSpecs = orderedBaselineSpecs;
+  if (totalTargetBlocks < orderedBaselineSpecs.length) {
+    const doneSpecs = orderedBaselineSpecs.filter((s) => s.completed && !s.banked);
+    const pendingSpecs = orderedBaselineSpecs.filter((s) => !s.completed && !s.banked);
+    const bankedSpecs = orderedBaselineSpecs.filter((s) => s.banked);
+    activeBaselineSpecs = [...doneSpecs, ...pendingSpecs, ...bankedSpecs].slice(
+      0,
+      totalTargetBlocks
+    );
+  }
 
+  const rawDiscretionarySpecs: Omit<RawWorkSpec, 'blockNumber'>[] = [];
   for (let d = 1; d <= discretionaryCount; d++) {
-    const blockNumber = baselineCount + d;
-    const isCompleted = d <= state.discretionaryBlocksCompletedToday;
+    const isCompleted = d <= Math.floor(state.discretionaryBlocksCompletedToday);
     const projTitle = primaryProject?.title || 'Closed List Focus #1';
+    const projSlot = primaryProject?.slot || 1;
     const projStartup =
       primaryProject?.startupStep ||
       'Open primary deliverable and complete 5m ignition step.';
-    workSpecs.push({
-      blockNumber,
+    const projDemand = primaryProject
+      ? getProjectCognitiveDemand(primaryProject)
+      : 'DEEP_SYNTHESIS';
+    rawDiscretionarySpecs.push({
       sourceId: primaryProject?.id || 'proj_1',
-      title: `${projTitle} — Locked Focus #1 (Block ${d}/${discretionaryCount})`,
-      categoryBadge: `CLOSED LIST #1 • DISCRETIONARY (${d}/${discretionaryCount})`,
+      title: `${projTitle} — Locked Focus #${projSlot} (Block ${d}/${discretionaryCount})`,
+      categoryBadge: `CLOSED LIST #${projSlot} • DISCRETIONARY (${d}/${discretionaryCount})`,
       taskType: 'PROJECT',
+      cognitiveDemand: projDemand,
       startupStep: projStartup,
       completed: isCompleted,
       banked: false,
     });
   }
+
+  const combinedSpecs: Omit<RawWorkSpec, 'blockNumber'>[] = [
+    ...activeBaselineSpecs,
+    ...rawDiscretionarySpecs,
+  ];
+
+  // Reorder uncompleted specs dynamically when Energy-State Bandwidth Router is SHARP or LOW_FOGGY
+  let finalOrderedSpecs = combinedSpecs;
+  if (bandwidth === 'SHARP') {
+    const cleared = combinedSpecs.filter((s) => s.completed || s.banked);
+    const pending = combinedSpecs.filter((s) => !s.completed && !s.banked);
+    const deepPending = pending.filter((s) => s.cognitiveDemand === 'DEEP_SYNTHESIS');
+    const otherPending = pending.filter((s) => s.cognitiveDemand !== 'DEEP_SYNTHESIS');
+    // Keep at least 1 non-flashcard synthesis/project block at the very end if possible so flashcards aren't last
+    if (deepPending.length > 1 && otherPending.length > 0) {
+      const anchorEnd = deepPending[deepPending.length - 1];
+      const frontDeep = deepPending.slice(0, -1);
+      finalOrderedSpecs = [...cleared, ...frontDeep, ...otherPending, anchorEnd];
+    } else {
+      finalOrderedSpecs = [...cleared, ...deepPending, ...otherPending];
+    }
+  } else if (bandwidth === 'LOW_FOGGY') {
+    const cleared = combinedSpecs.filter((s) => s.completed || s.banked);
+    const pending = combinedSpecs.filter((s) => !s.completed && !s.banked);
+    const lowFrictionPending = pending.filter(
+      (s) =>
+        s.cognitiveDemand === 'MECHANICAL_RECALL' || s.cognitiveDemand === 'LIGHT_ADMIN'
+    );
+    const deepPending = pending.filter((s) => s.cognitiveDemand === 'DEEP_SYNTHESIS');
+    finalOrderedSpecs = [...cleared, ...lowFrictionPending, ...deepPending];
+  }
+
+  const workSpecs: RawWorkSpec[] = finalOrderedSpecs.map((spec, idx) => ({
+    ...spec,
+    blockNumber: idx + 1,
+  }));
 
   const steps: import('../types/symmetry').SequentialChecklistStep[] = [];
   let chainPosition: 1 | 2 = 1;
@@ -963,6 +1360,7 @@ export function generateSequentialChecklist(
       title: `Block ${w.blockNumber}/${totalTargetBlocks}: ${w.title}`,
       categoryBadge: w.categoryBadge,
       taskType: w.taskType,
+      cognitiveDemand: w.cognitiveDemand,
       startupStep: w.startupStep,
       durationMinutes: 20,
       chainPosition,
@@ -1098,6 +1496,7 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
   const cat4Fluid =
     state.recharge.fluidCategories?.CAT4_COMFORT ||
     DEFAULT_SYMMETRY_STATE.recharge.fluidCategories!.CAT4_COMFORT;
+  const flex = state.flexibilityTuning || DEFAULT_FLEXIBILITY_TUNING;
 
   const lines: string[] = [
     '# SymmetryManager (`wl-balancer`) — Master `state.md`',
@@ -1107,6 +1506,9 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
     `- **Profile Archetype**: ${state.profileName || DEFAULT_SYMMETRY_STATE.profileName} (\`${state.profilePresetId || 'AVERY_DEFAULT'}\`)`,
     `- **Logical Shift Date (${rolloverLabel} Boundary)**: ${state.logicalDayKey || getLogicalDayKey(new Date(), rolloverHour)}`,
     `- **Early Evening Shutdown Time (Outing Days)**: ${shutdownTime}`,
+    `- **Current Energy Bandwidth**: ${state.energyBandwidth || 'STEADY'}`,
+    `- **Shock Absorber Status**: ${state.shockAbsorberMode || 'FULL_SHIFT'} (Deferred Focus Blocks: ${state.shockAbsorberDeferredBlocks || 0})`,
+    `- **Structure vs. Flexibility Tuning**: Cadence \`${flex.blockCadencePreset}\` • Lock Mode \`${flex.closedListLockMode}\` • Evening Pulse \`${flex.eveningPulseSensitivity}\``,
     `- **Deliverable Task Weights**: ${state.taskWeights?.heavyLabel || '2-Page Paper'} (${state.taskWeights?.heavyBlocks || 8}b) • ${state.taskWeights?.mediumLabel || 'Slide Deck'} (${state.taskWeights?.mediumBlocks || 4}b)`,
     `- **Upcoming Milestones**: ${milestones}`,
     `- **Active Load Mode**: ${state.loadMode}${state.cruisePlus ? ' (Cruise+)' : ''}${
@@ -1122,7 +1524,7 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
     `## Today’s ${state.baselineBlocks.length}-Block Daily Core Baseline`,
     ...state.baselineBlocks.map(
       (b) =>
-        `- [${b.completed ? 'x' : b.bankedViaEarlyClearance ? 'B' : ' '}] **${b.title}** (\`${b.category}\`) — 5m Startup: *${b.startupStep}*`
+        `- [${b.completed ? 'x' : b.bankedViaEarlyClearance ? 'B' : ' '}] **${b.title}** (\`${b.category}\` • \`${getBaselineCognitiveDemand(b)}\`) — 5m Startup: *${b.startupStep}*`
     ),
     '',
     '## Today’s Sequential 20m Runway Preview',
@@ -1134,7 +1536,7 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
     '## Closed List 1–3 (Active Project Lock — Max 3)',
     ...state.projectQueue.map(
       (p) =>
-        `${p.slot}. **${p.title}** — \`[${p.completedBlocks} / ${p.totalBlocks} blocks]\` | Track: \`${p.trackId}\` | ${
+        `${p.slot}. **${p.title}** — \`[${p.completedBlocks} / ${p.totalBlocks} blocks]\` | Track: \`${p.trackId}\` | Demand: \`${getProjectCognitiveDemand(p)}\` | ${
           p.slot === 1 ? 'UNLOCKED PRIMARY FOCUS #1' : 'LOCKED UNTIL ITEM #1 COMPLETES'
         } — 5m Startup: *${p.startupStep}*`
     ),
@@ -1286,6 +1688,26 @@ export function parseFromStateInput(rawText: string): SymmetryState {
       ...parsed,
       profilePresetId: parsed.profilePresetId || DEFAULT_SYMMETRY_STATE.profilePresetId,
       profileName: parsed.profileName || DEFAULT_SYMMETRY_STATE.profileName,
+      energyBandwidth:
+        parsed.energyBandwidth === 'SHARP' ||
+        parsed.energyBandwidth === 'STEADY' ||
+        parsed.energyBandwidth === 'LOW_FOGGY'
+          ? parsed.energyBandwidth
+          : DEFAULT_SYMMETRY_STATE.energyBandwidth,
+      shockAbsorberMode:
+        parsed.shockAbsorberMode === 'FULL_SHIFT' ||
+        parsed.shockAbsorberMode === 'HALF_SHIFT' ||
+        parsed.shockAbsorberMode === 'MVF_FLOOR'
+          ? parsed.shockAbsorberMode
+          : DEFAULT_SYMMETRY_STATE.shockAbsorberMode,
+      shockAbsorberDeferredBlocks:
+        typeof parsed.shockAbsorberDeferredBlocks === 'number'
+          ? parsed.shockAbsorberDeferredBlocks
+          : 0,
+      flexibilityTuning: {
+        ...DEFAULT_FLEXIBILITY_TUNING,
+        ...(parsed.flexibilityTuning || {}),
+      },
       logicalDayRolloverHour:
         typeof parsed.logicalDayRolloverHour === 'number'
           ? Math.max(0, Math.min(6, Math.round(parsed.logicalDayRolloverHour)))
@@ -1334,6 +1756,29 @@ export function parseFromStateInput(rawText: string): SymmetryState {
       timer: {
         ...DEFAULT_SYMMETRY_STATE.timer,
         ...(parsed.timer || {}),
+        elasticMultiplier:
+          parsed.timer?.elasticMultiplier === 0.5 ||
+          parsed.timer?.elasticMultiplier === 1.0 ||
+          parsed.timer?.elasticMultiplier === 2.0
+            ? parsed.timer.elasticMultiplier
+            : 1.0,
+        startupShrinkLevel:
+          parsed.timer?.startupShrinkLevel === 1 ||
+          parsed.timer?.startupShrinkLevel === 2 ||
+          parsed.timer?.startupShrinkLevel === 3
+            ? parsed.timer.startupShrinkLevel
+            : 1,
+      },
+      dailyHistory:
+        Array.isArray(parsed.dailyHistory) && parsed.dailyHistory.length > 0
+          ? parsed.dailyHistory
+          : DEFAULT_SYMMETRY_STATE.dailyHistory,
+      stateBackups: Array.isArray(parsed.stateBackups)
+        ? parsed.stateBackups.slice(0, MAX_STATE_BACKUPS)
+        : DEFAULT_SYMMETRY_STATE.stateBackups || [],
+      audioSettings: {
+        ...DEFAULT_AUDIO_ENGINE_SETTINGS,
+        ...(parsed.audioSettings || {}),
       },
       recharge: {
         ...DEFAULT_SYMMETRY_STATE.recharge,
@@ -1475,4 +1920,175 @@ export function parseFromStateInput(rawText: string): SymmetryState {
 
   return baseState;
 }
+
+/**
+ * Synchronizes today's live telemetry into the 90-day `dailyHistory` array.
+ */
+export function syncTodayIntoDailyHistory(
+  state: SymmetryState
+): import('../types/symmetry').DailyHistoryEntry[] {
+  const logicalDate =
+    state.logicalDayKey ||
+    getLogicalDayKey(new Date(), state.logicalDayRolloverHour ?? 4);
+  const existingHistory =
+    Array.isArray(state.dailyHistory) && state.dailyHistory.length > 0
+      ? [...state.dailyHistory]
+      : buildDefault90DayHistory(logicalDate);
+
+  const metrics = computeShiftMetrics(state);
+  const completedBaseline = state.baselineBlocks.filter(
+    (b) => b.completed || b.bankedViaEarlyClearance
+  ).length;
+  const mediaStartsToday = (state.todayBlockLog || []).filter(
+    (e) =>
+      e.logicalDate === logicalDate &&
+      e.category === 'EVENING_RECHARGE' &&
+      e.stroke === 'INPUT'
+  ).length;
+  const inputBlocks = completedBaseline + mediaStartsToday;
+  const outputBlocks =
+    state.discretionaryBlocksCompletedToday +
+    (state.recharge?.flowExtensionBlocksLoggedToday || 0);
+  const eveningSessions = Math.max(
+    state.recharge?.completedLog?.length || 0,
+    (state.todayBlockLog || []).filter(
+      (e) => e.logicalDate === logicalDate && e.category === 'EVENING_RECHARGE'
+    ).length
+  );
+
+  const todayEntry: import('../types/symmetry').DailyHistoryEntry = {
+    logicalDate,
+    mode:
+      metrics.isZeroWorkLeft && eveningSessions > 0
+        ? 'EVENING_RECHARGE'
+        : state.preExamTaperActive
+        ? 'TAPER'
+        : state.loadMode,
+    blocksCompleted: metrics.totalCompletedBlocks,
+    inputBlocks,
+    outputBlocks,
+    eveningSessions,
+  };
+
+  const idx = existingHistory.findIndex((h) => h.logicalDate === logicalDate);
+  if (idx >= 0) {
+    existingHistory[idx] = todayEntry;
+  } else {
+    existingHistory.push(todayEntry);
+  }
+
+  return existingHistory.slice(-90);
+}
+
+/**
+ * Loads persisted backups from localStorage (fallback ring buffer across resets)
+ */
+export function loadExternalStateBackups(): import('../types/symmetry').StateBackupSnapshot[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(BACKUP_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.slice(0, MAX_STATE_BACKUPS);
+    }
+  } catch {
+    // ignore corrupt storage
+  }
+  return [];
+}
+
+/**
+ * Creates a validated snapshot of the current state and pushes it to the 7-item ring buffer.
+ */
+export function pushStateBackup(
+  currentState: SymmetryState,
+  triggerReason: import('../types/symmetry').BackupTriggerReason,
+  label: string
+): import('../types/symmetry').StateBackupSnapshot[] {
+  const metrics = computeShiftMetrics(currentState);
+  const cleanStateToSerialize: SymmetryState = {
+    ...currentState,
+    stateBackups: undefined,
+  };
+  const snapshot: import('../types/symmetry').StateBackupSnapshot = {
+    id: `bkp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    createdAtIso: new Date().toISOString(),
+    logicalDate: currentState.logicalDayKey || getLogicalDayKey(),
+    triggerReason,
+    label,
+    profileName: currentState.profileName || DEFAULT_SYMMETRY_STATE.profileName!,
+    loadMode: currentState.loadMode,
+    blocksCompleted: metrics.totalCompletedBlocks,
+    targetBlocks: metrics.totalTargetBlocks,
+    stateJson: JSON.stringify(cleanStateToSerialize),
+  };
+
+  const existing =
+    currentState.stateBackups && currentState.stateBackups.length > 0
+      ? currentState.stateBackups
+      : loadExternalStateBackups();
+
+  const updated = [snapshot, ...existing.filter((b) => b.id !== snapshot.id)].slice(
+    0,
+    MAX_STATE_BACKUPS
+  );
+
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(BACKUP_STORAGE_KEY, JSON.stringify(updated));
+    } catch {
+      // ignore storage quota errors
+    }
+  }
+
+  return updated;
+}
+
+/**
+ * Validates a snapshot JSON string against full SymmetryState schema requirements
+ * before restoring it.
+ */
+export function validateAndRestoreStateSnapshot(
+  snapshotJson: string,
+  preserveBackups?: import('../types/symmetry').StateBackupSnapshot[]
+): SymmetryState {
+  if (!snapshotJson || typeof snapshotJson !== 'string') {
+    throw new Error('Snapshot payload is empty or invalid.');
+  }
+  let rawObj: Record<string, unknown>;
+  try {
+    rawObj = JSON.parse(snapshotJson);
+  } catch {
+    throw new Error('Snapshot JSON is malformed and cannot be parsed.');
+  }
+  if (!rawObj || typeof rawObj !== 'object') {
+    throw new Error('Snapshot root must be a JSON object.');
+  }
+  if (
+    !['CRUISE', 'SURGE', 'TAPER'].includes(String(rawObj.loadMode || '')) ||
+    !Array.isArray(rawObj.baselineBlocks) ||
+    rawObj.baselineBlocks.length === 0 ||
+    !Array.isArray(rawObj.projectQueue) ||
+    !Array.isArray(rawObj.roadmapTracks) ||
+    typeof rawObj.timer !== 'object' ||
+    typeof rawObj.recharge !== 'object'
+  ) {
+    throw new Error(
+      'Snapshot failed schema validation (missing loadMode, baselineBlocks, projectQueue, timer, or recharge).'
+    );
+  }
+
+  const restored = parseFromStateInput(snapshotJson);
+  return {
+    ...restored,
+    timer: {
+      ...restored.timer,
+      isRunning: false,
+      targetEndTimeMs: null,
+    },
+    stateBackups: preserveBackups ?? restored.stateBackups ?? loadExternalStateBackups(),
+  };
+}
+
 

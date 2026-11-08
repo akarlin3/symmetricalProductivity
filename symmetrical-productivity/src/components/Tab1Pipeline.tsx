@@ -30,13 +30,18 @@ import {
 } from 'lucide-react';
 import {
   BaselineBlock,
+  CognitiveDemandTag,
+  ElasticBlockMultiplier,
+  EnergyBandwidthState,
   FixedEventType,
   Level2BreakProtocol,
   LoadMode,
   PipelineDay,
   ProjectPresetType,
   SequentialChecklistStep,
+  ShockAbsorberMode,
   SmartIntakePlanResult,
+  StartupShrinkLevel,
   StressResetProtocol,
   SymmetryState,
   TimerRunMode,
@@ -45,13 +50,19 @@ import {
 import {
   computeShiftMetrics,
   generateSequentialChecklist,
+  getActiveBlockDurationsSeconds,
+  getActiveFocusProject,
+  getBaselineCognitiveDemand,
   getPreExamTaperSuggestion,
+  getProjectCognitiveDemand,
+  getShrunkStartupPrompt,
 } from '../state/defaultState';
 import { DualRingTimerSvg } from './DualRingTimerSvg';
 import { BreathingVisualizer478 } from './BreathingVisualizer478';
 import { InteractivePipelineTable } from './PipelineDrawer';
 import { SmartIntakeBar } from './SmartIntakeBar';
 import { triggerHaptic } from '../utils/haptics';
+import { soundEngine } from '../utils/soundEngine';
 
 const SPRING_PHYSICS = {
   type: 'spring' as const,
@@ -140,6 +151,14 @@ interface Tab1PipelineProps {
   onToggleRecoveryFlashcardTimer: () => void;
   onCompleteRecoveryFlashcard5m: () => void;
   onGoToRecharge: () => void;
+  // 5 Structured Elasticity Systems handlers
+  onSetEnergyBandwidth: (bandwidth: EnergyBandwidthState) => void;
+  onCycleCognitiveDemand: (targetKind: 'BASELINE' | 'PROJECT', targetId: string) => void;
+  onSelectElasticMultiplier: (multiplier: ElasticBlockMultiplier) => void;
+  onShrinkStartupStep: (targetLevel?: StartupShrinkLevel) => void;
+  onApplyShockAbsorber: (mode: ShockAbsorberMode, targetCeiling?: number) => void;
+  onSetActiveDualSlotNumber: (slot: 1 | 2) => void;
+  onLaunchBoundedCuriosityBlock: () => void;
 }
 
 export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
@@ -189,13 +208,34 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   onToggleRecoveryFlashcardTimer,
   onCompleteRecoveryFlashcard5m,
   onGoToRecharge,
+  onSetEnergyBandwidth,
+  onCycleCognitiveDemand,
+  onSelectElasticMultiplier,
+  onShrinkStartupStep,
+  onApplyShockAbsorber,
+  onSetActiveDualSlotNumber,
+  onLaunchBoundedCuriosityBlock,
 }) => {
   const metrics = computeShiftMetrics(state);
   const { timer } = state;
   const isCinemaReceding = Boolean(cinemaFocusMode);
+  const activeDurations = getActiveBlockDurationsSeconds(state);
+  const energyBandwidth: EnergyBandwidthState = state.energyBandwidth || 'STEADY';
+  const elasticMult: ElasticBlockMultiplier = timer.elasticMultiplier ?? 1.0;
+  const shrinkLevel: StartupShrinkLevel = timer.startupShrinkLevel ?? 1;
 
   const [sequentialViewOpen, setSequentialViewOpen] = useState(false);
   const [recalibrateWizardOpen, setRecalibrateWizardOpen] = useState(false);
+  const [shockAbsorberSelection, setShockAbsorberSelection] = useState<ShockAbsorberMode>(
+    state.shockAbsorberMode || 'HALF_SHIFT'
+  );
+  const [shockAbsorberSliderBlocks, setShockAbsorberSliderBlocks] = useState<number>(
+    state.shockAbsorberMode === 'MVF_FLOOR'
+      ? 4
+      : state.shockAbsorberMode === 'HALF_SHIFT'
+      ? 6
+      : 6
+  );
   const [lockedDrawerOpen, setLockedDrawerOpen] = useState(false);
   const [loadConfigExpanded, setLoadConfigExpanded] = useState(false);
   const [selectedBaselineId, setSelectedBaselineId] = useState<string>(
@@ -224,7 +264,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   const examSuggestion = getPreExamTaperSuggestion(examCheckDate);
 
   // Rule 3: Block flashcards from being scheduled/executed as the final block of the night
-  const isFinalBlockOfNight = metrics.remainingBlocks === 1;
+  const isFinalBlockOfNight = metrics.remainingBlocks <= 1 && metrics.remainingBlocks > 0;
 
   // Rule 5: Surge Mode mandatory 60-120m Mid-Day Reset after 7 blocks
   const isSurgeMidDayResetRequired =
@@ -241,9 +281,32 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
-  // Auto-Router: compute the exact "Up Next" recommended block
-  // When Pre-Exam Taper is active, cancel heavy prose/half-chapter synthesis blocks and route strictly to Exam Review & Active Recall
-  const nextEligibleBaseline = state.baselineBlocks.find((b) => {
+  const formatCognitiveDemandBadge = (tag: CognitiveDemandTag) => {
+    if (tag === 'DEEP_SYNTHESIS') return 'DEEP SYNTHESIS';
+    if (tag === 'MECHANICAL_RECALL') return 'MECHANICAL RECALL';
+    return 'LIGHT ADMIN';
+  };
+
+  const getCognitiveDemandColorClass = (tag: CognitiveDemandTag) => {
+    if (tag === 'DEEP_SYNTHESIS') {
+      return 'bg-indigo-500/20 border-indigo-400/50 text-indigo-200';
+    }
+    if (tag === 'MECHANICAL_RECALL') {
+      return 'bg-cyan-500/20 border-cyan-400/50 text-cyan-200';
+    }
+    return 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200';
+  };
+
+  // Active Focus Project respects Dual-Slot mode when enabled in Settings
+  const primaryProject = getActiveFocusProject(state);
+  const isDualSlotEnabled =
+    state.flexibilityTuning?.closedListLockMode === 'DUAL_SLOT' &&
+    state.projectQueue.length >= 2;
+  const activeDualSlotNum =
+    isDualSlotEnabled && state.flexibilityTuning?.activeDualSlotNumber === 2 ? 2 : 1;
+
+  // Auto-Router: compute the exact "Up Next" recommended block based on Energy-State Bandwidth (`SHARP` | `STEADY` | `LOW_FOGGY`)
+  const eligibleBaselines = state.baselineBlocks.filter((b) => {
     if (b.completed || b.bankedViaEarlyClearance) return false;
     if (state.preExamTaperActive && (b.category === 'SYNTHESIS' || b.category === 'READING')) {
       return false;
@@ -251,49 +314,158 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
     if (isFinalBlockOfNight && isFlashcardBlock(b)) return false;
     return true;
   });
-  const primaryProject = state.projectQueue[0];
 
-  const upNextBlock = state.preExamTaperActive
-    ? nextEligibleBaseline
-      ? {
-          sourceId: nextEligibleBaseline.id,
-          title: `${nextEligibleBaseline.title} (Active Recall)`,
+  const nextSteadyBaseline = eligibleBaselines[0];
+  const nextDeepBaseline = eligibleBaselines.find(
+    (b) => getBaselineCognitiveDemand(b) === 'DEEP_SYNTHESIS'
+  );
+  const nextLowFrictionBaseline = eligibleBaselines.find((b) => {
+    const d = getBaselineCognitiveDemand(b);
+    return d === 'MECHANICAL_RECALL' || d === 'LIGHT_ADMIN';
+  });
+
+  const baselineHelperToSpec = (
+    b: BaselineBlock,
+    prefixTag?: string
+  ): {
+    sourceId: string;
+    title: string;
+    badge: string;
+    taskType: 'FLASHCARDS' | 'READING' | 'SYNTHESIS' | 'PROJECT';
+    cognitiveDemand: CognitiveDemandTag;
+    startupStep: string;
+  } => {
+    const demand = getBaselineCognitiveDemand(b);
+    const coreLabel = isFlashcardBlock(b)
+      ? 'CORE FLOOR • FLASHCARDS'
+      : b.category === 'SYNTHESIS'
+      ? 'CORE FLOOR • SYNTHESIS'
+      : 'CORE FLOOR • HALF-CHAPTER';
+    return {
+      sourceId: b.id,
+      title: b.title,
+      badge: prefixTag ? `${prefixTag} • ${coreLabel}` : coreLabel,
+      taskType: isFlashcardBlock(b)
+        ? 'FLASHCARDS'
+        : b.category === 'SYNTHESIS'
+        ? 'SYNTHESIS'
+        : 'READING',
+      cognitiveDemand: demand,
+      startupStep: b.startupStep,
+    };
+  };
+
+  const projectRemainingBlocks = primaryProject
+    ? Math.max(0, primaryProject.totalBlocks - primaryProject.completedBlocks)
+    : 0;
+  const discretionaryQuotaAvailable =
+    metrics.totalTargetBlocks > state.baselineBlocks.length &&
+    state.discretionaryBlocksCompletedToday <
+      metrics.totalTargetBlocks - state.baselineBlocks.length;
+
+  const upNextBlock: {
+    sourceId: string;
+    title: string;
+    badge: string;
+    taskType: 'FLASHCARDS' | 'READING' | 'SYNTHESIS' | 'PROJECT';
+    cognitiveDemand: CognitiveDemandTag;
+    startupStep: string;
+  } = (() => {
+    if (state.preExamTaperActive) {
+      if (nextSteadyBaseline) {
+        return {
+          sourceId: nextSteadyBaseline.id,
+          title: `${nextSteadyBaseline.title} (Active Recall)`,
           badge: 'PRE-EXAM TAPER • EXAM REVIEW & ACTIVE RECALL',
           taskType: 'FLASHCARDS' as const,
-          startupStep: nextEligibleBaseline.startupStep,
-        }
-      : {
-          sourceId: primaryProject?.id || 'exam_recall_sprint',
-          title: 'Exam Review & Active Recall — Practice Questions & Weak-Tag Drill',
-          badge: 'PRE-EXAM TAPER • EXAM REVIEW & ACTIVE RECALL (7–9 BLOCK CAP)',
-          taskType: 'FLASHCARDS' as const,
-          startupStep:
-            'Open high-yield missed card tags + complete 15 active recall questions without notes.',
-        }
-    : nextEligibleBaseline
-    ? {
-        sourceId: nextEligibleBaseline.id,
-        title: nextEligibleBaseline.title,
-        badge: isFlashcardBlock(nextEligibleBaseline)
-          ? 'CORE FLOOR • FLASHCARDS'
-          : nextEligibleBaseline.category === 'SYNTHESIS'
-          ? 'CORE FLOOR • SYNTHESIS'
-          : 'CORE FLOOR • HALF-CHAPTER',
-        taskType: (isFlashcardBlock(nextEligibleBaseline)
-          ? 'FLASHCARDS'
-          : nextEligibleBaseline.category === 'SYNTHESIS'
-          ? 'SYNTHESIS'
-          : 'READING') as 'FLASHCARDS' | 'READING' | 'SYNTHESIS' | 'PROJECT',
-        startupStep: nextEligibleBaseline.startupStep,
+          cognitiveDemand: 'MECHANICAL_RECALL' as const,
+          startupStep: nextSteadyBaseline.startupStep,
+        };
       }
-    : {
-        sourceId: primaryProject?.id || 'proj_1',
-        title: primaryProject?.title || 'Anatomy & Comp Exam Prep Sprint',
-        badge: 'LOCKED FOCUS #1 • DISCRETIONARY',
-        taskType: 'PROJECT' as const,
+      return {
+        sourceId: primaryProject?.id || 'exam_recall_sprint',
+        title: 'Exam Review & Active Recall — Practice Questions & Weak-Tag Drill',
+        badge: 'PRE-EXAM TAPER • EXAM REVIEW & ACTIVE RECALL (7–9 BLOCK CAP)',
+        taskType: 'FLASHCARDS' as const,
+        cognitiveDemand: 'MECHANICAL_RECALL' as const,
         startupStep:
-          primaryProject?.startupStep || 'Open deck + clear first 15 cards',
+          'Open high-yield missed card tags + complete 15 active recall questions without notes.',
       };
+    }
+
+    if (energyBandwidth === 'SHARP') {
+      // When Sharp: Prioritize DEEP_SYNTHESIS (Closed List Focus #1 writing/equations/coding or Half-Chapter reading) early in the shift
+      if (
+        primaryProject &&
+        projectRemainingBlocks > 0 &&
+        discretionaryQuotaAvailable &&
+        getProjectCognitiveDemand(primaryProject) === 'DEEP_SYNTHESIS' &&
+        metrics.totalCompletedBlocks === 0
+      ) {
+        return {
+          sourceId: primaryProject.id,
+          title: primaryProject.title,
+          badge: `SHARP BANDWIDTH • FOCUS #${primaryProject.slot} DEEP SYNTHESIS FIRST`,
+          taskType: 'PROJECT',
+          cognitiveDemand: getProjectCognitiveDemand(primaryProject),
+          startupStep: primaryProject.startupStep,
+        };
+      }
+      if (nextDeepBaseline) {
+        return baselineHelperToSpec(nextDeepBaseline, 'SHARP BANDWIDTH • DEEP SYNTHESIS');
+      }
+      if (primaryProject && projectRemainingBlocks > 0) {
+        return {
+          sourceId: primaryProject.id,
+          title: primaryProject.title,
+          badge: `SHARP BANDWIDTH • LOCKED FOCUS #${primaryProject.slot}`,
+          taskType: 'PROJECT',
+          cognitiveDemand: getProjectCognitiveDemand(primaryProject),
+          startupStep: primaryProject.startupStep,
+        };
+      }
+      if (nextSteadyBaseline) {
+        return baselineHelperToSpec(nextSteadyBaseline, 'SHARP BANDWIDTH');
+      }
+    }
+
+    if (energyBandwidth === 'LOW_FOGGY') {
+      // When Low / Foggy: Route to MECHANICAL_RECALL sprint or LIGHT_ADMIN sub-step (or suggest 15m Stress/Fatigue Reset first)
+      if (nextLowFrictionBaseline) {
+        return baselineHelperToSpec(
+          nextLowFrictionBaseline,
+          'LOW/FOGGY ROUTER • LOW-FRICTION SPRINT'
+        );
+      }
+      // If all mechanical recall baseline blocks are done, route Focus #1 to a LIGHT_ADMIN sub-step so we don't force cold heavy prose
+      if (primaryProject) {
+        return {
+          sourceId: primaryProject.id,
+          title: `${primaryProject.title} (Light Admin / Formatting Sub-Step)`,
+          badge: `LOW/FOGGY ROUTER • LIGHT ADMIN SUB-STEP (FOCUS #${primaryProject.slot})`,
+          taskType: 'PROJECT',
+          cognitiveDemand: 'LIGHT_ADMIN',
+          startupStep: `Low-fog admin pass: open "${primaryProject.title}", format citations/headings, or outline 2 bullet stubs without forcing cold prose.`,
+        };
+      }
+    }
+
+    // Default STEADY interleaving
+    if (nextSteadyBaseline) {
+      return baselineHelperToSpec(nextSteadyBaseline);
+    }
+    return {
+      sourceId: primaryProject?.id || 'proj_1',
+      title: primaryProject?.title || 'Anatomy & Comp Exam Prep Sprint',
+      badge: `LOCKED FOCUS #${primaryProject?.slot || 1} • DISCRETIONARY`,
+      taskType: 'PROJECT' as const,
+      cognitiveDemand: primaryProject
+        ? getProjectCognitiveDemand(primaryProject)
+        : ('DEEP_SYNTHESIS' as const),
+      startupStep:
+        primaryProject?.startupStep || 'Open deck + clear first 15 cards',
+    };
+  })();
 
   const flashcardBlocks = state.baselineBlocks.filter(isFlashcardBlock);
   const halfChapterBlocks = state.baselineBlocks.filter((b) => !isFlashcardBlock(b));
@@ -301,14 +473,16 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
     state.baselineBlocks.find((b) => b.id === selectedBaselineId) ||
     state.baselineBlocks[0];
 
-  const lockedSecondaryProjects = state.projectQueue.slice(1);
+  const lockedSecondaryProjects = state.projectQueue.filter(
+    (p) => p.id !== primaryProject?.id
+  );
   const openBacklogList = state.openListBacklog ?? state.projectBacklog ?? [];
 
   const stageBadgeText =
     timer.mode === 'WORK_20M'
       ? timer.workStage === 'IGNITION_5M'
-        ? '5m Startup Step (IGNITION_5M)'
-        : '15m Momentum (MOMENTUM_15M)'
+        ? `${activeDurations.startupMinutes}m Startup Step (${elasticMult}x)`
+        : `${activeDurations.momentumMinutes}m Momentum (${elasticMult}x)`
       : timer.mode === 'BREAK_L1'
       ? `Level 1 Same-Task Micro-Reset (${timer.l1DurationMinutes}m)`
       : timer.mode === 'BREAK_L2'
@@ -316,6 +490,13 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
       : timer.mode === 'BREAK_L3'
       ? `Level 3 Mid-Day Reset (${timer.l3DurationMinutes}m)`
       : `Stress / Fatigue Reset (${timer.stressDurationMinutes}m)`;
+
+  const activeDisplayedStartupPrompt = getShrunkStartupPrompt(
+    timer.activeStartupPrompt,
+    timer.activeTaskTitle,
+    timer.activeTaskType,
+    shrinkLevel
+  );
 
   const handleAddProjectSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -569,6 +750,80 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
             </div>
           </div>
 
+          {/* Elastic Block Accordion (0.5x Half-Block | 1.0x Standard 20m | 2.0x Double-Block) */}
+          <div
+            id="hud-elastic-block-accordion"
+            className="p-2.5 rounded-2xl bg-black/30 border border-white/[0.08] space-y-1.5"
+          >
+            <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+              <span className="uppercase tracking-wider font-bold text-cyan-300">
+                Elastic Block Accordion
+              </span>
+              <span>
+                Logs <strong className="text-white">{elasticMult.toFixed(1)} blk</strong> ({activeDurations.totalMinutes}m = {activeDurations.startupMinutes}m + {activeDurations.momentumMinutes}m)
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {(
+                [
+                  {
+                    mult: 0.5 as ElasticBlockMultiplier,
+                    short: '0.5x Half-Block',
+                    detail: '10m (3m+7m)',
+                    badge: '0.5 blk',
+                  },
+                  {
+                    mult: 1.0 as ElasticBlockMultiplier,
+                    short: '1.0x Standard',
+                    detail: `${
+                      state.flexibilityTuning?.blockCadencePreset === 'CADENCE_15_3_12'
+                        ? '15m (3m+12m)'
+                        : state.flexibilityTuning?.blockCadencePreset === 'CADENCE_25_5_20'
+                        ? '25m (5m+20m)'
+                        : '20m (5m+15m)'
+                    }`,
+                    badge: '1.0 blk',
+                  },
+                  {
+                    mult: 2.0 as ElasticBlockMultiplier,
+                    short: '2.0x Double-Block',
+                    detail: '40m (5m+35m → L2)',
+                    badge: '2.0 blks',
+                  },
+                ] as const
+              ).map((opt) => {
+                const isSelected = elasticMult === opt.mult;
+                return (
+                  <button
+                    key={opt.mult}
+                    id={`btn-elastic-${String(opt.mult).replace('.', '_')}`}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic([12]);
+                      onSelectElasticMultiplier(opt.mult);
+                    }}
+                    className={`p-2 rounded-xl border text-left font-mono transition cursor-pointer ${
+                      isSelected
+                        ? opt.mult === 2.0
+                          ? 'bg-indigo-500/25 border-indigo-400 text-indigo-100 shadow-[0_0_12px_rgba(99,102,241,0.25)]'
+                          : opt.mult === 0.5
+                          ? 'bg-emerald-500/20 border-emerald-400 text-emerald-100 shadow-[0_0_12px_rgba(16,185,129,0.2)]'
+                          : 'bg-cyan-500/20 border-cyan-400 text-cyan-100 shadow-[0_0_12px_rgba(34,211,238,0.2)]'
+                        : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.08] text-slate-300'
+                    }`}
+                  >
+                    <div className="text-[10px] font-extrabold leading-tight">
+                      {opt.short}
+                    </div>
+                    <div className="text-[9px] text-slate-400 mt-0.5">
+                      {opt.detail}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Centerpiece 280x280 Precision Chronograph SVG Timer */}
           <div className="py-1 flex items-center justify-center">
             <DualRingTimerSvg
@@ -585,6 +840,8 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               isMiniHudOpen={isMiniHudOpen}
               cinemaFocusMode={cinemaFocusMode}
               onToggleCinemaFocusMode={onToggleCinemaFocusMode}
+              startupSeconds={activeDurations.startupSeconds}
+              momentumSeconds={activeDurations.momentumSeconds}
             />
           </div>
 
@@ -613,7 +870,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                   <Play className="w-4 h-4 fill-current" />
                   <span>
                     {timer.mode === 'WORK_20M' && timer.workStage === 'IGNITION_5M'
-                      ? 'Start 5m Ignition'
+                      ? `Start ${activeDurations.startupMinutes}m Ignition`
                       : 'Start Timer'}
                   </span>
                 </>
@@ -631,7 +888,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 onFastForwardCurrentStage();
               }}
               className="col-span-3 py-3 px-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.1] text-cyan-200 font-mono font-semibold text-xs flex items-center justify-center gap-1 cursor-pointer"
-              title="Skip to next stage (5m Startup → 15m Momentum → Break Router) [S]"
+              title="Skip to next stage (Startup → Momentum → Break Router) [S]"
             >
               <FastForward className="w-3.5 h-3.5" />
               <span>Skip</span>
@@ -651,28 +908,83 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
             </button>
           </div>
 
-          {/* Active 5-Minute Startup Micro-Script Card Right Below Play Button */}
+          {/* Active Startup Micro-Script Card + "Shrink Startup Step" (3-Tier Friction De-Escalator) */}
           <div
             id="hud-active-startup-script"
-            className="p-4 rounded-2xl bg-white/[0.035] border border-white/[0.09] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] space-y-2"
+            className="p-4 rounded-2xl bg-white/[0.035] border border-white/[0.09] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] space-y-2.5"
           >
             <div className="flex items-center justify-between gap-2">
               <span className="text-[10px] font-mono uppercase tracking-widest text-amber-300 font-bold flex items-center gap-1.5">
                 <Flame className="w-3.5 h-3.5 text-amber-400" />
-                <span>ACTIVE 5M STARTUP MICRO-SCRIPT</span>
+                <span>
+                  {shrinkLevel === 1
+                    ? `LEVEL 1 • DEFAULT ${activeDurations.startupMinutes}M STARTUP`
+                    : shrinkLevel === 2
+                    ? 'LEVEL 2 • MICRO-SETUP (SHRUNK)'
+                    : 'LEVEL 3 • ZERO-PRESSURE ENTRY'}
+                </span>
               </span>
-              <span className="px-2 py-0.5 rounded-md bg-white/[0.05] border border-white/[0.08] font-mono text-[10px] text-cyan-200 uppercase">
-                {timer.activeTaskType}
-              </span>
+              <div className="flex items-center gap-1">
+                {([1, 2, 3] as StartupShrinkLevel[]).map((lvl) => (
+                  <button
+                    key={lvl}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic([10]);
+                      onShrinkStartupStep(lvl);
+                    }}
+                    className={`px-1.5 py-0.5 rounded font-mono text-[9px] font-bold border cursor-pointer ${
+                      shrinkLevel === lvl
+                        ? 'bg-amber-400 text-slate-950 border-amber-300'
+                        : 'bg-white/[0.04] border-white/[0.08] text-slate-400 hover:text-slate-200'
+                    }`}
+                    title={`Set startup friction to Level ${lvl}`}
+                  >
+                    L{lvl}
+                  </button>
+                ))}
+                <span className="px-2 py-0.5 rounded-md bg-white/[0.05] border border-white/[0.08] font-mono text-[10px] text-cyan-200 uppercase">
+                  {timer.activeTaskType}
+                </span>
+              </div>
             </div>
 
             <div className="text-xs sm:text-sm font-semibold text-white truncate">
               {timer.activeTaskTitle}
             </div>
 
-            <p className="text-xs font-mono text-amber-200/95 bg-amber-500/10 border border-amber-400/30 rounded-xl px-3 py-2 leading-relaxed">
-              “{timer.activeStartupPrompt}”
+            <p
+              id="hud-startup-script-text"
+              className={`text-xs font-mono rounded-xl px-3 py-2 leading-relaxed border ${
+                shrinkLevel === 3
+                  ? 'text-emerald-100 bg-emerald-500/15 border-emerald-400/40'
+                  : shrinkLevel === 2
+                  ? 'text-cyan-100 bg-cyan-500/15 border-cyan-400/40'
+                  : 'text-amber-200/95 bg-amber-500/10 border-amber-400/30'
+              }`}
+            >
+              “{activeDisplayedStartupPrompt}”
             </p>
+
+            {/* 3-Tier Friction De-Escalator Button */}
+            <div className="flex items-center justify-between gap-2 pt-0.5">
+              <button
+                id="btn-shrink-startup-step"
+                type="button"
+                onClick={() => {
+                  triggerHaptic([12]);
+                  onShrinkStartupStep();
+                }}
+                className="text-[11px] font-mono font-semibold text-amber-300 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-400/35 rounded-xl px-2.5 py-1 transition cursor-pointer"
+              >
+                {shrinkLevel < 3
+                  ? 'Too heavy right now? Shrink step ->'
+                  : 'At Level 3 Zero-Pressure Entry (Reset to L1 ->)'}
+              </button>
+              <span className="text-[10px] font-mono text-slate-400">
+                Tier {shrinkLevel}/3
+              </span>
+            </div>
           </div>
 
           {/* Embedded 4-7-8 Breathing Visualizer when Stress Reset is active */}
@@ -734,19 +1046,107 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
            ===================================================================== */}
         <div className="lg:col-span-7 space-y-4">
           {/* -------------------------------------------------------------------
-              TOP BENTO ROW: "UP NEXT" AUTO-ROUTER HERO CARD + LOAD MODE PILL
+              TOP BENTO ROW: ENERGY-STATE BANDWIDTH ROUTER + "UP NEXT" HERO CARD
              ------------------------------------------------------------------- */}
           <motion.section
             layout
             id="bento-up-next-hero"
             aria-label="Up Next Auto-Router and Load Mode"
-            className={`rounded-3xl bento-hero-border p-5 space-y-4 transition-all duration-500 ${
+            className={`rounded-3xl bento-hero-border p-5 space-y-4 overflow-hidden transition-all duration-500 ${
               isCinemaReceding
                 ? 'opacity-15 blur-[2px] hover:opacity-100 hover:blur-0'
                 : ''
             }`}
           >
-            <div className="flex flex-wrap items-start justify-between gap-3">
+            {/* System 1: 3-State "Current Bandwidth" Pill Switcher in Focus Pipeline Header */}
+            <div
+              id="energy-bandwidth-switcher"
+              className="p-2.5 rounded-2xl bg-black/35 border border-white/[0.08] flex flex-wrap items-center justify-between gap-2"
+            >
+              <div className="flex items-center gap-2">
+                <Zap className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-slate-300">
+                  Current Bandwidth Router:
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                {(
+                  [
+                    {
+                      id: 'SHARP' as EnergyBandwidthState,
+                      label: 'Sharp',
+                      desc: 'Prioritizes Deep Synthesis (#1 / Half-Chapter) early',
+                      activeClass:
+                        'bg-indigo-500/30 border-indigo-400 text-indigo-100 shadow-[0_0_12px_rgba(99,102,241,0.3)]',
+                    },
+                    {
+                      id: 'STEADY' as EnergyBandwidthState,
+                      label: 'Steady',
+                      desc: 'Standard interleaved Recall + Deep Synthesis',
+                      activeClass:
+                        'bg-cyan-500/25 border-cyan-400 text-cyan-100 shadow-[0_0_12px_rgba(34,211,238,0.25)]',
+                    },
+                    {
+                      id: 'LOW_FOGGY' as EnergyBandwidthState,
+                      label: 'Low / Foggy',
+                      desc: 'Routes Mechanical Recall / Light Admin or 15m Reset first',
+                      activeClass:
+                        'bg-amber-500/25 border-amber-400 text-amber-100 shadow-[0_0_12px_rgba(245,158,11,0.25)]',
+                    },
+                  ] as const
+                ).map((bw) => {
+                  const isCurrent = energyBandwidth === bw.id;
+                  return (
+                    <button
+                      key={bw.id}
+                      id={`btn-bandwidth-${bw.id.toLowerCase()}`}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic([12]);
+                        onSetEnergyBandwidth(bw.id);
+                      }}
+                      title={bw.desc}
+                      className={`px-3 py-1 rounded-xl font-mono text-xs font-bold border transition cursor-pointer ${
+                        isCurrent
+                          ? bw.activeClass
+                          : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/[0.08] text-slate-300'
+                      }`}
+                    >
+                      {bw.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <motion.div
+              drag="x"
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.22}
+              onDragEnd={(_, info) => {
+                if (metrics.isZeroWorkLeft || isSurgeMidDayResetRequired) return;
+                if (info.offset.x > 65 || info.velocity.x > 340) {
+                  triggerHaptic([15]);
+                  soundEngine.playTactileClick('MODE_TOGGLE');
+                  onLaunchBlockInTimer(
+                    upNextBlock.sourceId,
+                    upNextBlock.title,
+                    upNextBlock.taskType,
+                    upNextBlock.startupStep
+                  );
+                } else if (
+                  (info.offset.x < -65 || info.velocity.x < -340) &&
+                  upNextBlock.taskType === 'FLASHCARDS'
+                ) {
+                  triggerHaptic([15]);
+                  soundEngine.playTactileClick('MODE_TOGGLE');
+                  onToggleEarlyClearance();
+                }
+              }}
+              className="flex flex-wrap items-start justify-between gap-3 cursor-grab active:cursor-grabbing"
+              title="Swipe Right to launch 5m Startup Step • Swipe Left on Flashcard rows to toggle Early Clearance"
+            >
               <div className="space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="px-2.5 py-0.5 rounded-full bg-cyan-400/20 border border-cyan-300/50 text-cyan-200 font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
@@ -755,6 +1155,24 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                   </span>
                   <span className="px-2 py-0.5 rounded-md bg-white/[0.05] border border-white/[0.1] font-mono text-[10px] text-slate-300">
                     {upNextBlock.badge}
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded-md border font-mono text-[10px] font-bold ${getCognitiveDemandColorClass(
+                      upNextBlock.cognitiveDemand
+                    )}`}
+                  >
+                    {formatCognitiveDemandBadge(upNextBlock.cognitiveDemand)}
+                  </span>
+                  {state.shockAbsorberMode && state.shockAbsorberMode !== 'FULL_SHIFT' && (
+                    <span className="px-2 py-0.5 rounded-md bg-amber-500/20 border-amber-400/50 border font-mono text-[10px] text-amber-200">
+                      Shock Absorber Active ({metrics.totalTargetBlocks} blk cap)
+                    </span>
+                  )}
+                  <span className="px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-400/30 font-mono text-[10px] text-cyan-200/90">
+                    ⇄ Swipe Right: 5m Startup
+                    {upNextBlock.taskType === 'FLASHCARDS'
+                      ? ' • Swipe Left: Early Clearance'
+                      : ''}
                   </span>
                   {isFinalBlockOfNight && (
                     <span className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-400/50 font-mono text-[10px] text-amber-200">
@@ -771,29 +1189,48 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 </p>
               </div>
 
-              {/* One-Click Space Launch Button */}
-              <button
-                id="btn-up-next-launch"
-                type="button"
-                disabled={metrics.isZeroWorkLeft || isSurgeMidDayResetRequired}
-                onClick={() => {
-                  triggerHaptic([15]);
-                  onLaunchBlockInTimer(
-                    upNextBlock.sourceId,
-                    upNextBlock.title,
-                    upNextBlock.taskType,
-                    upNextBlock.startupStep
-                  );
-                }}
-                className="px-4 py-2.5 rounded-2xl bg-cyan-400 hover:bg-cyan-300 disabled:opacity-40 text-slate-950 font-mono font-bold text-xs flex items-center gap-2 cursor-pointer shadow-lg shadow-cyan-500/25 shrink-0"
-              >
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Launch 5m Startup</span>
-                <kbd className="px-1.5 py-0.5 rounded bg-slate-950/20 text-[10px] font-mono">
-                  Space
-                </kbd>
-              </button>
-            </div>
+              {/* Action Buttons: Launch Startup + Low/Foggy 15m Reset Option */}
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {energyBandwidth === 'LOW_FOGGY' && (
+                  <button
+                    id="btn-up-next-low-foggy-reset"
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic([20]);
+                      onTriggerStressReset('BREATHING_478', 15);
+                    }}
+                    className="px-3 py-2.5 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/60 text-amber-100 font-mono font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                    title="Low / Foggy Bandwidth: Run 15m Stress/Fatigue Reset first before a low-friction sprint"
+                  >
+                    <Wind className="w-3.5 h-3.5 text-amber-300" />
+                    <span>15m Stress/Fatigue Reset First</span>
+                  </button>
+                )}
+
+                <button
+                  id="btn-up-next-launch"
+                  type="button"
+                  disabled={metrics.isZeroWorkLeft || isSurgeMidDayResetRequired}
+                  onClick={() => {
+                    triggerHaptic([15]);
+                    soundEngine.playTactileClick('MODE_TOGGLE');
+                    onLaunchBlockInTimer(
+                      upNextBlock.sourceId,
+                      upNextBlock.title,
+                      upNextBlock.taskType,
+                      upNextBlock.startupStep
+                    );
+                  }}
+                  className="px-4 py-2.5 rounded-2xl bg-cyan-400 hover:bg-cyan-300 disabled:opacity-40 text-slate-950 font-mono font-bold text-xs flex items-center gap-2 cursor-pointer shadow-lg shadow-cyan-500/25 shrink-0"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>Launch {activeDurations.startupMinutes}m Startup</span>
+                  <kbd className="px-1.5 py-0.5 rounded bg-slate-950/20 text-[10px] font-mono">
+                    Space
+                  </kbd>
+                </button>
+              </div>
+            </motion.div>
 
             {/* Compact Load Mode Selector with Spring-Animated Pill (layoutId="activeLoadModePill") */}
             <div className="pt-3 border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-2.5">
@@ -921,7 +1358,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       ? 'bg-amber-400 text-slate-950 border-amber-300 font-bold'
                       : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/50 text-amber-200'
                   }`}
-                  title="Recalibrate Remainder of Day (Step down one Load Mode tier or re-sequence remaining blocks)"
+                  title="Recalibrate Remainder of Day & One-Tap Shock Absorber"
                 >
                   <RefreshCw className="w-3 h-3" />
                   <span>Recalibrate Remainder of Day</span>
@@ -943,25 +1380,138 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               </div>
             </div>
 
-            {/* Mid-Shift "Recalibrate Remainder of Day" Option A / Option B Triage Wizard */}
+            {/* Mid-Shift "Recalibrate Remainder of Day" + System 4: One-Tap "Life Happened" Shock Absorber */}
             {recalibrateWizardOpen && (
               <div
                 id="recalibrate-day-wizard"
-                className="p-4 rounded-2xl bg-amber-950/35 border border-amber-400/50 space-y-3"
+                className="p-4 rounded-2xl bg-amber-950/35 border border-amber-400/50 space-y-4"
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <RefreshCw className="w-4 h-4 text-amber-400" />
                     <h3 className="text-xs sm:text-sm font-mono font-bold uppercase tracking-wider text-amber-200">
-                      Mid-Shift Triage: Recalibrate Remainder of Day
+                      Mid-Shift Triage &amp; One-Tap “Life Happened” Shock Absorber
                     </h3>
                   </div>
                   <span className="text-[11px] font-mono text-amber-200/80">
                     Current: {state.loadMode} ({metrics.totalCompletedBlocks}/{metrics.totalTargetBlocks} blks • {metrics.remainingWorkFormatted})
                   </span>
                 </div>
+
+                {/* System 4: Shock Absorber / Late Start Slider & One-Tap Compress */}
+                <div
+                  id="shock-absorber-panel"
+                  className="p-3.5 rounded-2xl bg-black/40 border border-amber-400/40 space-y-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div className="text-xs font-mono font-bold uppercase text-amber-300">
+                        Shock Absorber / Late Start Bandwidth Slider
+                      </div>
+                      <p className="text-[11px] text-slate-300">
+                        Select how much realistic bandwidth remains today. Re-caps today’s ceiling so <code className="text-cyan-200">[0m work left — End of Shift]</code> stays achievable tonight with zero overdue warnings, prioritizes highest-yield Baseline Floor blocks, and shifts deferred Focus #1 blocks to tomorrow.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {(
+                      [
+                        {
+                          mode: 'FULL_SHIFT' as ShockAbsorberMode,
+                          title: 'Full Shift',
+                          subtitle: 'Standard 11–12 blocks (Restore full Cruise runway)',
+                          defaultCap: 12,
+                        },
+                        {
+                          mode: 'HALF_SHIFT' as ShockAbsorberMode,
+                          title: 'Half Shift (~5–6 blocks)',
+                          subtitle: 'Late start / interrupted afternoon (~1h 40m–2h total)',
+                          defaultCap: 6,
+                        },
+                        {
+                          mode: 'MVF_FLOOR' as ShockAbsorberMode,
+                          title: 'Minimum Viable Floor (3–4 blocks)',
+                          subtitle: 'High disruption day (~60–80m essential floor only)',
+                          defaultCap: 4,
+                        },
+                      ] as const
+                    ).map((opt) => {
+                      const active = shockAbsorberSelection === opt.mode;
+                      return (
+                        <button
+                          key={opt.mode}
+                          id={`btn-shock-mode-${opt.mode.toLowerCase()}`}
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic([10]);
+                            setShockAbsorberSelection(opt.mode);
+                            setShockAbsorberSliderBlocks(opt.defaultCap);
+                          }}
+                          className={`p-2.5 rounded-xl border text-left font-mono transition cursor-pointer ${
+                            active
+                              ? 'bg-amber-400/20 border-amber-300 text-amber-100 shadow-md'
+                              : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.08] text-slate-300'
+                          }`}
+                        >
+                          <div className="text-xs font-bold">{opt.title}</div>
+                          <div className="text-[10px] text-slate-400 mt-0.5 leading-snug">
+                            {opt.subtitle}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {shockAbsorberSelection !== 'FULL_SHIFT' && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+                      <label className="text-xs font-mono text-amber-100 flex items-center gap-2">
+                        <span>Realistic Total Ceiling Today:</span>
+                        <strong className="text-amber-300">
+                          {shockAbsorberSliderBlocks} blocks ({shockAbsorberSliderBlocks * 20}m)
+                        </strong>
+                      </label>
+                      <input
+                        id="input-shock-absorber-slider"
+                        type="range"
+                        min={shockAbsorberSelection === 'MVF_FLOOR' ? 3 : 5}
+                        max={shockAbsorberSelection === 'MVF_FLOOR' ? 4 : 6}
+                        step={1}
+                        value={shockAbsorberSliderBlocks}
+                        onChange={(e) => setShockAbsorberSliderBlocks(Number(e.target.value))}
+                        className="w-40 accent-amber-400 cursor-pointer"
+                      />
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <span className="text-[11px] font-mono text-slate-400">
+                      {shockAbsorberSelection === 'FULL_SHIFT'
+                        ? 'Restores 12-block Cruise ceiling and unbanks baseline slots.'
+                        : `Auto-banks lower-priority baseline blocks above ${shockAbsorberSliderBlocks} blks & shifts deferred Focus #1 blocks to tomorrow.`}
+                    </span>
+                    <button
+                      id="btn-apply-shock-absorber"
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic([20]);
+                        onApplyShockAbsorber(
+                          shockAbsorberSelection,
+                          shockAbsorberSelection === 'FULL_SHIFT'
+                            ? 12
+                            : shockAbsorberSliderBlocks
+                        );
+                        setRecalibrateWizardOpen(false);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-mono font-extrabold text-xs cursor-pointer shadow-lg shadow-amber-500/20"
+                    >
+                      Compress Remainder of Day →
+                    </button>
+                  </div>
+                </div>
+
                 <p className="text-xs text-slate-300">
-                  Day started late or stalled out? Select <strong>Option A</strong> to step today down one Load Mode tier, or <strong>Option B</strong> to keep {state.loadMode} Mode and re-sequence all remaining blocks starting now:
+                  Or use classic Load Mode recalibration:
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <button
@@ -972,7 +1522,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       onRecalibrateStepDownTier();
                       setRecalibrateWizardOpen(false);
                     }}
-                    className="p-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-mono text-left space-y-1 cursor-pointer shadow-md"
+                    className="p-3 rounded-xl bg-amber-400/90 hover:bg-amber-300 text-slate-950 font-mono text-left space-y-1 cursor-pointer shadow-md"
                   >
                     <div className="text-xs font-extrabold uppercase">
                       Option A: Step Down One Load Mode Tier
@@ -1179,18 +1729,36 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 </span>
               </div>
 
-              <div className="space-y-2 max-h-[540px] overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-[540px] overflow-y-auto overflow-x-hidden pr-1">
                 {sequentialSteps.map((step) => {
                   const isWork = step.kind === 'WORK_BLOCK';
                   const isBreakL1 = step.kind === 'BREAK_L1';
                   const isBreakL2 = step.kind === 'BREAK_L2';
                   const isBreakL3 = step.kind === 'BREAK_L3';
                   const isShutdown = step.kind === 'SHUTDOWN';
+                  const isFlashcardRow = step.taskType === 'FLASHCARDS';
 
                   return (
-                    <div
+                    <motion.div
                       key={step.id}
                       id={`seq-row-${step.id}`}
+                      drag="x"
+                      dragConstraints={{ left: 0, right: 0 }}
+                      dragElastic={0.2}
+                      onDragEnd={(_, info) => {
+                        if (info.offset.x > 60 || info.velocity.x > 320) {
+                          triggerHaptic([15]);
+                          soundEngine.playTactileClick('MODE_TOGGLE');
+                          handleClickSequentialStep(step);
+                        } else if (
+                          isFlashcardRow &&
+                          (info.offset.x < -60 || info.velocity.x < -320)
+                        ) {
+                          triggerHaptic([15]);
+                          soundEngine.playTactileClick('MODE_TOGGLE');
+                          onToggleEarlyClearance();
+                        }
+                      }}
                       onClick={() => handleClickSequentialStep(step)}
                       role="button"
                       tabIndex={0}
@@ -1200,6 +1768,11 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                           handleClickSequentialStep(step);
                         }
                       }}
+                      title={
+                        isFlashcardRow
+                          ? 'Swipe Right: Launch 5m Startup • Swipe Left: Toggle Early Clearance'
+                          : 'Swipe Right or Click: Launch 5m Startup Step'
+                      }
                       className={`p-3 rounded-2xl border transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${
                         step.isCurrentNext
                           ? 'bg-cyan-500/15 border-cyan-400/70 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.15)]'
@@ -1251,6 +1824,11 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                               BANKED (EARLY CLEARANCE)
                             </span>
                           )}
+                          {isFlashcardRow && (
+                            <span className="text-[9px] font-mono text-slate-400 hidden sm:inline">
+                              ← Swipe Left: Early Clearance
+                            </span>
+                          )}
                         </div>
 
                         <div className="text-xs sm:text-sm font-bold text-white truncate">
@@ -1279,7 +1857,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                           <span>Launch</span>
                         </span>
                       </div>
-                    </div>
+                    </motion.div>
                   );
                 })}
               </div>
@@ -1296,7 +1874,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
             <section
               id="bento-baseline-card"
               aria-labelledby="baseline-heading"
-              className="rounded-3xl bento-surface p-5 flex flex-col justify-between space-y-4"
+              className="rounded-3xl bento-surface p-5 flex flex-col justify-between space-y-4 overflow-hidden"
             >
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
@@ -1316,8 +1894,35 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                   </span>
                 </div>
 
-                {/* Group A: Flashcard / Recall Segments */}
-                <div className="p-3.5 rounded-2xl bg-black/25 border border-white/[0.07] space-y-2.5">
+                {/* Group A: Flashcard / Recall Segments (Swipe Left to Toggle Early Clearance) */}
+                <motion.div
+                  id="flashcard-swipe-row"
+                  drag="x"
+                  dragConstraints={{ left: 0, right: 0 }}
+                  dragElastic={0.2}
+                  onDragEnd={(_, info) => {
+                    if (metrics.isZeroWorkLeft) return;
+                    if (info.offset.x < -55 || info.velocity.x < -300) {
+                      triggerHaptic([15]);
+                      soundEngine.playTactileClick('MODE_TOGGLE');
+                      onToggleEarlyClearance();
+                    } else if (
+                      (info.offset.x > 55 || info.velocity.x > 300) &&
+                      flashcardBlocks[0]
+                    ) {
+                      triggerHaptic([15]);
+                      soundEngine.playTactileClick('MODE_TOGGLE');
+                      onLaunchBlockInTimer(
+                        flashcardBlocks[0].id,
+                        flashcardBlocks[0].title,
+                        'FLASHCARDS',
+                        flashcardBlocks[0].startupStep
+                      );
+                    }
+                  }}
+                  title="Swipe Left on Flashcard row to toggle Early Clearance • Swipe Right to launch 5m Startup"
+                  className="p-3.5 rounded-2xl bg-black/25 border border-white/[0.07] space-y-2.5 cursor-grab active:cursor-grabbing"
+                >
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[11px] font-mono font-bold text-slate-200">
                       {flashcardBlocks.length === 4 &&
@@ -1434,7 +2039,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       className="w-28 accent-cyan-400 cursor-pointer"
                     />
                   </div>
-                </div>
+                </motion.div>
 
                 {/* Group B: Half-Chapter / Deep Reading & Synthesis Segments */}
                 <div className="p-3.5 rounded-2xl bg-black/25 border border-white/[0.07] space-y-2.5">
@@ -1521,15 +2126,40 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 </div>
               </div>
 
-              {/* Selected Baseline Segment Micro-Launcher */}
+              {/* Selected Baseline Segment Micro-Launcher + Cognitive Demand Tag */}
               {selectedBaseline && (
-                <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-xs font-semibold text-white truncate">
-                      {selectedBaseline.title}
+                <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-xs font-semibold text-white truncate">
+                        {selectedBaseline.title}
+                      </span>
+                      <button
+                        id={`btn-demand-baseline-${selectedBaseline.id}`}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic([10]);
+                          onCycleCognitiveDemand('BASELINE', selectedBaseline.id);
+                        }}
+                        className={`px-1.5 py-0.5 rounded border font-mono text-[9px] font-bold cursor-pointer ${getCognitiveDemandColorClass(
+                          getBaselineCognitiveDemand(selectedBaseline)
+                        )}`}
+                        title="Click to cycle Cognitive Demand Tag (DEEP_SYNTHESIS → MECHANICAL_RECALL → LIGHT_ADMIN)"
+                      >
+                        {formatCognitiveDemandBadge(
+                          getBaselineCognitiveDemand(selectedBaseline)
+                        )}
+                      </button>
+                      {typeof selectedBaseline.partialCredit === 'number' &&
+                        selectedBaseline.partialCredit > 0 &&
+                        !selectedBaseline.completed && (
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/50 font-mono text-[9px] font-bold text-emerald-200">
+                            +{selectedBaseline.partialCredit} blk logged
+                          </span>
+                        )}
                     </div>
-                    <div className="text-[11px] font-mono text-slate-400 truncate">
-                      5m: {selectedBaseline.startupStep}
+                    <div className="text-[11px] font-mono text-slate-400 truncate mt-0.5">
+                      {activeDurations.startupMinutes}m: {selectedBaseline.startupStep}
                     </div>
                   </div>
                   <button
@@ -1560,7 +2190,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     className="px-3 py-1.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 disabled:opacity-40 text-slate-950 font-mono font-bold text-xs flex items-center gap-1 cursor-pointer shrink-0"
                   >
                     <Play className="w-3 h-3 fill-current" />
-                    <span>5m</span>
+                    <span>{activeDurations.startupMinutes}m</span>
                   </button>
                 </div>
               )}
@@ -1577,12 +2207,73 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                   id={`project-card-slot-1`}
                   className="space-y-3.5"
                 >
+                  {/* System 5: Dual-Slot Toggle when Dual-Slot Lock Mode is enabled in Settings */}
+                  {isDualSlotEnabled && (
+                    <div
+                      id="dual-slot-switcher"
+                      className="p-2 rounded-xl bg-indigo-950/40 border border-indigo-400/40 flex flex-wrap items-center justify-between gap-2"
+                    >
+                      <span className="text-[10px] font-mono uppercase font-bold text-indigo-200">
+                        Dual-Slot Lock Mode (#1 / #2 External Feedback Toggle):
+                      </span>
+                      <div className="flex items-center gap-1">
+                        {([1, 2] as const).map((slotNum) => {
+                          const pSlot = state.projectQueue.find(
+                            (p) => p.slot === slotNum
+                          );
+                          if (!pSlot) return null;
+                          const active = activeDualSlotNum === slotNum;
+                          return (
+                            <button
+                              key={slotNum}
+                              id={`btn-dual-slot-${slotNum}`}
+                              type="button"
+                              onClick={() => {
+                                triggerHaptic([10]);
+                                onSetActiveDualSlotNumber(slotNum);
+                              }}
+                              className={`px-2.5 py-0.5 rounded-lg font-mono text-[10px] font-bold border cursor-pointer ${
+                                active
+                                  ? 'bg-indigo-400 text-slate-950 border-indigo-300'
+                                  : 'bg-white/[0.04] border-white/[0.08] text-slate-300 hover:text-white'
+                              }`}
+                            >
+                              Slot #{slotNum}: {pSlot.title.slice(0, 18)}
+                              {pSlot.title.length > 18 ? '…' : ''}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between gap-2">
                     <div>
-                      <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-300 font-bold flex items-center gap-1">
-                        <Unlock className="w-3 h-3 text-emerald-400" />
-                        <span>LOCKED FOCUS #1 • 100% DISCRETIONARY</span>
-                      </span>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-300 font-bold flex items-center gap-1">
+                          <Unlock className="w-3 h-3 text-emerald-400" />
+                          <span>
+                            LOCKED FOCUS #{primaryProject.slot} •{' '}
+                            {isDualSlotEnabled ? 'DUAL-SLOT ACTIVE' : '100% DISCRETIONARY'}
+                          </span>
+                        </span>
+                        <button
+                          id={`btn-demand-project-${primaryProject.id}`}
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic([10]);
+                            onCycleCognitiveDemand('PROJECT', primaryProject.id);
+                          }}
+                          className={`px-1.5 py-0.5 rounded border font-mono text-[9px] font-bold cursor-pointer ${getCognitiveDemandColorClass(
+                            getProjectCognitiveDemand(primaryProject)
+                          )}`}
+                          title="Click to cycle Cognitive Demand Tag (DEEP_SYNTHESIS → MECHANICAL_RECALL → LIGHT_ADMIN)"
+                        >
+                          {formatCognitiveDemandBadge(
+                            getProjectCognitiveDemand(primaryProject)
+                          )}
+                        </button>
+                      </div>
                       <h3
                         id="project-lock-heading"
                         className="text-base font-bold text-white tracking-tight mt-0.5"
@@ -1627,7 +2318,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       {Array.from({ length: primaryProject.totalBlocks }).map(
                         (_, segIdx) => {
                           const filled = segIdx < primaryProject.completedBlocks;
-                          const isNext = segIdx === primaryProject.completedBlocks;
+                          const isNext = segIdx === Math.floor(primaryProject.completedBlocks);
                           return (
                             <button
                               key={segIdx}
@@ -1660,7 +2351,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     </p>
                   </div>
 
-                  {/* Primary Action Row for Focus #1 (includes One-Tap Complete Deliverable) */}
+                  {/* Primary Action Row for Active Focus + Bounded Curiosity Sandbox Block */}
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       id="btn-launch-project-1"
@@ -1678,7 +2369,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       className="flex-1 py-2 px-3 rounded-xl bg-cyan-400 hover:bg-cyan-300 disabled:opacity-40 text-slate-950 font-mono font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       <Play className="w-3.5 h-3.5 fill-current" />
-                      <span>Start 5m Step</span>
+                      <span>Start {activeDurations.startupMinutes}m Step</span>
                     </button>
 
                     <button
@@ -1706,6 +2397,30 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     >
                       <CheckCircle2 className="w-3.5 h-3.5" />
                       <span>Complete Deliverable</span>
+                    </button>
+                  </div>
+
+                  {/* System 5: Bounded Curiosity Sandbox Block Launcher */}
+                  <div className="p-2.5 rounded-xl bg-indigo-950/30 border border-indigo-400/35 flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-mono uppercase font-bold text-indigo-300">
+                        Bounded Curiosity Sandbox Block (Zero-Quota Track)
+                      </div>
+                      <div className="text-[11px] text-slate-300 truncate">
+                        Run 1 guilt-free exploratory block (Comp / Systems or Hardware Lab) without unlocking extra projects.
+                      </div>
+                    </div>
+                    <button
+                      id="btn-bounded-curiosity-sandbox"
+                      type="button"
+                      disabled={metrics.isZeroWorkLeft || isSurgeMidDayResetRequired}
+                      onClick={() => {
+                        triggerHaptic([15]);
+                        onLaunchBoundedCuriosityBlock();
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg bg-indigo-500/25 hover:bg-indigo-500/40 disabled:opacity-40 border border-indigo-400/60 text-indigo-100 font-mono font-bold text-[11px] cursor-pointer shrink-0"
+                    >
+                      Launch Curiosity Block →
                     </button>
                   </div>
 
@@ -1906,14 +2621,29 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       <div
                         key={proj.id}
                         id={`project-card-slot-${proj.slot}`}
-                        className="p-3 rounded-xl bg-black/35 border border-white/[0.06] opacity-75 flex items-center justify-between gap-2"
+                        className="p-3 rounded-xl bg-black/35 border border-white/[0.06] opacity-85 flex items-center justify-between gap-2"
                       >
                         <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-400">
+                          <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono text-slate-400">
                             <Lock className="w-3 h-3" />
                             <span>SLOT #{proj.slot} • LOCKED TO #1</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                triggerHaptic([10]);
+                                onCycleCognitiveDemand('PROJECT', proj.id);
+                              }}
+                              className={`px-1.5 py-0.2 rounded border font-mono text-[9px] font-bold cursor-pointer ${getCognitiveDemandColorClass(
+                                getProjectCognitiveDemand(proj)
+                              )}`}
+                              title="Click to cycle Cognitive Demand Tag"
+                            >
+                              {formatCognitiveDemandBadge(
+                                getProjectCognitiveDemand(proj)
+                              )}
+                            </button>
                           </div>
-                          <div className="text-xs font-semibold text-slate-200 truncate">
+                          <div className="text-xs font-semibold text-slate-200 truncate mt-0.5">
                             {proj.title}
                           </div>
                         </div>

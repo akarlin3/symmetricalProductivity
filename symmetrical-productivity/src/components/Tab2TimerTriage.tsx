@@ -15,12 +15,18 @@ import {
   Zap,
 } from 'lucide-react';
 import {
+  ElasticBlockMultiplier,
   Level2BreakProtocol,
+  StartupShrinkLevel,
   StressResetProtocol,
   SymmetryState,
   TimerRunMode,
 } from '../types/symmetry';
-import { computeShiftMetrics } from '../state/defaultState';
+import {
+  computeShiftMetrics,
+  getActiveBlockDurationsSeconds,
+  getShrunkStartupPrompt,
+} from '../state/defaultState';
 import {
   ANDROID_CHANNEL_ID,
   NotificationLogEntry,
@@ -55,6 +61,8 @@ interface Tab2TimerTriageProps {
   ) => void;
   onOpenMiniHudPip?: () => void;
   isMiniHudOpen?: boolean;
+  onSelectElasticMultiplier: (multiplier: ElasticBlockMultiplier) => void;
+  onShrinkStartupStep: (targetLevel?: StartupShrinkLevel) => void;
 }
 
 export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
@@ -78,9 +86,14 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
   onManualTriggerNotification,
   onOpenMiniHudPip,
   isMiniHudOpen,
+  onSelectElasticMultiplier,
+  onShrinkStartupStep,
 }) => {
   const { timer } = state;
   const metrics = computeShiftMetrics(state);
+  const activeDurations = getActiveBlockDurationsSeconds(state);
+  const elasticMult: ElasticBlockMultiplier = timer.elasticMultiplier ?? 1.0;
+  const shrinkLevel: StartupShrinkLevel = timer.startupShrinkLevel ?? 1;
 
   const formatMMSS = (totalSec: number) => {
     const m = Math.floor(totalSec / 60);
@@ -91,8 +104,8 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
   const stageBadgeText =
     timer.mode === 'WORK_20M'
       ? timer.workStage === 'IGNITION_5M'
-        ? '5m Startup Step (IGNITION_5M)'
-        : '15m Momentum (MOMENTUM_15M)'
+        ? `${activeDurations.startupMinutes}m Startup Step (${elasticMult}x)`
+        : `${activeDurations.momentumMinutes}m Momentum (${elasticMult}x)`
       : timer.mode === 'BREAK_L1'
       ? `Level 1 Same-Task Micro-Reset (${timer.l1DurationMinutes}m)`
       : timer.mode === 'BREAK_L2'
@@ -100,6 +113,13 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
       : timer.mode === 'BREAK_L3'
       ? `Level 3 Mid-Day Reset (${timer.l3DurationMinutes}m)`
       : `Stress / Fatigue Reset (${timer.stressDurationMinutes}m)`;
+
+  const activeDisplayedStartupPrompt = getShrunkStartupPrompt(
+    timer.activeStartupPrompt,
+    timer.activeTaskTitle,
+    timer.activeTaskType,
+    shrinkLevel
+  );
 
   return (
     <div className="space-y-5 animate-tab-enter">
@@ -194,8 +214,78 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
                 {timer.activeTaskTitle}
               </h2>
               <p className="text-xs font-mono text-slate-400 mt-0.5">
-                {metrics.durationPrefix} • Two-Stage 20m Block (5m Startup → 15m Momentum)
+                {metrics.durationPrefix} • Two-Stage {activeDurations.totalMinutes}m Block ({activeDurations.startupMinutes}m Startup → {activeDurations.momentumMinutes}m Momentum)
               </p>
+            </div>
+
+            {/* Elastic Block Accordion (0.5x Half-Block | 1.0x Standard 20m | 2.0x Double-Block) */}
+            <div
+              id="tab2-elastic-block-accordion"
+              className="p-2.5 rounded-2xl bg-black/30 border border-white/[0.08] space-y-1.5"
+            >
+              <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+                <span className="uppercase tracking-wider font-bold text-cyan-300">
+                  Elastic Block Accordion
+                </span>
+                <span>
+                  Logs <strong className="text-white">{elasticMult.toFixed(1)} blk</strong>
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(
+                  [
+                    {
+                      mult: 0.5 as ElasticBlockMultiplier,
+                      short: '0.5x Half-Block',
+                      detail: '10m (3m+7m)',
+                    },
+                    {
+                      mult: 1.0 as ElasticBlockMultiplier,
+                      short: '1.0x Standard',
+                      detail: `${
+                        state.flexibilityTuning?.blockCadencePreset === '15M_3_12'
+                          ? '15m (3m+12m)'
+                          : state.flexibilityTuning?.blockCadencePreset === '25M_5_20'
+                          ? '25m (5m+20m)'
+                          : '20m (5m+15m)'
+                      }`,
+                    },
+                    {
+                      mult: 2.0 as ElasticBlockMultiplier,
+                      short: '2.0x Double-Block',
+                      detail: '40m (5m+35m → L2)',
+                    },
+                  ] as const
+                ).map((opt) => {
+                  const isSelected = elasticMult === opt.mult;
+                  return (
+                    <button
+                      key={opt.mult}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic([12]);
+                        onSelectElasticMultiplier(opt.mult);
+                      }}
+                      className={`p-2 rounded-xl border text-left font-mono transition cursor-pointer ${
+                        isSelected
+                          ? opt.mult === 2.0
+                            ? 'bg-indigo-500/25 border-indigo-400 text-indigo-100'
+                            : opt.mult === 0.5
+                            ? 'bg-emerald-500/20 border-emerald-400 text-emerald-100'
+                            : 'bg-cyan-500/20 border-cyan-400 text-cyan-100'
+                          : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.08] text-slate-300'
+                      }`}
+                    >
+                      <div className="text-[10px] font-extrabold leading-tight">
+                        {opt.short}
+                      </div>
+                      <div className="text-[9px] text-slate-400 mt-0.5">
+                        {opt.detail}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Dual-Ring 280x280 Interactive SVG */}
@@ -211,6 +301,8 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
                 }}
                 onOpenMiniHudPip={onOpenMiniHudPip}
                 isMiniHudOpen={isMiniHudOpen}
+                startupSeconds={activeDurations.startupSeconds}
+                momentumSeconds={activeDurations.momentumSeconds}
               />
             </div>
 
@@ -264,18 +356,42 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
               </button>
             </div>
 
-            {/* Active 5-Minute Startup Micro-Script */}
-            <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] space-y-1.5">
+            {/* Active 5-Minute Startup Micro-Script + 3-Tier Shrink Startup Step */}
+            <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] space-y-2">
               <div className="flex items-center justify-between text-[10px] font-mono uppercase tracking-widest text-amber-300 font-bold">
                 <span className="flex items-center gap-1">
                   <Flame className="w-3.5 h-3.5 text-amber-400" />
-                  <span>5m Startup Micro-Script</span>
+                  <span>
+                    {shrinkLevel === 1
+                      ? `Level 1 • ${activeDurations.startupMinutes}m Startup`
+                      : shrinkLevel === 2
+                      ? 'Level 2 • Micro-Setup'
+                      : 'Level 3 • Zero-Pressure Entry'}
+                  </span>
                 </span>
                 <span>{timer.activeTaskType}</span>
               </div>
               <p className="text-xs font-mono text-amber-100 leading-relaxed">
-                “{timer.activeStartupPrompt}”
+                “{activeDisplayedStartupPrompt}”
               </p>
+              <div className="flex items-center justify-between gap-2 pt-0.5">
+                <button
+                  id="tab2-btn-shrink-startup-step"
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic([12]);
+                    onShrinkStartupStep();
+                  }}
+                  className="text-[11px] font-mono font-semibold text-amber-300 hover:text-amber-200 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-400/35 rounded-xl px-2.5 py-1 transition cursor-pointer"
+                >
+                  {shrinkLevel < 3
+                    ? 'Too heavy right now? Shrink step ->'
+                    : 'At Level 3 Zero-Pressure Entry (Reset to L1 ->)'}
+                </button>
+                <span className="text-[10px] font-mono text-slate-400">
+                  Tier {shrinkLevel}/3
+                </span>
+              </div>
             </div>
 
             {/* Quick Mode Switcher */}

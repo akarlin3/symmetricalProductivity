@@ -13,14 +13,54 @@ export type ActiveTaskType = 'FLASHCARDS' | 'READING' | 'SYNTHESIS' | 'PROJECT';
 
 export type TrackId = 'science' | 'writing' | 'personal' | 'coding' | 'music';
 
+export type EnergyBandwidthState = 'SHARP' | 'STEADY' | 'LOW_FOGGY';
+
+export type CognitiveDemandTag =
+  | 'DEEP_SYNTHESIS'
+  | 'MECHANICAL_RECALL'
+  | 'LIGHT_ADMIN';
+
+export type ElasticBlockMultiplier = 0.5 | 1.0 | 2.0;
+
+export type StartupShrinkLevel = 1 | 2 | 3;
+
+export type ShockAbsorberMode = 'FULL_SHIFT' | 'HALF_SHIFT' | 'MVF_FLOOR';
+
+export type BlockCadencePreset =
+  | '15_3_12'
+  | '20_5_15'
+  | '25_5_20'
+  | '15M_3_12'
+  | '20M_5_15'
+  | '25M_5_20'
+  | 'CADENCE_15_3_12'
+  | 'CADENCE_20_5_15'
+  | 'CADENCE_25_5_20';
+
+export type ClosedListLockMode = 'STRICT_SERIALIZED' | 'DUAL_SLOT';
+
+export type EveningPulseSensitivity = 'STANDARD_20_40_60' | 'GENTLE_40_60';
+
+export interface StructureFlexibilityConfig {
+  blockCadencePreset: BlockCadencePreset;
+  closedListLockMode: ClosedListLockMode;
+  activeFocusSlot?: 1 | 2;
+  activeDualSlotNumber?: 1 | 2;
+  slot1BlockedOnExternalFeedback?: boolean;
+  eveningPulseSensitivity: EveningPulseSensitivity;
+  boundedCuriositySandboxUsedToday?: boolean;
+}
+
 export interface BaselineBlock {
   id: string;
   title: string;
   category: BaselineCategory;
   completed: boolean;
+  partialCredit?: number; // 0.5 when a 0.5x Micro-Block is logged
   bankedViaEarlyClearance?: boolean;
   startupStep: string;
   trackId: TrackId;
+  cognitiveDemand?: CognitiveDemandTag;
 }
 
 export type ProjectPresetType = 'PAPER_8' | 'SLIDES_4' | 'CUSTOM';
@@ -35,6 +75,8 @@ export interface ProjectItem {
   trackId: TrackId;
   startupStep: string;
   nextStepNote: string;
+  cognitiveDemand?: CognitiveDemandTag;
+  blockedOnExternalFeedback?: boolean;
 }
 
 export interface PipelineDay {
@@ -49,6 +91,7 @@ export interface PipelineDay {
   fixedEventTimeLabel?: string;
   earlyMorningAnchor: boolean;
   isToday: boolean;
+  primaryDeliverable?: string;
   modeAndAnchors?: string;
   projectBlocksSummary?: string;
   deliverablesCompleted?: string;
@@ -120,6 +163,8 @@ export interface TimerConsoleState {
   activeTaskTitle: string;
   activeTaskType: ActiveTaskType;
   activeStartupPrompt: string;
+  elasticMultiplier?: ElasticBlockMultiplier; // 0.5x (10m), 1.0x (20m default), 2.0x (40m)
+  startupShrinkLevel?: StartupShrinkLevel; // 1 (Default 5m), 2 (Micro-Setup), 3 (Zero-Pressure Entry)
   chainedBlocksCount: number; // 0, 1, or 2 (2 = 40m chained -> forces Level 2 10-15m break)
   sessionDisplayDurationMinutes: 20 | 40;
   l1DurationMinutes: 3 | 5;
@@ -257,6 +302,7 @@ export interface SequentialChecklistStep {
   title: string;
   categoryBadge: string;
   taskType?: ActiveTaskType;
+  cognitiveDemand?: CognitiveDemandTag;
   startupStep: string;
   durationMinutes: number;
   chainPosition?: 1 | 2; // 1 = 20m, 2 = 40m
@@ -297,7 +343,8 @@ export type TodayBlockLogCategory =
   | 'FLOOR_SYNTHESIS'
   | 'PROJECT_FOCUS_1'
   | 'FLOW_EXTENSION'
-  | 'EVENING_RECHARGE';
+  | 'EVENING_RECHARGE'
+  | 'SANDBOX_CURIOSITY';
 
 export interface TodayBlockLogEntry {
   id: string;
@@ -306,11 +353,55 @@ export interface TodayBlockLogEntry {
   category: TodayBlockLogCategory;
   title: string;
   durationMinutes: number;
+  blockUnits?: number; // 0.5, 1.0, or 2.0
+  blockCredit?: number; // 0.5, 1.0, or 2.0
   roadmapTrack: string;
   stroke: 'INPUT' | 'OUTPUT';
   sourceBlockId?: string;
   stickyKey?: StickyKey;
   rungNumber?: 1 | 2 | 3 | 4;
+}
+
+export type SoundscapeMode = 'WARM_BROWN_NOISE' | 'SOFT_RAIN' | 'BINAURAL_40HZ';
+
+export interface AudioEngineSettings {
+  muted: boolean;
+  volume: number; // 0..1
+  soundscapeEnabled: boolean;
+  soundscapeMode: SoundscapeMode;
+  tactileClicksEnabled?: boolean;
+}
+
+export type DailyHistoryMode = LoadMode | 'EVENING_RECHARGE';
+
+export interface DailyHistoryEntry {
+  logicalDate: string;
+  mode: DailyHistoryMode;
+  blocksCompleted: number;
+  inputBlocks: number;
+  outputBlocks: number;
+  eveningSessions: number;
+}
+
+export type BackupTriggerReason =
+  | 'STATE_RESET'
+  | 'RESET_DEFAULT'
+  | 'NEW_DAY_RESET'
+  | 'PRESET_SWITCH'
+  | 'JSON_IMPORT'
+  | 'MANUAL_SNAPSHOT';
+
+export interface StateBackupSnapshot {
+  id: string;
+  createdAtIso: string;
+  logicalDate: string;
+  triggerReason: BackupTriggerReason;
+  label: string;
+  profileName: string;
+  loadMode: LoadMode;
+  blocksCompleted: number;
+  targetBlocks: number;
+  stateJson: string;
 }
 
 export interface SymmetryState {
@@ -321,14 +412,22 @@ export interface SymmetryState {
   earlyEveningShutdownTime?: string; // Default: '6:00 PM'
   taskWeights?: TaskWeightsConfig;
   breakOptions?: BreakOptionsConfig;
+  energyBandwidth?: EnergyBandwidthState; // 'SHARP' | 'STEADY' | 'LOW_FOGGY'
+  shockAbsorberMode?: ShockAbsorberMode; // 'FULL_SHIFT' | 'HALF_SHIFT' | 'MVF_FLOOR'
+  shockAbsorberDeferredBlocks?: number; // Number of project blocks shifted to tomorrow via Shock Absorber
+  activeDualSlotNumber?: 1 | 2;
+  flexibilityTuning?: StructureFlexibilityConfig;
   logicalDayKey?: string; // Logical day boundary key (hours < logicalDayRolloverHour counts as previous day)
   todayBlockLog: TodayBlockLogEntry[];
+  dailyHistory?: DailyHistoryEntry[];
+  stateBackups?: StateBackupSnapshot[];
+  audioSettings?: AudioEngineSettings;
   upcomingMilestones: string[];
   bandwidth?: BandwidthLevel;
   loadMode: LoadMode;
   preExamTaperActive: boolean; // Cancels heavy prose/synthesis, caps at 7-9 blocks, routes strictly to Exam Review & Active Recall
   cruisePlus: boolean;
-  customModeBlockAdjustment: number; // e.g. 11 vs 12 for Cruise, 14 vs 15 for Surge, 7-9 for Taper
+  customModeBlockAdjustment: number; // e.g. 11 vs 12 for Cruise, 14 vs 15 for Surge, 7-9 for Taper (or 3-6 under Shock Absorber)
   surgeConsecutiveDays: number; // Hard cap max 2 consecutive Surge days
   midDayResetCompletedToday: boolean; // Mandatory 60-120m Mid-Day Reset after 7 blocks in Surge Mode
   fixedEvent: FixedEventType;
@@ -347,5 +446,6 @@ export interface SymmetryState {
   recharge: RechargeState;
   roadmapTracks: RoadmapTrack[];
 }
+
 
 

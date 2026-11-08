@@ -91,6 +91,9 @@ export function resolveCurrentBandwidth(
 ): BandwidthLevel {
   if (override) return override;
   if (state.bandwidth) return state.bandwidth;
+  if (state.energyBandwidth === 'LOW_FOGGY') return 'Low';
+  if (state.energyBandwidth === 'STEADY') return 'Steady';
+  if (state.energyBandwidth === 'SHARP') return 'Sharp';
   if (state.timer.mode === 'STRESS_RESET' || state.preExamTaperActive) {
     return 'Low';
   }
