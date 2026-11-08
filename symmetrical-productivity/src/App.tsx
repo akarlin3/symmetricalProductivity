@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  Check,
   Copy,
   Download,
   FastForward,
   FileText,
+  KeyRound,
   Layers,
   ListChecks,
   Moon,
@@ -18,6 +20,7 @@ import {
 } from 'lucide-react';
 import { triggerHaptic } from './utils/haptics';
 import {
+  BaselineCategory,
   CompletedDeliverableEntry,
   FixedEventType,
   Level2BreakProtocol,
@@ -26,16 +29,21 @@ import {
   PipelineDay,
   ProjectPresetType,
   RechargeCategoryId,
+  SmartIntakePlanResult,
   StickyKey,
   StressResetProtocol,
   SymmetryState,
   TabId,
   TimerRunMode,
+  TodayBlockLogCategory,
+  TodayBlockLogEntry,
   TrackId,
 } from './types/symmetry';
 import {
   computeShiftMetrics,
+  createLogTimestamp,
   DEFAULT_SYMMETRY_STATE,
+  generateSequentialChecklist,
   getLogicalDayKey,
   getPreExamTaperSuggestion,
   parseFromStateInput,
@@ -50,8 +58,17 @@ import {
   scheduleTimerNotificationAt,
   SymmetryNotificationEvent,
 } from './utils/notifications';
+import {
+  applySmartIntakePlanToState,
+  getEnvGeminiApiKey,
+  getStoredGeminiApiKey,
+  setStoredGeminiApiKey,
+} from './utils/smartIntakePlanner';
 import { HeaderBar } from './components/HeaderBar';
 import { PipelineDrawer } from './components/PipelineDrawer';
+import { PlanningAssistantDrawer } from './components/PlanningAssistantDrawer';
+import { TodayLogDrawer } from './components/TodayLogDrawer';
+import { UndoToast, UndoToastState } from './components/UndoToast';
 import { Tab1Pipeline } from './components/Tab1Pipeline';
 import { Tab2TimerTriage } from './components/Tab2TimerTriage';
 import { Tab3Recharge } from './components/Tab3Recharge';
@@ -71,7 +88,9 @@ export function App() {
   });
 
   const [activeTab, setActiveTab] = useState<TabId>('PIPELINE');
+  const [todayLogDrawerOpen, setTodayLogDrawerOpen] = useState(false);
   const [pipelineDrawerOpen, setPipelineDrawerOpen] = useState(false);
+  const [assistantDrawerOpen, setAssistantDrawerOpen] = useState(false);
   const [stateModalOpen, setStateModalOpen] = useState(false);
   const [stateIoText, setStateIoText] = useState('');
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
@@ -81,6 +100,41 @@ export function App() {
   // Document Picture-in-Picture & Floating Corner Fallback state
   const [pipWindow, setPipWindow] = useState<Window | null>(null);
   const [floatingMiniHudOpen, setFloatingMiniHudOpen] = useState(false);
+
+  // Smart Intake & Week Planner state + Gemini API Key storage
+  const [smartIntakeText, setSmartIntakeText] = useState('');
+  const [smartIntakePreview, setSmartIntakePreview] =
+    useState<SmartIntakePlanResult | null>(null);
+  const [geminiApiKeyInput, setGeminiApiKeyInput] = useState<string>(() =>
+    getStoredGeminiApiKey()
+  );
+  const [apiKeyVersion, setApiKeyVersion] = useState(0);
+
+  // 10-Second Undo Toast Stack & Countdown
+  const undoStackRef = useRef<SymmetryState[]>([]);
+  const [undoToast, setUndoToast] = useState<UndoToastState | null>(null);
+  const [undoSecondsLeft, setUndoSecondsLeft] = useState<number>(10);
+
+  const pushUndoSnapshot = useCallback((snapshot: SymmetryState, label: string) => {
+    const cloned: SymmetryState = JSON.parse(JSON.stringify(snapshot));
+    undoStackRef.current = [cloned, ...undoStackRef.current.slice(0, 19)];
+    const expiresAtMs = Date.now() + 10_000;
+    setUndoToast({
+      id: `undo_${Date.now()}`,
+      label,
+      expiresAtMs,
+    });
+    setUndoSecondsLeft(10);
+  }, []);
+
+  const handleTriggerUndo = useCallback(() => {
+    const [latestSnapshot, ...rest] = undoStackRef.current;
+    if (!latestSnapshot) return;
+    undoStackRef.current = rest;
+    setState(latestSnapshot);
+    setUndoToast(null);
+    setStatusNotice('Undid last action — restored previous block counter, countdown, and Roadmap totals.');
+  }, []);
 
   const showNotice = (msg: string) => {
     setStatusNotice(msg);
@@ -347,6 +401,7 @@ export function App() {
         return {
           ...prev,
           logicalDayKey: currentLogicalDay,
+          todayBlockLog: [],
           customModeBlockAdjustment: newCeiling,
           midDayResetCompletedToday: false,
           flashcardsReviewedCount: 0,
@@ -425,19 +480,67 @@ export function App() {
     };
   }, []);
 
-  // Global Spacebar shortcut to start/pause the centerpiece Dual-Ring Timer
+  // 10-Second Undo Toast Expiration Countdown
+  useEffect(() => {
+    if (!undoToast) return;
+    const tick = () => {
+      const remainingMs = undoToast.expiresAtMs - Date.now();
+      if (remainingMs <= 0) {
+        setUndoToast(null);
+      } else {
+        setUndoSecondsLeft(Math.max(1, Math.ceil(remainingMs / 1000)));
+      }
+    };
+    tick();
+    const id = window.setInterval(tick, 250);
+    return () => window.clearInterval(id);
+  }, [undoToast]);
+
+  // Global Keyboard Shortcuts: Cmd/Ctrl + / for Planning Assistant, Cmd/Ctrl+J for Smart Intake, Cmd/Ctrl+Z for Undo, Spacebar to start/pause timer
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.code !== 'Space' || e.repeat) return;
+      if ((e.metaKey || e.ctrlKey) && e.key === '/') {
+        e.preventDefault();
+        triggerHaptic([12]);
+        setAssistantDrawerOpen((prev) => !prev);
+        return;
+      }
+
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'j') {
+        if (!pipelineDrawerOpen && activeTab !== 'PIPELINE') {
+          e.preventDefault();
+          setActiveTab('PIPELINE');
+          window.setTimeout(() => {
+            const el = document.getElementById(
+              'pipeline-intake-input'
+            ) as HTMLInputElement | null;
+            el?.focus();
+            el?.select();
+          }, 40);
+        }
+        return;
+      }
       const target = e.target as HTMLElement | null;
-      if (
+      const isEditableInput =
         target &&
         (target.tagName === 'INPUT' ||
           target.tagName === 'TEXTAREA' ||
           target.tagName === 'SELECT' ||
-          target.tagName === 'BUTTON' ||
-          target.isContentEditable)
-      ) {
+          target.isContentEditable);
+
+      // Cmd+Z / Ctrl+Z triggers Undo when not typing in an input
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+        if (isEditableInput) return;
+        if (undoStackRef.current.length > 0) {
+          e.preventDefault();
+          triggerHaptic([15, 30]);
+          handleTriggerUndo();
+        }
+        return;
+      }
+
+      if (e.code !== 'Space' || e.repeat) return;
+      if (isEditableInput || (target && target.tagName === 'BUTTON')) {
         return;
       }
       e.preventDefault();
@@ -464,7 +567,22 @@ export function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [activeTab, pipelineDrawerOpen, handleTriggerUndo]);
+
+  const handleApplySmartIntakePlan = (plan: SmartIntakePlanResult) => {
+    setState((prev) => {
+      pushUndoSnapshot(
+        prev,
+        `Applied Smart Intake Plan (${plan.todayLoadMode} • ${plan.closedListUpdates.length} Closed List items)`
+      );
+      return applySmartIntakePlanToState(prev, plan);
+    });
+    setSmartIntakePreview(null);
+    setSmartIntakeText('');
+    showNotice(
+      `Applied Smart Intake Plan: Today Mode → ${plan.todayLoadMode}, ${plan.closedListUpdates.length} Closed List items, ${plan.fixedEvents.length} Fixed Events.`
+    );
+  };
 
   // Dynamic browser document.title update while any timer is running
   useEffect(() => {
@@ -548,6 +666,82 @@ export function App() {
     });
   };
 
+  // Helper to debit Roadmap Input (50%) or Output (50%)
+  const debitRoadmapTrack = (
+    prevTracks: SymmetryState['roadmapTracks'],
+    trackId: string,
+    ledgerType: 'INPUT' | 'OUTPUT',
+    rungNumber: 1 | 2 | 3 | 4 = ledgerType === 'INPUT' ? 1 : 3
+  ) => {
+    return prevTracks.map((t) => {
+      if (t.id !== trackId) return t;
+      return {
+        ...t,
+        inputBlocksCredited:
+          ledgerType === 'INPUT'
+            ? Math.max(0, t.inputBlocksCredited - 1)
+            : t.inputBlocksCredited,
+        outputBlocksCredited:
+          ledgerType === 'OUTPUT'
+            ? Math.max(0, t.outputBlocksCredited - 1)
+            : t.outputBlocksCredited,
+        rungs: t.rungs.map((r) =>
+          r.rungNumber === rungNumber
+            ? { ...r, completedBlocks: Math.max(0, r.completedBlocks - 1) }
+            : r
+        ),
+      };
+    });
+  };
+
+  const baselineCategoryToLogCategory = (
+    cat: BaselineCategory
+  ): TodayBlockLogCategory => {
+    if (cat === 'FLASHCARDS_ANATOMY') return 'FLOOR_ANATOMY';
+    if (cat === 'FLASHCARDS_COMP') return 'FLOOR_COMP';
+    if (cat === 'SYNTHESIS') return 'FLOOR_SYNTHESIS';
+    return 'FLOOR_READING';
+  };
+
+  const logCategoryToBaselineCategory = (
+    cat: TodayBlockLogCategory
+  ): BaselineCategory | null => {
+    if (cat === 'FLOOR_ANATOMY') return 'FLASHCARDS_ANATOMY';
+    if (cat === 'FLOOR_COMP') return 'FLASHCARDS_COMP';
+    if (cat === 'FLOOR_READING') return 'READING';
+    if (cat === 'FLOOR_SYNTHESIS') return 'SYNTHESIS';
+    return null;
+  };
+
+  const createTodayLogEntry = (
+    prev: SymmetryState,
+    params: {
+      category: TodayBlockLogCategory;
+      title: string;
+      durationMinutes: number;
+      roadmapTrack: string;
+      stroke: 'INPUT' | 'OUTPUT';
+      sourceBlockId?: string;
+      stickyKey?: StickyKey;
+      rungNumber?: 1 | 2 | 3 | 4;
+    }
+  ): TodayBlockLogEntry => {
+    const now = new Date();
+    return {
+      id: `log_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: createLogTimestamp(now),
+      logicalDate: prev.logicalDayKey || getLogicalDayKey(now),
+      category: params.category,
+      title: params.title,
+      durationMinutes: params.durationMinutes,
+      roadmapTrack: params.roadmapTrack,
+      stroke: params.stroke,
+      sourceBlockId: params.sourceBlockId,
+      stickyKey: params.stickyKey,
+      rungNumber: params.rungNumber,
+    };
+  };
+
   // Complete a 20m work block and route to the appropriate Break level
   const handleCompleteWorkBlockTransition = (prev: SymmetryState): SymmetryState => {
     const matchingBaseline = prev.baselineBlocks.find(
@@ -558,17 +752,31 @@ export function App() {
     let updatedDiscretionary = prev.discretionaryBlocksCompletedToday;
     let updatedProjects = prev.projectQueue;
     let updatedTracks = prev.roadmapTracks;
+    let newLogEntry: TodayBlockLogEntry;
 
     if (matchingBaseline) {
       updatedBaseline = prev.baselineBlocks.map((b) =>
         b.id === matchingBaseline.id ? { ...b, completed: true } : b
       );
+      const stroke: 'INPUT' | 'OUTPUT' =
+        matchingBaseline.category === 'SYNTHESIS' ? 'OUTPUT' : 'INPUT';
+      const rungNum: 1 | 2 | 3 | 4 =
+        matchingBaseline.category === 'SYNTHESIS' ? 2 : 1;
       updatedTracks = creditRoadmapTrack(
         updatedTracks,
         matchingBaseline.trackId,
-        matchingBaseline.category === 'SYNTHESIS' ? 'OUTPUT' : 'INPUT',
-        matchingBaseline.category === 'SYNTHESIS' ? 2 : 1
+        stroke,
+        rungNum
       );
+      newLogEntry = createTodayLogEntry(prev, {
+        category: baselineCategoryToLogCategory(matchingBaseline.category),
+        title: matchingBaseline.title,
+        durationMinutes: 20,
+        roadmapTrack: matchingBaseline.trackId,
+        stroke,
+        sourceBlockId: matchingBaseline.id,
+        rungNumber: rungNum,
+      });
     } else {
       updatedDiscretionary += 1;
       updatedProjects = prev.projectQueue.map((p) =>
@@ -579,12 +787,28 @@ export function App() {
             }
           : p
       );
-      const primaryTrack = prev.projectQueue[0]?.trackId || 'writing';
+      const primaryProj = prev.projectQueue[0];
+      const primaryTrack = primaryProj?.trackId || 'writing';
       updatedTracks = creditRoadmapTrack(updatedTracks, primaryTrack, 'OUTPUT', 3);
+      newLogEntry = createTodayLogEntry(prev, {
+        category: 'PROJECT_FOCUS_1',
+        title: primaryProj?.title || prev.timer.activeTaskTitle,
+        durationMinutes: 20,
+        roadmapTrack: primaryTrack,
+        stroke: 'OUTPUT',
+        sourceBlockId: primaryProj?.id,
+        rungNumber: 3,
+      });
     }
+
+    pushUndoSnapshot(
+      prev,
+      `Block Logged: ${newLogEntry.title} (${newLogEntry.durationMinutes}m)`
+    );
 
     const nextCandidate: SymmetryState = {
       ...prev,
+      todayBlockLog: [...(prev.todayBlockLog || []), newLogEntry],
       baselineBlocks: updatedBaseline,
       discretionaryBlocksCompletedToday: updatedDiscretionary,
       projectQueue: updatedProjects,
@@ -880,6 +1104,7 @@ export function App() {
             }
           } else {
             changed = true;
+            pushUndoSnapshot(prev, 'Block Logged: 5m Flashcard Recovery (5m)');
             dispatchLockScreenAlert(
               'WORK_BLOCK_COMPLETE',
               '5m Flashcard Recovery Block Complete',
@@ -898,6 +1123,15 @@ export function App() {
               'INPUT',
               1
             );
+            const recLogEntry = createTodayLogEntry(prev, {
+              category: 'FLOOR_COMP',
+              title: 'Stress Triage — 5m Flashcard Recovery Ramp',
+              durationMinutes: 5,
+              roadmapTrack: 'science',
+              stroke: 'INPUT',
+              rungNumber: 1,
+            });
+            next.todayBlockLog = [...(prev.todayBlockLog ?? []), recLogEntry];
           }
         }
 
@@ -969,6 +1203,10 @@ export function App() {
           } else {
             changed = true;
             const windows = prev.recharge.option0ConsecutiveWindows + 1;
+            pushUndoSnapshot(
+              prev,
+              `Block Logged: Option 0 Stillness (${windows}/2) (20m)`
+            );
             dispatchLockScreenAlert(
               'WORK_BLOCK_COMPLETE',
               'Option 0 Stillness Window Complete',
@@ -982,6 +1220,15 @@ export function App() {
               option0ConsecutiveWindows: windows,
               forkCheckModalOpen: windows >= 2,
             };
+            const optLogEntry = createTodayLogEntry(prev, {
+              category: 'EVENING_RECHARGE',
+              title: `Option 0 — Rest / Stillness Window (${windows}/2)`,
+              durationMinutes: 20,
+              roadmapTrack: 'personal',
+              stroke: 'INPUT',
+              rungNumber: 1,
+            });
+            next.todayBlockLog = [...(prev.todayBlockLog ?? []), optLogEntry];
           }
         }
 
@@ -1036,6 +1283,7 @@ export function App() {
     state.recharge.flowExtensionRunning,
     state.recharge.option0Running,
     state.recharge.categoryRunning,
+    pushUndoSnapshot,
   ]);
 
   // Handlers for Tab 1 (Focus Pipeline)
@@ -1127,22 +1375,58 @@ export function App() {
       const target = prev.baselineBlocks.find((b) => b.id === blockId);
       if (!target) return prev;
       const nextCompleted = !target.completed;
+      const stroke: 'INPUT' | 'OUTPUT' =
+        target.category === 'SYNTHESIS' ? 'OUTPUT' : 'INPUT';
+      const rungNum: 1 | 2 | 3 | 4 = target.category === 'SYNTHESIS' ? 2 : 1;
+
       const updatedBaseline = prev.baselineBlocks.map((b) =>
         b.id === blockId
           ? { ...b, completed: nextCompleted, bankedViaEarlyClearance: false }
           : b
       );
+
       let updatedTracks = prev.roadmapTracks;
+      let updatedLog = prev.todayBlockLog || [];
+
       if (nextCompleted) {
         updatedTracks = creditRoadmapTrack(
           updatedTracks,
           target.trackId,
-          target.category === 'SYNTHESIS' ? 'OUTPUT' : 'INPUT',
-          target.category === 'SYNTHESIS' ? 2 : 1
+          stroke,
+          rungNum
         );
+        const newEntry = createTodayLogEntry(prev, {
+          category: baselineCategoryToLogCategory(target.category),
+          title: target.title,
+          durationMinutes: 20,
+          roadmapTrack: target.trackId,
+          stroke,
+          sourceBlockId: target.id,
+          rungNumber: rungNum,
+        });
+        updatedLog = [...updatedLog, newEntry];
+        pushUndoSnapshot(prev, `Block Logged: ${target.title} (20m)`);
+      } else {
+        updatedTracks = debitRoadmapTrack(
+          updatedTracks,
+          target.trackId,
+          stroke,
+          rungNum
+        );
+        // Remove the most recent log entry for this baseline block
+        const reverseIdx = [...updatedLog]
+          .reverse()
+          .findIndex((e) => e.sourceBlockId === target.id);
+        if (reverseIdx !== -1) {
+          const removeIdx = updatedLog.length - 1 - reverseIdx;
+          updatedLog = updatedLog.filter((_, idx) => idx !== removeIdx);
+        }
+        pushUndoSnapshot(prev, `Baseline Pill Unchecked: ${target.title} (20m)`);
       }
+
       return {
         ...prev,
+        todayBlockLog: updatedLog,
         baselineBlocks: updatedBaseline,
         roadmapTracks: updatedTracks,
       };
@@ -1161,6 +1445,12 @@ export function App() {
           bankedViaEarlyClearance: nextEnabled,
         };
       });
+      pushUndoSnapshot(
+        prev,
+        nextEnabled
+          ? 'Early Clearance Enabled: Unused Flashcards Banked'
+          : 'Early Clearance Disabled: Flashcard Blocks Restored'
+      );
       return {
         ...prev,
         earlyClearanceEnabled: nextEnabled,
@@ -1218,14 +1508,417 @@ export function App() {
         'OUTPUT',
         3
       );
+      const newEntry = createTodayLogEntry(prev, {
+        category: 'PROJECT_FOCUS_1',
+        title: primary.title,
+        durationMinutes: 20,
+        roadmapTrack: primary.trackId,
+        stroke: 'OUTPUT',
+        sourceBlockId: primary.id,
+        rungNumber: 3,
+      });
+      pushUndoSnapshot(prev, `Block Logged: ${primary.title} (20m)`);
       return {
         ...prev,
+        todayBlockLog: [...(prev.todayBlockLog || []), newEntry],
         discretionaryBlocksCompletedToday: prev.discretionaryBlocksCompletedToday + 1,
         projectQueue: updatedQueue,
         roadmapTracks: updatedTracks,
       };
     });
     showNotice('Logged +1 discretionary project block on Item #1 (Credited to Output).');
+  };
+
+  // Handlers for Today's Log Slide-Over Drawer (Reassign, Edit Title, Delete, + Manual Block)
+  const handleReassignLogEntryCategory = (
+    entryId: string,
+    newCategory: TodayBlockLogCategory
+  ) => {
+    setState((prev) => {
+      const entries = prev.todayBlockLog || [];
+      const target = entries.find((e) => e.id === entryId);
+      if (!target || target.category === newCategory) return prev;
+
+      const oldBaselineCat = logCategoryToBaselineCategory(target.category);
+      const newBaselineCat = logCategoryToBaselineCategory(newCategory);
+
+      let updatedBaseline = [...prev.baselineBlocks];
+      let updatedDiscretionary = prev.discretionaryBlocksCompletedToday;
+      let updatedProjects = [...prev.projectQueue];
+      let updatedTracks = [...prev.roadmapTracks];
+
+      // 1. Reverse old category state & Roadmap credit
+      if (oldBaselineCat) {
+        const oldBlock =
+          updatedBaseline.find(
+            (b) => b.id === target.sourceBlockId && b.completed
+          ) ||
+          updatedBaseline.find(
+            (b) => b.category === oldBaselineCat && b.completed
+          );
+        if (oldBlock) {
+          updatedBaseline = updatedBaseline.map((b) =>
+            b.id === oldBlock.id ? { ...b, completed: false } : b
+          );
+        }
+        updatedTracks = debitRoadmapTrack(
+          updatedTracks,
+          target.roadmapTrack,
+          target.stroke,
+          target.rungNumber || (target.stroke === 'OUTPUT' ? 2 : 1)
+        );
+      } else if (target.category === 'PROJECT_FOCUS_1') {
+        updatedDiscretionary = Math.max(0, updatedDiscretionary - 1);
+        updatedProjects = updatedProjects.map((p) =>
+          p.slot === 1
+            ? { ...p, completedBlocks: Math.max(0, p.completedBlocks - 1) }
+            : p
+        );
+        updatedTracks = debitRoadmapTrack(
+          updatedTracks,
+          target.roadmapTrack,
+          target.stroke,
+          target.rungNumber || 3
+        );
+      }
+
+      // 2. Apply new category state & Roadmap credit (preserving 20m daily ceiling credit)
+      let nextSourceBlockId: string | undefined;
+      let nextTrack: TrackId = 'science';
+      let nextStroke: 'INPUT' | 'OUTPUT' = 'INPUT';
+      let nextRung: 1 | 2 | 3 | 4 = 1;
+      let nextTitle = target.title;
+
+      if (newBaselineCat) {
+        const candidateBlock =
+          updatedBaseline.find(
+            (b) => b.category === newBaselineCat && !b.completed
+          ) || updatedBaseline.find((b) => b.category === newBaselineCat);
+
+        if (candidateBlock && !candidateBlock.completed) {
+          updatedBaseline = updatedBaseline.map((b) =>
+            b.id === candidateBlock.id
+              ? { ...b, completed: true, bankedViaEarlyClearance: false }
+              : b
+          );
+          nextSourceBlockId = candidateBlock.id;
+          nextTrack = candidateBlock.trackId;
+          nextStroke =
+            candidateBlock.category === 'SYNTHESIS' ? 'OUTPUT' : 'INPUT';
+          nextRung = candidateBlock.category === 'SYNTHESIS' ? 2 : 1;
+          nextTitle = candidateBlock.title;
+        } else {
+          // All baseline slots in that category are already marked complete; preserve 20m ceiling credit via discretionary count
+          updatedDiscretionary += 1;
+          nextTrack = newBaselineCat === 'SYNTHESIS' ? 'writing' : 'science';
+          nextStroke = newBaselineCat === 'SYNTHESIS' ? 'OUTPUT' : 'INPUT';
+          nextRung = newBaselineCat === 'SYNTHESIS' ? 2 : 1;
+        }
+        updatedTracks = creditRoadmapTrack(
+          updatedTracks,
+          nextTrack,
+          nextStroke,
+          nextRung
+        );
+      } else if (newCategory === 'PROJECT_FOCUS_1') {
+        updatedDiscretionary += 1;
+        const primary = updatedProjects[0];
+        if (primary) {
+          updatedProjects = updatedProjects.map((p) =>
+            p.slot === 1
+              ? {
+                  ...p,
+                  completedBlocks: Math.min(
+                    p.totalBlocks,
+                    p.completedBlocks + 1
+                  ),
+                }
+              : p
+          );
+          nextSourceBlockId = primary.id;
+          nextTrack = primary.trackId;
+          nextTitle = primary.title;
+        } else {
+          nextTrack = 'writing';
+        }
+        nextStroke = 'OUTPUT';
+        nextRung = 3;
+        updatedTracks = creditRoadmapTrack(
+          updatedTracks,
+          nextTrack,
+          nextStroke,
+          nextRung
+        );
+      }
+
+      pushUndoSnapshot(
+        prev,
+        `Reassigned Block: ${target.title} → ${newCategory} (20m)`
+      );
+
+      const updatedEntries = entries.map((e) =>
+        e.id === entryId
+          ? {
+              ...e,
+              category: newCategory,
+              title: nextTitle,
+              roadmapTrack: nextTrack,
+              stroke: nextStroke,
+              sourceBlockId: nextSourceBlockId,
+              rungNumber: nextRung,
+            }
+          : e
+      );
+
+      return {
+        ...prev,
+        todayBlockLog: updatedEntries,
+        baselineBlocks: updatedBaseline,
+        discretionaryBlocksCompletedToday: updatedDiscretionary,
+        projectQueue: updatedProjects,
+        roadmapTracks: updatedTracks,
+      };
+    });
+  };
+
+  const handleEditLogEntryTitle = (entryId: string, newTitle: string) => {
+    setState((prev) => {
+      const entries = prev.todayBlockLog || [];
+      const target = entries.find((e) => e.id === entryId);
+      if (!target) return prev;
+      pushUndoSnapshot(prev, `Edited Block Title: ${newTitle}`);
+      return {
+        ...prev,
+        todayBlockLog: entries.map((e) =>
+          e.id === entryId ? { ...e, title: newTitle } : e
+        ),
+      };
+    });
+  };
+
+  const handleDeleteLogEntry = (entryId: string) => {
+    setState((prev) => {
+      const entries = prev.todayBlockLog || [];
+      const target = entries.find((e) => e.id === entryId);
+      if (!target) return prev;
+
+      let updatedBaseline = [...prev.baselineBlocks];
+      let updatedDiscretionary = prev.discretionaryBlocksCompletedToday;
+      let updatedProjects = [...prev.projectQueue];
+      let updatedTracks = [...prev.roadmapTracks];
+      let updatedRecharge = { ...prev.recharge };
+      let updatedPipelineDays = [...prev.pipelineDays];
+
+      const baselineCat = logCategoryToBaselineCategory(target.category);
+      if (baselineCat) {
+        const matchingBlock =
+          updatedBaseline.find(
+            (b) => b.id === target.sourceBlockId && b.completed
+          ) ||
+          updatedBaseline.find(
+            (b) => b.category === baselineCat && b.completed
+          );
+        if (matchingBlock) {
+          updatedBaseline = updatedBaseline.map((b) =>
+            b.id === matchingBlock.id ? { ...b, completed: false } : b
+          );
+        } else {
+          updatedDiscretionary = Math.max(0, updatedDiscretionary - 1);
+        }
+      } else if (target.category === 'PROJECT_FOCUS_1') {
+        updatedDiscretionary = Math.max(0, updatedDiscretionary - 1);
+        updatedProjects = updatedProjects.map((p) =>
+          p.slot === 1
+            ? { ...p, completedBlocks: Math.max(0, p.completedBlocks - 1) }
+            : p
+        );
+      } else if (target.category === 'FLOW_EXTENSION') {
+        const nextExtCount = Math.max(
+          0,
+          updatedRecharge.flowExtensionBlocksLoggedToday - 1
+        );
+        const deducted =
+          nextExtCount >= 3 ? 2 : nextExtCount >= 2 ? 1 : 0;
+        updatedRecharge = {
+          ...updatedRecharge,
+          flowExtensionBlocksLoggedToday: nextExtCount,
+        };
+        updatedPipelineDays = updatedPipelineDays.map((d, idx) =>
+          idx === 1 ? { ...d, deductedBlocksFromExtension: deducted } : d
+        );
+      } else if (target.category === 'EVENING_RECHARGE' && target.stickyKey) {
+        const slot = updatedRecharge.stickySlots[target.stickyKey];
+        if (slot) {
+          const nextStarts = Math.max(0, slot.fiveMinStarts - 1);
+          updatedRecharge = {
+            ...updatedRecharge,
+            stickySlots: {
+              ...updatedRecharge.stickySlots,
+              [target.stickyKey]: {
+                ...slot,
+                fiveMinStarts: nextStarts,
+                startsLogged: nextStarts,
+              },
+            },
+          };
+        }
+      }
+
+      if (target.roadmapTrack) {
+        updatedTracks = debitRoadmapTrack(
+          updatedTracks,
+          target.roadmapTrack,
+          target.stroke,
+          target.rungNumber || (target.stroke === 'OUTPUT' ? 3 : 1)
+        );
+      }
+
+      pushUndoSnapshot(
+        prev,
+        `Deleted Log Entry: ${target.title} (${target.durationMinutes}m)`
+      );
+
+      return {
+        ...prev,
+        todayBlockLog: entries.filter((e) => e.id !== entryId),
+        baselineBlocks: updatedBaseline,
+        discretionaryBlocksCompletedToday: updatedDiscretionary,
+        projectQueue: updatedProjects,
+        roadmapTracks: updatedTracks,
+        recharge: updatedRecharge,
+        pipelineDays: updatedPipelineDays,
+      };
+    });
+  };
+
+  const handleAddManualBlock = (
+    category: TodayBlockLogCategory,
+    title: string,
+    durationMinutes: number
+  ) => {
+    setState((prev) => {
+      let updatedBaseline = [...prev.baselineBlocks];
+      let updatedDiscretionary = prev.discretionaryBlocksCompletedToday;
+      let updatedProjects = [...prev.projectQueue];
+      let updatedTracks = [...prev.roadmapTracks];
+      let updatedRecharge = { ...prev.recharge };
+      let updatedPipelineDays = [...prev.pipelineDays];
+
+      let sourceBlockId: string | undefined;
+      let trackId: TrackId = 'science';
+      let stroke: 'INPUT' | 'OUTPUT' = 'INPUT';
+      let rungNumber: 1 | 2 | 3 | 4 = 1;
+
+      const baselineCat = logCategoryToBaselineCategory(category);
+      if (baselineCat) {
+        const candidate = updatedBaseline.find(
+          (b) => b.category === baselineCat && !b.completed
+        );
+        if (candidate) {
+          updatedBaseline = updatedBaseline.map((b) =>
+            b.id === candidate.id
+              ? { ...b, completed: true, bankedViaEarlyClearance: false }
+              : b
+          );
+          sourceBlockId = candidate.id;
+          trackId = candidate.trackId;
+        } else {
+          updatedDiscretionary += 1;
+          trackId = baselineCat === 'SYNTHESIS' ? 'writing' : 'science';
+        }
+        stroke = baselineCat === 'SYNTHESIS' ? 'OUTPUT' : 'INPUT';
+        rungNumber = baselineCat === 'SYNTHESIS' ? 2 : 1;
+        updatedTracks = creditRoadmapTrack(
+          updatedTracks,
+          trackId,
+          stroke,
+          rungNumber
+        );
+      } else if (category === 'PROJECT_FOCUS_1') {
+        updatedDiscretionary += 1;
+        const primary = updatedProjects[0];
+        if (primary) {
+          updatedProjects = updatedProjects.map((p) =>
+            p.slot === 1
+              ? {
+                  ...p,
+                  completedBlocks: Math.min(
+                    p.totalBlocks,
+                    p.completedBlocks + 1
+                  ),
+                }
+              : p
+          );
+          sourceBlockId = primary.id;
+          trackId = primary.trackId;
+        } else {
+          trackId = 'writing';
+        }
+        stroke = 'OUTPUT';
+        rungNumber = 3;
+        updatedTracks = creditRoadmapTrack(
+          updatedTracks,
+          trackId,
+          stroke,
+          rungNumber
+        );
+      } else if (category === 'FLOW_EXTENSION') {
+        const nextExt = updatedRecharge.flowExtensionBlocksLoggedToday + 1;
+        const deducted = nextExt >= 3 ? 2 : nextExt >= 2 ? 1 : 0;
+        updatedRecharge = {
+          ...updatedRecharge,
+          flowExtensionBlocksLoggedToday: nextExt,
+        };
+        updatedPipelineDays = updatedPipelineDays.map((d, idx) =>
+          idx === 1 ? { ...d, deductedBlocksFromExtension: deducted } : d
+        );
+        trackId = updatedProjects[0]?.trackId || 'writing';
+        stroke = 'OUTPUT';
+        rungNumber = 3;
+        updatedTracks = creditRoadmapTrack(
+          updatedTracks,
+          trackId,
+          stroke,
+          rungNumber
+        );
+      } else {
+        trackId = 'writing';
+        stroke = 'INPUT';
+        rungNumber = 1;
+        updatedTracks = creditRoadmapTrack(
+          updatedTracks,
+          trackId,
+          stroke,
+          rungNumber
+        );
+      }
+
+      const newEntry = createTodayLogEntry(prev, {
+        category,
+        title,
+        durationMinutes,
+        roadmapTrack: trackId,
+        stroke,
+        sourceBlockId,
+        rungNumber,
+      });
+
+      pushUndoSnapshot(
+        prev,
+        `Block Logged: ${title} (${durationMinutes}m)`
+      );
+
+      return {
+        ...prev,
+        todayBlockLog: [...(prev.todayBlockLog || []), newEntry],
+        baselineBlocks: updatedBaseline,
+        discretionaryBlocksCompletedToday: updatedDiscretionary,
+        projectQueue: updatedProjects,
+        roadmapTracks: updatedTracks,
+        recharge: updatedRecharge,
+        pipelineDays: updatedPipelineDays,
+      };
+    });
   };
 
   // One-Tap Backlog Promotion & Completed Ledger Archive on Closed List Focus #1
@@ -1259,7 +1952,7 @@ export function App() {
         });
       }
 
-      const logDate = getLogicalDayKey();
+      const logDate = prev.logicalDayKey || getLogicalDayKey();
       const recordedBlocks = completedItem
         ? Math.max(1, completedItem.completedBlocks || completedItem.totalBlocks)
         : 4;
@@ -1270,6 +1963,7 @@ export function App() {
             title: completedItem.title,
             date: logDate,
             completedDate: logDate,
+            completedAt: logDate,
             blockCount: recordedBlocks,
             blocksCompleted: recordedBlocks,
             totalBlocks: completedItem.totalBlocks,
@@ -1282,9 +1976,19 @@ export function App() {
         ? [newLedgerEntry, ...(prev.completedDeliverablesLog ?? [])]
         : prev.completedDeliverablesLog ?? [];
 
+      const prevArchive = prev.completedDeliverablesArchive || [];
+      const nextArchive = newLedgerEntry
+        ? [newLedgerEntry, ...prevArchive]
+        : prevArchive;
+
       const updatedTracks = completedItem
         ? creditRoadmapTrack(prev.roadmapTracks, completedItem.trackId, 'OUTPUT', 4)
         : prev.roadmapTracks;
+
+      pushUndoSnapshot(
+        prev,
+        `Completed Deliverable #1: ${completedItem?.title || 'Item #1'}`
+      );
 
       return {
         ...prev,
@@ -1292,6 +1996,7 @@ export function App() {
         projectBacklog: restBacklog,
         openListBacklog: restBacklog,
         completedDeliverablesLog: updatedLedger,
+        completedDeliverablesArchive: nextArchive,
         roadmapTracks: updatedTracks,
       };
     });
@@ -1351,6 +2056,212 @@ export function App() {
     showNotice(`Added "${title}" to Active Project Queue.`);
   };
 
+  const handlePromoteDeliverableWithSurge = (
+    title: string,
+    presetType: ProjectPresetType,
+    totalBlocks: number,
+    trackId: TrackId,
+    startupStep: string
+  ) => {
+    setState((prev) => {
+      const newItem = {
+        id: `proj_${Date.now()}`,
+        slot: 1 as 1 | 2 | 3,
+        title,
+        presetType,
+        completedBlocks: 0,
+        totalBlocks,
+        trackId,
+        startupStep,
+        nextStepNote: 'Promoted via Option A (Hard Deadline) with Surge blocks.',
+      };
+
+      const combined = [newItem, ...prev.projectQueue];
+      const nextQueue = combined.slice(0, 3).map((item, idx) => ({
+        ...item,
+        slot: (idx + 1) as 1 | 2 | 3,
+      }));
+      const displaced = combined.slice(3).map(({ slot: _slot, ...rest }) => rest);
+      const canSurge = prev.surgeConsecutiveDays < 2 || prev.loadMode === 'SURGE';
+      const nextMode: LoadMode = canSurge ? 'SURGE' : prev.loadMode;
+      const nextCeiling = canSurge ? 14 : prev.customModeBlockAdjustment;
+      const nextBacklog = [...displaced, ...(prev.openListBacklog ?? prev.projectBacklog)];
+
+      return {
+        ...prev,
+        loadMode: nextMode,
+        cruisePlus: false,
+        customModeBlockAdjustment: nextCeiling,
+        projectQueue: nextQueue,
+        projectBacklog: nextBacklog,
+        openListBacklog: nextBacklog,
+        pipelineDays: prev.pipelineDays.map((d) =>
+          d.isToday
+            ? {
+                ...d,
+                loadMode: nextMode,
+                cruisePlus: false,
+                baseTargetBlocks: nextCeiling,
+              }
+            : d
+        ),
+      };
+    });
+    showNotice(
+      `Option A applied: Promoted "${title}" to Closed List #1 and scheduled Surge blocks.`
+    );
+  };
+
+  const handleDemoteDeliverableToBacklog = (
+    title: string,
+    presetType: ProjectPresetType,
+    totalBlocks: number,
+    trackId: TrackId,
+    startupStep: string
+  ) => {
+    setState((prev) => {
+      const newBacklog = [
+        ...(prev.openListBacklog ?? prev.projectBacklog),
+        {
+          id: `proj_${Date.now()}`,
+          title,
+          presetType,
+          completedBlocks: 0,
+          totalBlocks,
+          trackId,
+          startupStep,
+          nextStepNote: 'Demoted to Open List backlog to preserve Cruise Mode.',
+        },
+      ];
+      return {
+        ...prev,
+        projectBacklog: newBacklog,
+        openListBacklog: newBacklog,
+      };
+    });
+    showNotice(
+      `Option B applied: Added "${title}" to Open List Backlog (Cruise Mode & Closed List preserved).`
+    );
+  };
+
+  const handleRecalibrateStepDownTier = () => {
+    setState((prev) => {
+      if (prev.loadMode === 'SURGE') {
+        return {
+          ...prev,
+          loadMode: 'CRUISE',
+          cruisePlus: false,
+          customModeBlockAdjustment: 12,
+          pipelineDays: prev.pipelineDays.map((d) =>
+            d.isToday
+              ? { ...d, loadMode: 'CRUISE', cruisePlus: false, baseTargetBlocks: 12 }
+              : d
+          ),
+        };
+      }
+      if (prev.loadMode === 'CRUISE') {
+        return {
+          ...prev,
+          loadMode: 'TAPER',
+          cruisePlus: false,
+          customModeBlockAdjustment: 8,
+          pipelineDays: prev.pipelineDays.map((d) =>
+            d.isToday
+              ? { ...d, loadMode: 'TAPER', cruisePlus: false, baseTargetBlocks: 8 }
+              : d
+          ),
+        };
+      }
+      // Already in TAPER -> step down to 7-block Core Floor + Early Clearance banking
+      return {
+        ...prev,
+        loadMode: 'TAPER',
+        cruisePlus: false,
+        customModeBlockAdjustment: 7,
+        earlyClearanceEnabled: true,
+        baselineBlocks: prev.baselineBlocks.map((b) => {
+          const isFc =
+            b.category === 'FLASHCARDS_ANATOMY' || b.category === 'FLASHCARDS_COMP';
+          if (!isFc || b.completed) return b;
+          return { ...b, bankedViaEarlyClearance: true };
+        }),
+      };
+    });
+    showNotice('Recalibrated Remainder of Day (Option A): Stepped down one Load Mode tier.');
+  };
+
+  const handleRecalibrateReSequenceNow = () => {
+    setState((prev) => {
+      const steps = generateSequentialChecklist(prev);
+      const nextWorkStep = steps.find(
+        (s) => s.kind === 'WORK_BLOCK' && !s.completed && !s.banked
+      );
+      return {
+        ...prev,
+        timer: {
+          ...prev.timer,
+          mode: 'WORK_20M',
+          workStage: 'IGNITION_5M',
+          secondsLeft: 300,
+          targetEndTimeMs: null,
+          isRunning: false,
+          chainedBlocksCount: 0,
+          activeBlockSourceId:
+            nextWorkStep?.sourceId || prev.timer.activeBlockSourceId,
+          activeTaskTitle: nextWorkStep?.title || prev.timer.activeTaskTitle,
+          activeTaskType: nextWorkStep?.taskType || prev.timer.activeTaskType,
+          activeStartupPrompt:
+            nextWorkStep?.startupStep || prev.timer.activeStartupPrompt,
+        },
+      };
+    });
+    showNotice(
+      'Recalibrated Remainder of Day (Option B): Re-sequenced remaining blocks starting now.'
+    );
+  };
+
+  const handleLaunchBreakStepInTimer = (
+    breakMode: 'BREAK_L1' | 'BREAK_L2' | 'BREAK_L3'
+  ) => {
+    const now = Date.now();
+    setState((prev) => {
+      const durationSec =
+        breakMode === 'BREAK_L1'
+          ? prev.timer.l1DurationMinutes * 60
+          : breakMode === 'BREAK_L2'
+          ? prev.timer.l2DurationMinutes * 60
+          : prev.timer.l3DurationMinutes * 60;
+      return {
+        ...prev,
+        timer: {
+          ...prev.timer,
+          mode: breakMode,
+          secondsLeft: durationSec,
+          targetEndTimeMs: now + durationSec * 1000,
+          isRunning: true,
+          chainedBlocksCount: breakMode === 'BREAK_L1' ? 2 : 0,
+        },
+      };
+    });
+    setActiveTab('TIMER');
+    showNotice(`Launched ${breakMode} timer from Sequential Checklist.`);
+  };
+
+  const handleApplyStatePatch = (
+    patch: Partial<SymmetryState>,
+    summary: string
+  ) => {
+    setState((prev) => ({
+      ...prev,
+      ...patch,
+      timer: patch.timer ? { ...prev.timer, ...patch.timer } : prev.timer,
+      recharge: patch.recharge
+        ? { ...prev.recharge, ...patch.recharge }
+        : prev.recharge,
+    }));
+    showNotice(`AI Planning Assistant applied statePatch: ${summary}`);
+  };
+
   // Interactive 7-Day Master Pipeline Day updater
   const handleUpdatePipelineDay = (dayIndex: number, patch: Partial<PipelineDay>) => {
     setState((prev) => {
@@ -1358,7 +2269,6 @@ export function App() {
         d.dayIndex === dayIndex ? { ...d, ...patch } : d
       );
       const todayPatch = dayIndex === 1 ? patch : {};
-      // Count consecutive Surge days leading into or including Today
       let maxConsecutiveSurge = prev.surgeConsecutiveDays;
       if (patch.loadMode) {
         let streak = 0;
@@ -1383,132 +2293,6 @@ export function App() {
         pipelineDays: updatedDays,
       };
     });
-  };
-
-  // Smart Intake Bar brain-dump & voice command parser
-  const handleSmartIntakeSubmit = (rawText: string) => {
-    const cleaned = rawText.trim();
-    if (!cleaned) return;
-    const lower = cleaned.toLowerCase();
-    const now = Date.now();
-
-    if (
-      lower.includes('stress reset') ||
-      lower.includes('4-7-8') ||
-      lower.includes('fatigue reset')
-    ) {
-      setState((prev) => ({
-        ...prev,
-        timer: {
-          ...prev.timer,
-          mode: 'STRESS_RESET',
-          stressProtocol: 'BREATHING_478',
-          stressDurationMinutes: 15,
-          secondsLeft: 900,
-          targetEndTimeMs: now + 900 * 1000,
-          isRunning: true,
-        },
-      }));
-      setActiveTab('TIMER');
-      showNotice('Smart Intake: Started 15m 4-7-8 Stress Reset.');
-      return;
-    }
-
-    if (lower.includes('pre-exam taper') || lower.includes('exam taper')) {
-      handleTogglePreExamTaper(true);
-      return;
-    }
-
-    if (lower.includes('evening recharge') || lower === 'evening') {
-      setActiveTab('RECHARGE');
-      showNotice('Smart Intake: Switched to Evening Recharge Menu.');
-      return;
-    }
-
-    if (lower.includes('start 5m') || lower === 'start timer') {
-      setState((prev) => ({
-        ...prev,
-        timer: {
-          ...prev.timer,
-          mode: 'WORK_20M',
-          workStage: 'IGNITION_5M',
-          secondsLeft: 300,
-          targetEndTimeMs: now + 300 * 1000,
-          isRunning: true,
-        },
-      }));
-      showNotice('Smart Intake: Started 5m Startup Step (IGNITION_5M).');
-      return;
-    }
-
-    // Parse as deliverable / backlog item
-    const isSlide =
-      lower.includes('slide') || lower.includes('deck') || lower.includes('4 block');
-    const preset: ProjectPresetType = isSlide ? 'SLIDES_4' : 'PAPER_8';
-    const blocks = isSlide ? 4 : 8;
-    const track: TrackId =
-      lower.includes('anat') ||
-      lower.includes('comp') ||
-      lower.includes('lab') ||
-      lower.includes('clinical') ||
-      lower.includes('renal') ||
-      lower.includes('exam')
-        ? 'science'
-        : lower.includes('home') || lower.includes('personal')
-        ? 'personal'
-        : 'writing';
-    const startupStep = isSlide
-      ? 'Create 4 slide headers and bullet key takeaway on Slide 1.'
-      : 'Open document, outline 3 headings, and write first 3 sentences.';
-
-    setState((prev) => {
-      if (prev.projectQueue.length < 3) {
-        const newSlot = (prev.projectQueue.length + 1) as 1 | 2 | 3;
-        return {
-          ...prev,
-          projectQueue: [
-            ...prev.projectQueue,
-            {
-              id: `proj_${Date.now()}`,
-              slot: newSlot,
-              title: cleaned,
-              presetType: preset,
-              completedBlocks: 0,
-              totalBlocks: blocks,
-              trackId: track,
-              startupStep,
-              nextStepNote:
-                newSlot === 1
-                  ? 'Active primary target.'
-                  : 'Locked until Item #1 completes.',
-            },
-          ],
-        };
-      }
-      const newBacklogItem = {
-        id: `backlog_${Date.now()}`,
-        title: cleaned,
-        presetType: preset,
-        completedBlocks: 0,
-        totalBlocks: blocks,
-        trackId: track,
-        startupStep,
-        nextStepNote: 'Captured via Smart Intake into Open List Backlog.',
-      };
-      const updatedBacklog = [
-        ...(prev.openListBacklog ?? prev.projectBacklog),
-        newBacklogItem,
-      ];
-      return {
-        ...prev,
-        projectBacklog: updatedBacklog,
-        openListBacklog: updatedBacklog,
-      };
-    });
-
-    showNotice(
-      `Smart Intake parsed "${cleaned}" (${blocks} blocks • ${track.toUpperCase()}) into pipeline.`
-    );
   };
 
   // Document Picture-in-Picture API (width: 260, height: 110) with Floating Corner Fallback
@@ -1700,11 +2484,16 @@ export function App() {
           state={state}
           activeTab={activeTab}
           onSelectTab={setActiveTab}
+          onOpenTodayLogDrawer={() => setTodayLogDrawerOpen(true)}
           onOpenPipelineDrawer={() => setPipelineDrawerOpen(true)}
           onOpenStateModal={() => {
+            setGeminiApiKeyInput(getStoredGeminiApiKey());
             setStateIoText(serializeToStateMarkdown(state));
             setStateModalOpen(true);
           }}
+          onToggleAssistantDrawer={() =>
+            setAssistantDrawerOpen((prev) => !prev)
+          }
           onToggleZeroWorkSimulation={handleToggleZeroWorkSimulation}
           onResetDefault={() => {
             setState(DEFAULT_SYMMETRY_STATE);
@@ -1741,6 +2530,17 @@ export function App() {
           {activeTab === 'PIPELINE' && (
             <Tab1Pipeline
               state={state}
+              smartIntakeText={smartIntakeText}
+              onChangeSmartIntakeText={setSmartIntakeText}
+              smartIntakePreview={smartIntakePreview}
+              onSetSmartIntakePreview={setSmartIntakePreview}
+              onApplySmartIntakePlan={handleApplySmartIntakePlan}
+              onOpenStateModal={() => {
+                setGeminiApiKeyInput(getStoredGeminiApiKey());
+                setStateIoText(serializeToStateMarkdown(state));
+                setStateModalOpen(true);
+              }}
+              apiKeyVersion={apiKeyVersion}
               onSelectLoadMode={handleSelectLoadMode}
               onTogglePreExamTaper={handleTogglePreExamTaper}
               onSetSurgeConsecutiveDays={(days) =>
@@ -1767,12 +2567,16 @@ export function App() {
                 setState((prev) => ({ ...prev, flashcardsReviewedCount: count }))
               }
               onLaunchBlockInTimer={handleLaunchBlockInTimer}
+              onLaunchBreakStepInTimer={handleLaunchBreakStepInTimer}
               onIncrementProjectBlock={handleIncrementProjectBlock}
               onCompleteProjectItem1={handleCompleteProjectItem1}
               onAddProjectToQueue={handleAddProjectToQueue}
+              onPromoteDeliverableWithSurge={handlePromoteDeliverableWithSurge}
+              onDemoteDeliverableToBacklog={handleDemoteDeliverableToBacklog}
+              onRecalibrateStepDownTier={handleRecalibrateStepDownTier}
+              onRecalibrateReSequenceNow={handleRecalibrateReSequenceNow}
               onOpenPipelineDrawer={() => setPipelineDrawerOpen(true)}
               onUpdatePipelineDay={handleUpdatePipelineDay}
-              onSmartIntakeSubmit={handleSmartIntakeSubmit}
               onOpenMiniHudPip={handleToggleMiniHudPip}
               isMiniHudOpen={Boolean(pipWindow) || floatingMiniHudOpen}
               onTriggerMidDayReset={() => {
@@ -1990,22 +2794,37 @@ export function App() {
                   '5m Flashcard Recovery Block Complete',
                   'Completed 5-minute Flashcard recovery ramp.'
                 );
-                setState((prev) => ({
-                  ...prev,
-                  roadmapTracks: creditRoadmapTrack(
-                    prev.roadmapTracks,
-                    'science',
-                    'INPUT',
-                    1
-                  ),
-                  timer: {
-                    ...prev.timer,
-                    queuedRecoveryFlashcard5m: false,
-                    recoveryFlashcardRunning: false,
-                    recoveryFlashcardSecondsLeft: 300,
-                    recoveryFlashcardTargetEndTimeMs: null,
-                  },
-                }));
+                setState((prev) => {
+                  const newEntry = createTodayLogEntry(prev, {
+                    category: 'FLOOR_COMP',
+                    title: '5m Flashcard Recovery Ramp',
+                    durationMinutes: 5,
+                    roadmapTrack: 'science',
+                    stroke: 'INPUT',
+                    rungNumber: 1,
+                  });
+                  pushUndoSnapshot(
+                    prev,
+                    'Block Logged: 5m Flashcard Recovery Ramp (5m)'
+                  );
+                  return {
+                    ...prev,
+                    todayBlockLog: [...(prev.todayBlockLog || []), newEntry],
+                    roadmapTracks: creditRoadmapTrack(
+                      prev.roadmapTracks,
+                      'science',
+                      'INPUT',
+                      1
+                    ),
+                    timer: {
+                      ...prev.timer,
+                      queuedRecoveryFlashcard5m: false,
+                      recoveryFlashcardRunning: false,
+                      recoveryFlashcardSecondsLeft: 300,
+                      recoveryFlashcardTargetEndTimeMs: null,
+                    },
+                  };
+                });
                 showNotice('Completed 5m Flashcard recovery block.');
               }}
               onGoToRecharge={() => setActiveTab('RECHARGE')}
@@ -2209,22 +3028,37 @@ export function App() {
                   '5m Flashcard Recovery Block Complete',
                   'Completed 5-minute Flashcard recovery ramp.'
                 );
-                setState((prev) => ({
-                  ...prev,
-                  roadmapTracks: creditRoadmapTrack(
-                    prev.roadmapTracks,
-                    'science',
-                    'INPUT',
-                    1
-                  ),
-                  timer: {
-                    ...prev.timer,
-                    queuedRecoveryFlashcard5m: false,
-                    recoveryFlashcardRunning: false,
-                    recoveryFlashcardSecondsLeft: 300,
-                    recoveryFlashcardTargetEndTimeMs: null,
-                  },
-                }));
+                setState((prev) => {
+                  const newEntry = createTodayLogEntry(prev, {
+                    category: 'FLOOR_COMP',
+                    title: '5m Flashcard Recovery Ramp',
+                    durationMinutes: 5,
+                    roadmapTrack: 'science',
+                    stroke: 'INPUT',
+                    rungNumber: 1,
+                  });
+                  pushUndoSnapshot(
+                    prev,
+                    'Block Logged: 5m Flashcard Recovery Ramp (5m)'
+                  );
+                  return {
+                    ...prev,
+                    todayBlockLog: [...(prev.todayBlockLog || []), newEntry],
+                    roadmapTracks: creditRoadmapTrack(
+                      prev.roadmapTracks,
+                      'science',
+                      'INPUT',
+                      1
+                    ),
+                    timer: {
+                      ...prev.timer,
+                      queuedRecoveryFlashcard5m: false,
+                      recoveryFlashcardRunning: false,
+                      recoveryFlashcardSecondsLeft: 300,
+                      recoveryFlashcardTargetEndTimeMs: null,
+                    },
+                  };
+                });
                 showNotice('Completed 5m Flashcard recovery block.');
               }}
               notificationLog={notificationLog}
@@ -2334,8 +3168,22 @@ export function App() {
                     newBlocksLogged >= 3 ? 2 : newBlocksLogged >= 2 ? 1 : 0;
                   const newElapsed =
                     prev.recharge.flowExtensionElapsedSeconds + 1200;
+                  const primaryTrack = prev.projectQueue[0]?.trackId || 'writing';
+                  const newEntry = createTodayLogEntry(prev, {
+                    category: 'FLOW_EXTENSION',
+                    title: `Flow Extension Block #${newBlocksLogged}`,
+                    durationMinutes: 20,
+                    roadmapTrack: primaryTrack,
+                    stroke: 'OUTPUT',
+                    rungNumber: 3,
+                  });
+                  pushUndoSnapshot(
+                    prev,
+                    `Block Logged: Flow Extension Block #${newBlocksLogged} (20m)`
+                  );
                   return {
                     ...prev,
+                    todayBlockLog: [...(prev.todayBlockLog || []), newEntry],
                     pipelineDays: prev.pipelineDays.map((d, idx) =>
                       idx === 1
                         ? { ...d, deductedBlocksFromExtension: deducted }
@@ -2343,7 +3191,7 @@ export function App() {
                     ),
                     roadmapTracks: creditRoadmapTrack(
                       prev.roadmapTracks,
-                      prev.projectQueue[0]?.trackId || 'writing',
+                      primaryTrack,
                       'OUTPUT',
                       3
                     ),
@@ -2414,8 +3262,21 @@ export function App() {
                 );
                 setState((prev) => {
                   const nextWin = prev.recharge.option0ConsecutiveWindows + 1;
+                  const newEntry = createTodayLogEntry(prev, {
+                    category: 'EVENING_RECHARGE',
+                    title: `Option 0 Stillness Window (${nextWin}/2)`,
+                    durationMinutes: 20,
+                    roadmapTrack: 'personal',
+                    stroke: 'INPUT',
+                    rungNumber: 1,
+                  });
+                  pushUndoSnapshot(
+                    prev,
+                    `Block Logged: Option 0 Stillness (${nextWin}/2) (20m)`
+                  );
                   return {
                     ...prev,
+                    todayBlockLog: [...(prev.todayBlockLog || []), newEntry],
                     recharge: {
                       ...prev.recharge,
                       option0Running: false,
@@ -2498,8 +3359,11 @@ export function App() {
                       ? r.activeMediaTab
                       : null;
 
+                  const isFresh5mStart =
+                    !r.categoryRunning && r.pacingStage === 'STARTUP_5M';
+
                   const updatedSlots = { ...r.stickySlots };
-                  if (stickyKey && !r.categoryRunning && r.pacingStage === 'STARTUP_5M') {
+                  if (stickyKey && isFresh5mStart) {
                     const nextStarts = Math.min(
                       3,
                       (updatedSlots[stickyKey].startsLogged ??
@@ -2514,33 +3378,82 @@ export function App() {
 
                   // Auto-credit Roadmap Input (Media) or Sandbox Output (Maker/Music)
                   let updatedTracks = prev.roadmapTracks;
-                  if (!r.categoryRunning && r.pacingStage === 'STARTUP_5M') {
+                  let updatedLog = prev.todayBlockLog || [];
+
+                  if (isFresh5mStart) {
+                    let trackCredited: TrackId = 'personal';
+                    let strokeCredited: 'INPUT' | 'OUTPUT' = 'INPUT';
+                    let rungCredited: 1 | 2 | 3 | 4 = 1;
+                    let rechargeTitle = 'Evening Recharge 5m Step';
+
                     if (r.activeCategory === 'CAT3_MEDIA') {
+                      trackCredited = 'writing';
+                      strokeCredited = 'INPUT';
+                      rungCredited = 1;
+                      rechargeTitle = `${updatedSlots[r.activeMediaTab].activeTitle} (Media 5m Start)`;
                       updatedTracks = creditRoadmapTrack(
                         updatedTracks,
-                        'writing',
-                        'INPUT',
-                        1
+                        trackCredited,
+                        strokeCredited,
+                        rungCredited
                       );
                     } else if (r.activeCategory === 'CAT2_MAKER') {
+                      trackCredited = 'coding';
+                      strokeCredited = 'OUTPUT';
+                      rungCredited = 2;
+                      rechargeTitle = `${updatedSlots.CAT2_MAKER.activeTitle} (Maker 5m Start)`;
                       updatedTracks = creditRoadmapTrack(
                         updatedTracks,
-                        'coding',
-                        'OUTPUT',
-                        2
+                        trackCredited,
+                        strokeCredited,
+                        rungCredited
                       );
                     } else if (r.activeCategory === 'CAT1_MUSIC') {
+                      trackCredited = 'music';
+                      strokeCredited = 'OUTPUT';
+                      rungCredited = 2;
+                      rechargeTitle = 'Acoustic / Instrument Cold Song (5m)';
                       updatedTracks = creditRoadmapTrack(
                         updatedTracks,
-                        'music',
-                        'OUTPUT',
-                        2
+                        trackCredited,
+                        strokeCredited,
+                        rungCredited
                       );
+                    } else if (r.activeCategory === 'CAT5_GAMING') {
+                      trackCredited = 'personal';
+                      strokeCredited = 'INPUT';
+                      rungCredited = 1;
+                      rechargeTitle = `${updatedSlots.CAT5_GAMING.activeTitle} (Gaming 5m Start)`;
+                    } else if (r.activeCategory === 'CAT4_COMFORT') {
+                      trackCredited = 'personal';
+                      strokeCredited = 'INPUT';
+                      rungCredited = 1;
+                      rechargeTitle = "It's Always Sunny in Philadelphia (5m Start)";
                     }
+
+                    const newEntry = createTodayLogEntry(prev, {
+                      category: 'EVENING_RECHARGE',
+                      title: rechargeTitle,
+                      durationMinutes: 5,
+                      roadmapTrack: trackCredited,
+                      stroke: strokeCredited,
+                      stickyKey: stickyKey || undefined,
+                      rungNumber: rungCredited,
+                    });
+                    updatedLog = [...updatedLog, newEntry];
+
+                    const countLabel = stickyKey
+                      ? ` [${updatedSlots[stickyKey].fiveMinStarts}/3]`
+                      : '';
+                    pushUndoSnapshot(
+                      prev,
+                      `Block Logged: ${rechargeTitle}${countLabel} (5m)`
+                    );
                   }
 
                   return {
                     ...prev,
+                    todayBlockLog: updatedLog,
                     roadmapTracks: updatedTracks,
                     recharge: {
                       ...r,
@@ -2595,6 +3508,10 @@ export function App() {
                     slot.activeTitle,
                     ...(slot.archivedTitles ?? []),
                   ];
+                  pushUndoSnapshot(
+                    prev,
+                    `Sticky Backlog Swapped: ${slot.activeTitle} → ${promotedTitle}`
+                  );
                   return {
                     ...prev,
                     recharge: {
@@ -2657,6 +3574,10 @@ export function App() {
                   const track = prev.roadmapTracks.find((t) => t.id === trackId);
                   const rung = track?.rungs.find((r) => r.rungNumber === rungNumber);
                   if (!track || !rung) return prev;
+                  pushUndoSnapshot(
+                    prev,
+                    `Block Logged: ${track.name} Rung ${rungNumber} (20m)`
+                  );
                   return {
                     ...prev,
                     roadmapTracks: creditRoadmapTrack(
@@ -2773,12 +3694,54 @@ export function App() {
         </div>
       </nav>
 
+      {/* 10-Second Floating Glassmorphic Undo Toast */}
+      <UndoToast
+        toast={undoToast}
+        secondsRemaining={undoSecondsLeft}
+        onUndo={handleTriggerUndo}
+        onDismiss={() => setUndoToast(null)}
+        isEveningTheme={isEveningTheme}
+      />
+
+      {/* Editable Today's Block Log Slide-Over Drawer */}
+      <TodayLogDrawer
+        isOpen={todayLogDrawerOpen}
+        onClose={() => setTodayLogDrawerOpen(false)}
+        state={state}
+        onReassignEntryCategory={handleReassignLogEntryCategory}
+        onEditEntryTitle={handleEditLogEntryTitle}
+        onDeleteEntry={handleDeleteLogEntry}
+        onAddManualBlock={handleAddManualBlock}
+        isEveningTheme={isEveningTheme}
+      />
+
       {/* 7-Day Pipeline Table Drawer */}
       <PipelineDrawer
         isOpen={pipelineDrawerOpen}
         onClose={() => setPipelineDrawerOpen(false)}
         state={state}
+        smartIntakeText={smartIntakeText}
+        onChangeSmartIntakeText={setSmartIntakeText}
+        smartIntakePreview={smartIntakePreview}
+        onSetSmartIntakePreview={setSmartIntakePreview}
+        onApplySmartIntakePlan={handleApplySmartIntakePlan}
+        onOpenStateModal={() => {
+          setGeminiApiKeyInput(getStoredGeminiApiKey());
+          setStateIoText(serializeToStateMarkdown(state));
+          setStateModalOpen(true);
+        }}
+        apiKeyVersion={apiKeyVersion}
         onUpdateDay={handleUpdatePipelineDay}
+      />
+
+      {/* State-Aware AI Side-Panel (Cmd/Ctrl + /) */}
+      <PlanningAssistantDrawer
+        isOpen={assistantDrawerOpen}
+        onClose={() => setAssistantDrawerOpen(false)}
+        state={state}
+        onApplyStatePatch={handleApplyStatePatch}
+        onSelectTab={setActiveTab}
+        isEveningTheme={isEveningTheme}
       />
 
       {/* Document Picture-in-Picture (260x110) Portal */}
@@ -3040,17 +4003,17 @@ export function App() {
         </aside>
       )}
 
-      {/* State Sync Modal (Copy State JSON / Markdown, Import State JSON, New Day Reset) */}
+      {/* State Sync Modal (Settings / Gemini API Key / 3-Part state.md Compiler & Parser, Copy for Gemini, Download state.md, New Day Reset) */}
       {stateModalOpen && (
         <div
           id="modal-state-io"
-          className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
         >
-          <div className="max-w-2xl w-full p-5 sm:p-6 rounded-2xl bg-slate-900 border border-slate-700 space-y-4 shadow-2xl">
+          <div className="max-w-2xl w-full p-5 sm:p-6 rounded-2xl bg-slate-900 border border-slate-700 space-y-4 shadow-2xl my-auto">
             <div className="flex items-center justify-between">
               <h2 className="text-base font-bold text-slate-100 flex items-center gap-2 font-mono">
                 <FileText className="w-4 h-4 text-sky-400" />
-                <span>State Sync (state.md &amp; JSON / New Day Reset)</span>
+                <span>Settings &amp; State Sync — 3-Part `state.md` Compiler &amp; Parser</span>
               </h2>
               <button
                 id="btn-close-state-modal"
@@ -3062,12 +4025,87 @@ export function App() {
               </button>
             </div>
 
+            {/* Gemini API Key Storage & Fallback Section */}
+            <div
+              id="settings-gemini-api-key-section"
+              className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label
+                  htmlFor="input-gemini-api-key"
+                  className="text-xs font-mono font-bold text-cyan-300 flex items-center gap-1.5"
+                >
+                  <KeyRound className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Gemini 2.5 Flash API Key (localStorage: geminiApiKey)</span>
+                </label>
+                <span className="text-[11px] font-mono text-slate-400">
+                  {getStoredGeminiApiKey()
+                    ? '✓ Saved in localStorage'
+                    : getEnvGeminiApiKey()
+                    ? '✓ Using VITE_GEMINI_API_KEY env fallback'
+                    : 'No API key set (Offline Regex Parser active)'}
+                </span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  id="input-gemini-api-key"
+                  type="password"
+                  value={geminiApiKeyInput}
+                  onChange={(e) => setGeminiApiKeyInput(e.target.value)}
+                  placeholder={
+                    getEnvGeminiApiKey()
+                      ? 'Fallback active (import.meta.env.VITE_GEMINI_API_KEY) — enter key to override...'
+                      : 'Enter Gemini API key (AIza...) or leave blank for offline regex parser...'
+                  }
+                  className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-cyan-400"
+                />
+                <div className="flex items-center gap-1.5">
+                  <button
+                    id="btn-save-gemini-api-key"
+                    type="button"
+                    onClick={() => {
+                      setStoredGeminiApiKey(geminiApiKeyInput);
+                      setApiKeyVersion((v) => v + 1);
+                      showNotice(
+                        geminiApiKeyInput.trim()
+                          ? 'Saved geminiApiKey to localStorage for Smart Intake (gemini-2.5-flash).'
+                          : 'Cleared geminiApiKey from localStorage (using env fallback or offline regex parser).'
+                      );
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-mono font-bold text-xs flex items-center gap-1 cursor-pointer shrink-0"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Save Key</span>
+                  </button>
+                  {geminiApiKeyInput && (
+                    <button
+                      id="btn-clear-gemini-api-key"
+                      type="button"
+                      onClick={() => {
+                        setGeminiApiKeyInput('');
+                        setStoredGeminiApiKey('');
+                        setApiKeyVersion((v) => v + 1);
+                        showNotice('Cleared geminiApiKey from localStorage.');
+                      }}
+                      className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-mono text-xs cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-400 font-mono">
+                Fallback chain: <code className="text-cyan-300">localStorage.getItem(&apos;geminiApiKey&apos;)</code> → <code className="text-cyan-300">import.meta.env.VITE_GEMINI_API_KEY</code> → Local Offline Regex Parser (<code className="text-amber-300">+paper Draft 8b</code>, <code className="text-amber-300">+lab Tue 2h</code>).
+              </p>
+            </div>
+
             <p className="text-xs text-slate-400">
-              Copy a clean <code className="text-sky-300">state.md</code> summary + JSON block to clipboard, paste updated state JSON to overwrite local state, or run a <strong>New Day Reset</strong>.
+              Compiles and parses the 3-part <code className="text-sky-300">state.md</code> architecture (<strong>Part I: On-Duty Capacity Governor</strong>, <strong>Part II: Off-Duty 5-Pillar Recharge</strong>, <strong>Part III: 4-Rung Master Horizon &amp; Input/Output State</strong>). Copy or download <code className="text-sky-300">state.md</code> for Gemini, paste updated Markdown/JSON to sync, or run a <strong>New Day Reset</strong>.
             </p>
 
-            {/* Primary 3 State Sync Actions */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            {/* Primary 4 State Sync Actions */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
               <button
                 id="btn-copy-state-markdown"
                 type="button"
@@ -3075,12 +4113,35 @@ export function App() {
                   const md = serializeToStateMarkdown(state);
                   setStateIoText(md);
                   navigator.clipboard?.writeText(md);
-                  showNotice('Copied state.md summary + JSON block to clipboard.');
+                  showNotice('Copied 3-part state.md for Gemini to clipboard.');
                 }}
-                className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-sky-600/50 text-sky-200 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-sky-600/50 text-sky-200 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Copy className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                <span>Copy State JSON / Markdown</span>
+                <span>Copy state.md for Gemini</span>
+              </button>
+
+              <button
+                id="btn-download-state-markdown"
+                type="button"
+                onClick={() => {
+                  const md = serializeToStateMarkdown(state);
+                  setStateIoText(md);
+                  const blob = new Blob([md], {
+                    type: 'text/markdown;charset=utf-8',
+                  });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'state.md';
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  showNotice('Downloaded 3-part state.md file.');
+                }}
+                className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-emerald-500/50 text-emerald-200 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Download state.md</span>
               </button>
 
               <button
@@ -3091,15 +4152,15 @@ export function App() {
                     const restored = parseFromStateInput(stateIoText);
                     setState(restored);
                     setStateModalOpen(false);
-                    showNotice('Imported State JSON and updated local state.');
+                    showNotice('Parsed and imported 3-part state.md / JSON into live state.');
                   } catch {
                     showNotice('Invalid state.md or JSON syntax.');
                   }
                 }}
-                className="px-3.5 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                className="px-3 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Upload className="w-3.5 h-3.5 shrink-0" />
-                <span>Import State JSON</span>
+                <span>Import state.md / JSON</span>
               </button>
 
               <button
@@ -3150,6 +4211,7 @@ export function App() {
                     flashcardsReviewedCount: 0,
                     earlyClearanceEnabled: false,
                     discretionaryBlocksCompletedToday: 0,
+                    todayBlockLog: [],
                     baselineBlocks: state.baselineBlocks.map((b) => ({
                       ...b,
                       completed: false,
@@ -3226,7 +4288,7 @@ export function App() {
                     }, Roadmap & Sticky [X/3] counters preserved.`
                   );
                 }}
-                className="px-3.5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                className="px-3 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <RotateCcw className="w-3.5 h-3.5 shrink-0" />
                 <span>New Day Reset</span>
@@ -3248,7 +4310,7 @@ export function App() {
                   onClick={() => setStateIoText(serializeToStateMarkdown(state))}
                   className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs cursor-pointer"
                 >
-                  Format as state.md
+                  Format as 3-Part state.md
                 </button>
                 <button
                   type="button"
@@ -3259,27 +4321,9 @@ export function App() {
                 </button>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const blob = new Blob([stateIoText], {
-                      type: 'text/markdown;charset=utf-8',
-                    });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'state.md';
-                    a.click();
-                    URL.revokeObjectURL(url);
-                    showNotice('Downloaded state.md file.');
-                  }}
-                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Download state.md</span>
-                </button>
-              </div>
+              <span className="text-[11px] font-mono text-slate-400">
+                Supports direct Markdown edits in Part I, II, &amp; III + JSON payload
+              </span>
             </div>
           </div>
         </div>
@@ -3289,3 +4333,4 @@ export function App() {
 }
 
 export default App;
+
