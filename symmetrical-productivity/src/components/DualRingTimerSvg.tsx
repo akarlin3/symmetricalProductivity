@@ -1,6 +1,6 @@
 import React from 'react';
 import { Maximize2, Minimize2, PictureInPicture2 } from 'lucide-react';
-import { TimerConsoleState } from '../types/symmetry';
+import { LayoutMode, TimerConsoleState } from '../types/symmetry';
 
 interface DualRingTimerSvgProps {
   timer: TimerConsoleState;
@@ -17,6 +17,9 @@ interface DualRingTimerSvgProps {
   onToggleCinemaFocusMode?: () => void;
   startupSeconds?: number;
   momentumSeconds?: number;
+  layoutMode?: LayoutMode;
+  size?: number;
+  hideLegend?: boolean;
 }
 
 export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
@@ -24,21 +27,22 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
   isEveningTheme = false,
   formattedTime,
   stageBadgeText,
-  durationPrefix,
   onToggleRun,
   onOpenMiniHudPip,
   isMiniHudOpen = false,
-  autoFloatOnTabSwitch = false,
-  onToggleAutoFloatOnTabSwitch,
   cinemaFocusMode = false,
   onToggleCinemaFocusMode,
   startupSeconds,
   momentumSeconds,
+  layoutMode = 'WIDGET',
+  size: customSize,
+  hideLegend = false,
 }) => {
-  const size = 168;
-  const center = size / 2;
-  const outerRadius = 70;
-  const innerRadius = 55;
+  const dialSize = customSize ?? (layoutMode === 'SPLIT' ? 156 : 136);
+  const viewBoxSize = 280;
+  const center = viewBoxSize / 2;
+  const outerRadius = 118;
+  const innerRadius = 95;
 
   const outerCircumference = 2 * Math.PI * outerRadius;
   const innerCircumference = 2 * Math.PI * innerRadius;
@@ -102,12 +106,11 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
 
   const isWarmGlow = isEveningTheme || timer.mode === 'STRESS_RESET';
 
-  const multSuffix = mult !== 1.0 ? ` (${mult}x)` : '';
   const compactPhaseLabel =
     timer.mode === 'WORK_20M'
       ? timer.workStage === 'IGNITION_5M'
-        ? `${startupMinsLabel}M STARTUP${multSuffix}`
-        : `${momentumMinsLabel}M MOMENTUM${multSuffix}`
+        ? `${startupMinsLabel}M STARTUP`
+        : `${momentumMinsLabel}M MOMENTUM`
       : timer.mode === 'BREAK_L1'
       ? `${timer.l1DurationMinutes}M RESET`
       : timer.mode === 'BREAK_L2'
@@ -116,10 +119,17 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
       ? `${timer.l3DurationMinutes}M MID-DAY`
       : `${timer.stressDurationMinutes}M STRESS`;
 
+  const sizeClass =
+    dialSize === 156
+      ? 'w-[156px] h-[156px]'
+      : dialSize === 136
+      ? 'w-[136px] h-[136px]'
+      : '';
+
   return (
     <div
       id="dual-ring-svg-timer"
-      className="flex flex-col items-center justify-center space-y-2"
+      className="flex flex-col items-center justify-center space-y-1.5"
     >
       <div
         onClick={onToggleRun}
@@ -131,7 +141,8 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
             onToggleRun();
           }
         }}
-        className={`relative flex items-center justify-center w-[148px] h-[148px] md:w-[168px] md:h-[168px] ${
+        style={sizeClass ? undefined : { width: `${dialSize}px`, height: `${dialSize}px` }}
+        className={`relative flex items-center justify-center ${sizeClass} ${
           onToggleRun ? 'cursor-pointer group' : ''
         }`}
         title={onToggleRun ? 'Click or press Space to toggle timer' : undefined}
@@ -146,11 +157,11 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
               onToggleCinemaFocusMode();
             }}
             aria-label="Toggle Cinema Focus Mode (F)"
-            title="Toggle Cinema Focus Mode (Press F) — Dims surrounding Bento cards while keeping Chronograph, 5m Startup Script, and remaining work pill in sharp focus"
-            className={`absolute -top-1 -right-1 z-30 px-1.5 py-0.5 rounded-lg border font-mono text-[10px] font-medium flex items-center gap-1 cursor-pointer transition-all duration-300 ${
+            title="Toggle Cinema Focus Mode (Press F)"
+            className={`absolute -top-1 -right-1 z-30 p-1 rounded-full border font-mono text-[9px] font-bold flex items-center justify-center cursor-pointer transition-all duration-300 ${
               cinemaFocusMode
-                ? 'bg-cyan-400 text-slate-950 border-cyan-300 shadow-[0_0_14px_rgba(56,189,248,0.5)]'
-                : 'bg-white/[0.04] hover:bg-white/[0.1] border-white/[0.1] text-slate-300 hover:text-white shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]'
+                ? 'bg-cyan-400 text-slate-950 border-cyan-300 shadow-[0_0_12px_rgba(56,189,248,0.5)]'
+                : 'bg-white/[0.04] hover:bg-white/[0.1] border-white/[0.08] text-slate-400 hover:text-white'
             }`}
           >
             {cinemaFocusMode ? (
@@ -158,19 +169,10 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
             ) : (
               <Maximize2 className="w-2.5 h-2.5 shrink-0" />
             )}
-            <kbd
-              className={`px-0.5 rounded text-[9px] font-mono ${
-                cinemaFocusMode
-                  ? 'bg-slate-950/20 text-slate-950'
-                  : 'bg-black/40 text-slate-400'
-              }`}
-            >
-              F
-            </kbd>
           </button>
         )}
 
-        {/* Radial Ambient Glow Behind 168x168 Chronograph Ring */}
+        {/* Radial Ambient Glow Behind Chronograph Ring */}
         <div
           aria-hidden="true"
           className="absolute -inset-3 rounded-full pointer-events-none blur-xl animate-aura transition-all duration-700"
@@ -187,16 +189,16 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
           aria-hidden="true"
           className={`absolute inset-1.5 rounded-full backdrop-blur-2xl transition-colors duration-500 ${
             isWarmGlow
-              ? 'bg-gradient-to-b from-amber-500/[0.06] to-black/60 border border-amber-500/20 shadow-[inset_0_1px_0_0_rgba(255,251,235,0.14),0_14px_32px_rgba(0,0,0,0.8)]'
-              : 'bg-gradient-to-b from-white/[0.045] to-black/60 border border-white/[0.09] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_14px_32px_rgba(0,0,0,0.85)]'
+              ? 'bg-gradient-to-b from-amber-500/[0.06] to-black/60 border border-amber-500/20 shadow-[inset_0_1px_0_0_rgba(255,251,235,0.14),0_12px_30px_rgba(0,0,0,0.8)]'
+              : 'bg-gradient-to-b from-white/[0.045] to-black/60 border border-white/[0.09] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),0_12px_30px_rgba(0,0,0,0.85)]'
           }`}
         />
 
         <svg
-          width={size}
-          height={size}
-          viewBox={`0 0 ${size} ${size}`}
-          className="w-full h-full relative z-10 overflow-visible select-none"
+          width={dialSize}
+          height={dialSize}
+          viewBox={`0 0 ${viewBoxSize} ${viewBoxSize}`}
+          className="relative z-10 overflow-visible select-none"
           role="img"
           aria-label={`Precision chronograph timer: ${stageBadgeText}, ${formattedTime} remaining`}
         >
@@ -226,11 +228,11 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
 
             {/* Primary SVG <filter id="glow"> Drop-Shadow for Active Progress Arc */}
             <filter id="glow" x="-35%" y="-35%" width="170%" height="170%">
-              <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+              <feGaussianBlur stdDeviation="4" result="coloredBlur" />
               <feDropShadow
                 dx="0"
                 dy="0"
-                stdDeviation="2.5"
+                stdDeviation="3"
                 floodColor={activeIsInner || isWarmGlow ? '#f59e0b' : '#38bdf8'}
                 floodOpacity="0.65"
                 result="dropGlow"
@@ -244,7 +246,7 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
 
             {/* Alias for backwards compatibility */}
             <filter id="ringGlowFilter" x="-30%" y="-30%" width="160%" height="160%">
-              <feGaussianBlur stdDeviation="2.5" result="blur" />
+              <feGaussianBlur stdDeviation="3.5" result="blur" />
               <feComposite in="SourceGraphic" in2="blur" operator="over" />
             </filter>
           </defs>
@@ -256,8 +258,8 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
             const isQuarter15 = idx % 15 === 0;
             const isIlluminated = idx < illuminatedTickCount;
 
-            const rInner = outerRadius + (isQuarter15 ? 4.5 : isMajor5 ? 5.5 : 6.2);
-            const rOuter = outerRadius + (isQuarter15 ? 9.5 : isMajor5 ? 8.5 : 7.8);
+            const rInner = outerRadius + (isQuarter15 ? 8 : isMajor5 ? 9 : 10.5);
+            const rOuter = outerRadius + (isQuarter15 ? 16.5 : isMajor5 ? 14.5 : 13.5);
 
             const litStroke =
               activeIsInner || isWarmGlow
@@ -286,7 +288,7 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
                 x2={center + rOuter * Math.cos(angle)}
                 y2={center + rOuter * Math.sin(angle)}
                 stroke={isIlluminated ? litStroke : unlitStroke}
-                strokeWidth={isQuarter15 ? 1.6 : isMajor5 ? 1.2 : 0.85}
+                strokeWidth={isQuarter15 ? 2.1 : isMajor5 ? 1.5 : 1}
                 strokeLinecap="round"
                 style={{
                   transition: 'stroke 240ms ease, opacity 240ms ease',
@@ -306,7 +308,7 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
                 ? 'rgba(120, 53, 15, 0.30)'
                 : 'rgba(30, 41, 59, 0.65)'
             }
-            strokeWidth="6"
+            strokeWidth="9"
           />
 
           {/* INNER RING TRACK (5m Startup Step Track) */}
@@ -320,7 +322,7 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
                 ? 'rgba(146, 64, 14, 0.25)'
                 : 'rgba(51, 65, 85, 0.45)'
             }
-            strokeWidth="4.5"
+            strokeWidth="7"
           />
 
           {/* INNER RING PROGRESS ARC (5m Startup Step — Warm Amber) */}
@@ -331,7 +333,7 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
             r={innerRadius}
             fill="none"
             stroke="url(#innerStartupAmberGrad)"
-            strokeWidth="5"
+            strokeWidth="7.5"
             strokeLinecap="round"
             strokeDasharray={innerCircumference}
             strokeDashoffset={innerDashoffset}
@@ -354,7 +356,7 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
             r={outerRadius}
             fill="none"
             stroke="url(#outerMomentumGrad)"
-            strokeWidth="6.2"
+            strokeWidth="9.5"
             strokeLinecap="round"
             strokeDasharray={outerCircumference}
             strokeDashoffset={outerDashoffset}
@@ -370,10 +372,10 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
           <circle
             cx={tipX}
             cy={tipY}
-            r={activeIsInner ? 3.5 : 4.2}
+            r={activeIsInner ? 5.2 : 6.2}
             fill={activeIsInner ? '#fef3c7' : isWarmGlow ? '#ffedd5' : '#e0f2fe'}
             stroke={activeIsInner ? '#f59e0b' : isWarmGlow ? '#ea580c' : '#38bdf8'}
-            strokeWidth="1.6"
+            strokeWidth="2.2"
             filter="url(#glow)"
             style={{
               transition: 'cx 320ms cubic-bezier(0.22, 1, 0.36, 1), cy 320ms cubic-bezier(0.22, 1, 0.36, 1)',
@@ -381,10 +383,31 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
           />
         </svg>
 
+        {/* Bottom-Right Floating Mini HUD PiP Icon when legend is hidden */}
+        {hideLegend && onOpenMiniHudPip && (
+          <button
+            id="btn-mini-hud-pip"
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenMiniHudPip();
+            }}
+            className={`absolute -bottom-1 -right-1 z-30 p-1 rounded-full border font-mono text-[9px] flex items-center justify-center cursor-pointer transition ${
+              isMiniHudOpen
+                ? 'bg-cyan-400/20 text-cyan-200 border-cyan-400/40'
+                : 'bg-white/[0.04] hover:bg-white/[0.1] border-white/[0.08] text-slate-400 hover:text-white'
+            }`}
+            title="Pop out Always-on-Top Mini HUD [Hotkey: P]"
+            aria-label="Pop out Mini HUD"
+          >
+            <PictureInPicture2 className="w-2.5 h-2.5 shrink-0" />
+          </button>
+        )}
+
         {/* Center Readout Overlay */}
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center px-3 text-center pointer-events-none">
           <span
-            className={`px-1.5 py-0.5 rounded-full border font-mono text-[10px] uppercase tracking-wider font-medium leading-none ${
+            className={`px-1.5 py-0.2 rounded-full border font-mono text-[8px] uppercase tracking-wider font-medium leading-tight ${
               timer.mode === 'WORK_20M' && timer.workStage === 'IGNITION_5M'
                 ? 'bg-amber-500/10 border-amber-400/30 text-amber-200'
                 : isWarmGlow
@@ -397,16 +420,18 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
 
           <div
             id="main-timer-digits"
-            className={`text-3xl font-mono font-normal tracking-tight tabular-nums my-1 leading-none ${
+            className={`${
+              layoutMode === 'SPLIT' || dialSize >= 156 ? 'text-3xl' : 'text-2xl'
+            } font-mono font-light tracking-tight tabular-nums my-1 leading-none ${
               isWarmGlow ? 'text-amber-50' : 'text-white'
             }`}
           >
             {formattedTime}
           </div>
 
-          <div className="flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider leading-none">
+          <div className="flex items-center gap-1 text-[8px] font-mono uppercase tracking-wider leading-tight">
             <span
-              className={`w-1.5 h-1.5 rounded-full ${
+              className={`w-1 h-1 rounded-full ${
                 timer.isRunning
                   ? activeIsInner || isWarmGlow
                     ? 'bg-amber-400 animate-ping'
@@ -424,46 +449,48 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
       </div>
 
       {/* Subtle Ring Legend + Mini HUD (PiP) */}
-      <div className="flex flex-wrap items-center justify-center gap-1.5 text-[11px] font-mono text-slate-400 leading-none">
-        <span className="flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
-          <span>{startupMinsLabel}m</span>
-        </span>
+      {!hideLegend && (
+        <div className="flex flex-wrap items-center justify-center gap-1.5 text-[10px] font-mono text-slate-400">
+          <span className="flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+            <span>{startupMinsLabel}m</span>
+          </span>
 
-        <span className="text-slate-600">•</span>
+          <span className="text-slate-600">•</span>
 
-        <span className="flex items-center gap-1">
-          <span
-            className={`w-1.5 h-1.5 rounded-full inline-block ${
-              isWarmGlow ? 'bg-orange-400' : 'bg-cyan-400'
-            }`}
-          />
-          <span>{momentumMinsLabel}m</span>
-        </span>
-
-        {onOpenMiniHudPip && (
-          <>
-            <span className="text-slate-600">•</span>
-            <button
-              id="btn-mini-hud-pip"
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenMiniHudPip();
-              }}
-              className={`px-1.5 py-0.5 rounded-full border text-[10px] flex items-center gap-1 cursor-pointer transition ${
-                isMiniHudOpen
-                  ? 'bg-cyan-400/20 text-cyan-200 border-cyan-400/40'
-                  : 'bg-white/[0.02] hover:bg-white/[0.06] border-white/[0.05] text-slate-300'
+          <span className="flex items-center gap-1">
+            <span
+              className={`w-1.5 h-1.5 rounded-full inline-block ${
+                isWarmGlow ? 'bg-orange-400' : 'bg-cyan-400'
               }`}
-              title="Pop out Always-on-Top Mini HUD [Hotkey: P]"
-            >
-              <PictureInPicture2 className="w-2.5 h-2.5 shrink-0" />
-              <span>HUD</span>
-            </button>
-          </>
-        )}
-      </div>
+            />
+            <span>{momentumMinsLabel}m</span>
+          </span>
+
+          {onOpenMiniHudPip && (
+            <>
+              <span className="text-slate-600">•</span>
+              <button
+                id="btn-mini-hud-pip"
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenMiniHudPip();
+                }}
+                className={`px-1.5 py-0.5 rounded-full border text-[9px] flex items-center gap-1 cursor-pointer transition ${
+                  isMiniHudOpen
+                    ? 'bg-cyan-400/20 text-cyan-200 border-cyan-400/40'
+                    : 'bg-white/[0.02] hover:bg-white/[0.06] border-white/[0.05] text-slate-300'
+                }`}
+                title="Pop out Always-on-Top Mini HUD [Hotkey: P]"
+              >
+                <PictureInPicture2 className="w-2.5 h-2.5 shrink-0" />
+                <span>HUD</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 };

@@ -21,6 +21,7 @@ import {
   Unlock,
 } from 'lucide-react';
 import {
+  LayoutMode,
   MediaSubTrackId,
   RechargeCategoryId,
   StickyKey,
@@ -33,6 +34,7 @@ import { AveryCorpEmblem } from './AveryCorpEmblem';
 
 interface Tab3RechargeProps {
   state: SymmetryState;
+  layoutMode?: LayoutMode;
   onUnlockZeroWorkLeft: () => void;
   onOpenFlowExtensionPrompt: () => void;
   onCancelFlowExtensionPrompt: () => void;
@@ -59,23 +61,23 @@ const StickyDotsCounter: React.FC<{
   unlockedViaCheckIn: boolean;
 }> = ({ starts, unlockedViaCheckIn }) => {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5">
       <div className="flex items-center gap-1" aria-label={`${starts} of 3 starts`}>
         {[0, 1, 2].map((idx) => {
           const filled = idx < starts;
           return (
             <span
               key={idx}
-              className={`w-2 h-2 rounded-full transition-all ${
+              className={`w-1.5 h-1.5 rounded-full transition-all ${
                 filled
-                  ? 'bg-amber-400 shadow-[0_0_6px_#f59e0b]'
+                  ? 'bg-amber-400 shadow-[0_0_5px_#f59e0b]'
                   : 'bg-amber-950/80 border border-amber-500/35'
               }`}
             />
           );
         })}
       </div>
-      <span className="font-mono text-[11px] font-normal tabular-nums text-amber-200/90">
+      <span className="font-mono text-[10px] font-normal tabular-nums text-amber-200/90">
         [{starts} / 3]
       </span>
       {(starts >= 3 || unlockedViaCheckIn) && (
@@ -89,6 +91,7 @@ const StickyDotsCounter: React.FC<{
 
 export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
   state,
+  layoutMode = 'WIDGET',
   onUnlockZeroWorkLeft,
   onOpenFlowExtensionPrompt,
   onCancelFlowExtensionPrompt,
@@ -109,6 +112,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
   onSwapStickyItemFromBacklog,
   onIncrementStickyStart,
 }) => {
+  const isSplitMode = layoutMode === 'SPLIT';
   const metrics = computeShiftMetrics(state);
   const { recharge } = state;
 
@@ -138,7 +142,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
   const isCardDisclosed = (catId: RechargeCategoryId) =>
     recharge.activeCategory === catId ||
     expandedCat === catId ||
-    hoveredCat === catId;
+    (isSplitMode && hoveredCat === catId);
 
   const toggleCardExpand = (catId: RechargeCategoryId) => {
     onSelectCategory(catId);
@@ -146,44 +150,43 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
   };
 
   return (
-    <div className="relative max-w-3xl mx-auto space-y-3 text-amber-50 animate-tab-enter pb-2">
+    <div className="relative w-full space-y-2.5 text-amber-50 animate-tab-enter pb-3">
       {/* Subtle Ambient Warm Halo */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute -top-8 inset-x-0 h-36 rounded-full blur-3xl opacity-40 -z-10"
+        className="pointer-events-none absolute -top-8 inset-x-0 h-32 rounded-full blur-3xl opacity-35 -z-10"
         style={{
           background:
-            'radial-gradient(ellipse 70% 100% at 50% 0%, rgba(245, 158, 11, 0.22), rgba(234, 88, 12, 0.08) 55%, transparent 85%)',
+            'radial-gradient(ellipse 70% 100% at 50% 0%, rgba(245, 158, 11, 0.2), rgba(234, 88, 12, 0.06) 55%, transparent 85%)',
         }}
       />
 
-      {/* Compact Editorial Section Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-white/[0.05] pb-2.5">
-        <div className="flex items-center gap-2.5">
+      {/* Compact Section Header */}
+      <div className="flex items-center justify-between gap-2 px-1">
+        <div className="flex items-center gap-2 min-w-0">
           <AveryCorpEmblem
-            size={28}
+            size={24}
             variant="image"
             cropMode="mark-only"
             ariaLabel="AveryCorp End-of-Shift Seal"
           />
-          <div>
-            <span className="text-[11px] font-mono uppercase tracking-widest text-amber-300/80 flex items-center gap-1">
-              <Moon className="w-3 h-3 text-amber-400" />
-              <span>Evening Sanctuary</span>
-            </span>
-            <h2 className="font-serif text-lg sm:text-xl leading-snug font-medium tracking-tight text-amber-50">
+          <div className="flex items-baseline gap-2 min-w-0">
+            <h2 className="font-serif text-lg leading-snug font-medium tracking-tight text-amber-50 truncate">
               Evening Recharge Menu
             </h2>
+            <span className="text-[10px] font-mono uppercase tracking-widest text-amber-300/75 hidden sm:inline">
+              Sanctuary
+            </span>
           </div>
         </div>
 
         {!metrics.isZeroWorkLeft ? (
           <div
             id="evening-lock-gate-notice"
-            className="flex items-center gap-2.5 px-3 py-1 rounded-full bento-surface-evening"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bento-surface-evening shrink-0"
           >
             <span className="text-[11px] font-mono text-amber-200/80 tabular-nums">
-              {metrics.remainingWorkFormatted} left
+              {metrics.remainingWorkFormatted}
             </span>
             <button
               id="btn-unlock-evening-menu-now"
@@ -192,48 +195,48 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                 triggerHaptic([20]);
                 onUnlockZeroWorkLeft();
               }}
-              className="px-2.5 py-0.5 rounded-full bg-amber-400 hover:bg-amber-300 text-stone-950 font-mono font-medium text-[11px] flex items-center gap-1 cursor-pointer"
+              className="px-2 py-0.5 rounded-full bg-amber-400 hover:bg-amber-300 text-stone-950 font-mono font-medium text-[11px] flex items-center gap-1 cursor-pointer"
             >
-              <Unlock className="w-3 h-3" />
+              <Unlock className="w-2.5 h-2.5" />
               <span>Set [0m work left]</span>
             </button>
           </div>
         ) : (
-          <div className="px-3 py-1 rounded-full bg-amber-500/10 border border-amber-400/25 font-mono text-[11px] text-amber-200 flex items-center gap-1.5">
+          <div className="px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-400/25 font-mono text-[11px] text-amber-200 flex items-center gap-1.5 shrink-0">
             <Lock className="w-3 h-3 text-amber-400" />
-            <span>End-of-Shift Lock • [0m work left]</span>
+            <span>[0m work left]</span>
           </div>
         )}
       </div>
 
       {/* =====================================================================
-          OPTION 0 (STILLNESS): SLIM SINGLE-ROW BAR AT THE TOP (py-2 px-3.5)
+          OPTION 0 (STILLNESS): COMPACT SINGLE-ROW CARD (py-2.5 px-3)
          ===================================================================== */}
       <section
         id="option-0-stillness-card"
         aria-labelledby="option-0-heading"
-        className="rounded-2xl bento-hero-border-evening py-2 px-3.5 transition-all duration-300 space-y-2"
+        className="rounded-2xl bento-hero-border-evening py-2.5 px-3 transition-all duration-300 space-y-2"
       >
-        <div className="flex flex-wrap items-center justify-between gap-2.5">
-          <div className="flex flex-wrap items-center gap-2.5 min-w-0">
-            <span className="px-2 py-0.5 rounded-full bg-amber-400/15 border border-amber-300/30 font-mono text-[11px] uppercase tracking-wider text-amber-200 shrink-0">
-              Option 0 • Stillness
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="px-2 py-0.5 rounded-full bg-amber-400/15 border border-amber-300/30 font-mono text-[10px] uppercase tracking-wider text-amber-200 shrink-0">
+              Option 0
             </span>
 
             <h3
               id="option-0-heading"
               className="font-serif text-lg leading-snug font-medium text-amber-50 truncate"
             >
-              20-Minute Silent Stillness
+              20m Silent Stillness
             </h3>
 
-            <span className="text-[11px] font-mono text-amber-200/70 tabular-nums">
-              [{recharge.option0ConsecutiveWindows} / 2 windows]
+            <span className="text-[11px] font-mono text-amber-200/70 tabular-nums shrink-0">
+              [{recharge.option0ConsecutiveWindows}/2]
             </span>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="px-2.5 py-1 rounded-full bg-black/45 border border-white/[0.05] font-mono text-sm font-normal tabular-nums text-amber-100">
+          <div className="flex items-center gap-1.5 shrink-0">
+            <div className="px-2.5 py-0.5 rounded-full bg-black/45 border border-white/[0.05] font-mono text-xs tabular-nums text-amber-100">
               {formatMMSS(recharge.option0SecondsLeft)}
             </div>
 
@@ -241,7 +244,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
               id="btn-option0-start-pause"
               type="button"
               onClick={onToggleOption0Timer}
-              className="px-3 py-1 rounded-full bg-amber-400 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs flex items-center gap-1 cursor-pointer"
+              className="px-2.5 py-1 rounded-full bg-amber-400 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs flex items-center gap-1 cursor-pointer"
             >
               {recharge.option0Running ? (
                 <>
@@ -251,7 +254,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
               ) : (
                 <>
                   <Play className="w-3 h-3 fill-current" />
-                  <span>Begin 20m</span>
+                  <span>20m</span>
                 </>
               )}
             </button>
@@ -260,16 +263,16 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
               id="btn-option0-complete-window"
               type="button"
               onClick={onCompleteOption0Window}
-              className="px-2.5 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.05] text-amber-200/90 font-mono text-[11px] cursor-pointer"
+              className="px-2 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.05] text-amber-200/90 font-mono text-[11px] cursor-pointer"
               title="Complete 20m window (+1 toward 40m Fork Check)"
             >
-              +1 Window
+              +1
             </button>
 
             <button
               type="button"
               onClick={() => setOption0Expanded((prev) => !prev)}
-              className="p-1.5 rounded-full bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.05] text-amber-200/70 cursor-pointer"
+              className="p-1 rounded-full bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.05] text-amber-200/70 cursor-pointer"
               title="Toggle 4-7-8 Breathing Visualizer"
               aria-label="Toggle 4-7-8 Breathing Visualizer"
             >
@@ -306,17 +309,17 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
         {recharge.forkCheckModalOpen && (
           <div
             id="option-0-fork-check-modal"
-            className="p-3.5 rounded-xl bg-black/80 border border-amber-400/50 space-y-2"
+            className="p-3 rounded-xl bg-black/80 border border-amber-400/50 space-y-2"
           >
             <div className="flex items-center justify-between">
-              <span className="px-2 py-0.5 rounded-full bg-amber-400 text-stone-950 font-mono text-[11px] font-medium uppercase">
+              <span className="px-2 py-0.5 rounded-full bg-amber-400 text-stone-950 font-mono text-[10px] font-medium uppercase">
                 40m Cap Reached (2 / 2 Windows) • Fork Check
               </span>
             </div>
             <p className="text-xs text-amber-50">
               40 minutes of stillness completed. Choose your next path:
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <button
                 id="btn-fork-go-to-sleep"
                 type="button"
@@ -343,23 +346,23 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
         <section
           id="recharge-pacing-console"
           aria-label="Evening Category Pacing Console"
-          className="rounded-2xl bento-surface-evening px-3.5 py-2.5 space-y-2.5"
+          className="rounded-2xl bento-surface-evening py-2.5 px-3 space-y-2"
         >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               <Flame className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <div>
-                <span className="text-[11px] font-mono uppercase tracking-wider text-amber-300/80 block">
+              <div className="min-w-0">
+                <span className="text-[10px] font-mono uppercase tracking-widest text-amber-300/80 block">
                   Active Pacing • {recharge.pacingStage.replace(/_/g, ' ')}
                 </span>
-                <span className="font-serif text-lg leading-snug text-amber-50">
-                  5m Startup → 20m &amp; 40m Check-In → 60m Break
+                <span className="font-serif text-lg leading-snug text-amber-50 truncate block">
+                  5m Startup → 20m/40m Check-In → 60m Break
                 </span>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <div className="px-3 py-1 rounded-full bg-black/50 border border-white/[0.05] font-mono text-sm font-normal tabular-nums text-amber-100">
+            <div className="flex items-center gap-1.5 shrink-0">
+              <div className="px-2.5 py-1 rounded-full bg-black/50 border border-white/[0.05] font-mono text-xs tabular-nums text-amber-100">
                 {formatMMSS(recharge.categorySecondsLeft)}
               </div>
 
@@ -390,7 +393,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                 id="btn-advance-category-milestone"
                 type="button"
                 onClick={onAdvanceCategoryPacingMilestone}
-                className="px-2.5 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.05] text-amber-100 font-mono text-[11px] flex items-center gap-1 cursor-pointer"
+                className="px-2.5 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.05] text-amber-100 font-mono text-xs flex items-center gap-1 cursor-pointer"
                 title="Advance to next milestone (5m → 20m → 40m → 60m)"
               >
                 <FastForward className="w-3 h-3" />
@@ -405,7 +408,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
               className="p-3 rounded-xl bg-black/80 border border-amber-400/50 space-y-2"
             >
               <div className="flex items-center justify-between">
-                <span className="px-2 py-0.5 rounded-full bg-amber-400 text-stone-950 font-mono text-[11px] font-medium uppercase">
+                <span className="px-2 py-0.5 rounded-full bg-amber-400 text-stone-950 font-mono text-[10px] font-medium uppercase">
                   {recharge.checkInMilestone}m Check-In
                 </span>
                 <span className="text-[11px] font-mono text-emerald-300">
@@ -415,12 +418,12 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
               <p className="font-serif text-lg leading-snug text-amber-50">
                 “Keep going, switch, or rest?”
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   id="btn-checkin-keep-going"
                   type="button"
                   onClick={() => onResolveCheckInPrompt('KEEP_GOING')}
-                  className="py-1.5 px-3 rounded-full bg-amber-400 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs cursor-pointer"
+                  className="py-1.5 px-2.5 rounded-full bg-amber-400 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs cursor-pointer"
                 >
                   Keep Going
                 </button>
@@ -428,17 +431,17 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                   id="btn-checkin-switch"
                   type="button"
                   onClick={() => onResolveCheckInPrompt('SWITCH')}
-                  className="py-1.5 px-3 rounded-full bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-amber-100 font-mono text-xs cursor-pointer"
+                  className="py-1.5 px-2.5 rounded-full bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-amber-100 font-mono text-xs cursor-pointer"
                 >
-                  Switch / Swap Sticky
+                  Switch / Swap
                 </button>
                 <button
                   id="btn-checkin-rest"
                   type="button"
                   onClick={() => onResolveCheckInPrompt('REST')}
-                  className="py-1.5 px-3 rounded-full bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.05] text-amber-200 font-mono text-xs cursor-pointer"
+                  className="py-1.5 px-2.5 rounded-full bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.05] text-amber-200 font-mono text-xs cursor-pointer"
                 >
-                  Rest (Option 0)
+                  Rest (Opt 0)
                 </button>
               </div>
             </div>
@@ -447,66 +450,91 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
       )}
 
       {/* =====================================================================
-          5 RECHARGE CATEGORIES IN A TIGHT 2- OR 3-COLUMN GRID (gap-2.5, p-3)
-          All 5 cards + Option 0 fit inside a single viewport without scrolling.
+          5 RECHARGE CATEGORIES
+          - WIDGET mode: Compact single-row collapsible cards (`py-2.5 px-3`)
+          - SPLIT mode: Tight 3-column grid (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5`) with `p-3`
          ===================================================================== */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+      <div
+        className={
+          isSplitMode
+            ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5'
+            : 'grid grid-cols-1 gap-2'
+        }
+      >
         {/* CARD 1: MUSIC [FLUID] */}
         <article
           id="recharge-card-cat1-music"
           onMouseEnter={() => setHoveredCat('CAT1_MUSIC')}
           onMouseLeave={() => setHoveredCat(null)}
           onClick={() => toggleCardExpand('CAT1_MUSIC')}
-          className={`rounded-2xl p-3 border transition-all duration-300 cursor-pointer flex flex-col justify-between space-y-2.5 ${
+          className={`rounded-2xl ${
+            isSplitMode ? 'p-3 space-y-2.5' : 'py-2.5 px-3 space-y-2'
+          } border transition-all duration-300 cursor-pointer flex flex-col justify-between ${
             recharge.activeCategory === 'CAT1_MUSIC'
               ? 'bento-hero-border-evening border-amber-400/35'
               : 'bento-surface-evening'
           }`}
         >
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="px-2 py-0.5 rounded-full bg-rose-500/10 border border-rose-400/25 font-mono text-[11px] uppercase tracking-wider text-rose-200 flex items-center gap-1">
-                <Music className="w-3 h-3 text-rose-300" />
-                <span>1. Music • Fluid</span>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="px-2 py-0.5 rounded-full bg-rose-500/10 border border-rose-400/25 font-mono text-[10px] uppercase tracking-wider text-rose-200 flex items-center gap-1 shrink-0">
+                <Music className="w-2.5 h-2.5 text-rose-300" />
+                <span>1. Music</span>
               </span>
+              <h3 className="font-serif text-lg leading-snug font-medium text-amber-50 truncate">
+                {recharge.fluidCategories?.CAT1_MUSIC.activeTitle ||
+                  'Cold Song on Bass / Guitar'}
+              </h3>
             </div>
 
-            <h3 className="font-serif text-lg leading-snug font-medium tracking-tight text-amber-50">
-              {recharge.fluidCategories?.CAT1_MUSIC.activeTitle ||
-                'Cold Song on Bass / Guitar'}
-            </h3>
-
-            <AnimatePresence>
-              {isCardDisclosed('CAT1_MUSIC') && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="overflow-hidden pt-1 space-y-1.5"
-                >
-                  <p className="text-xs text-amber-100/75 leading-snug">
-                    5m Startup: “
-                    {recharge.fluidCategories?.CAT1_MUSIC.startupStep ||
-                      'Play 1 familiar song cold — no DAW or drills'}
-                    ”
-                  </p>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {!isSplitMode && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectCategory('CAT1_MUSIC');
+                  onStartCategory5mStep();
+                }}
+                className="px-2.5 py-1 rounded-full bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs flex items-center gap-1 shrink-0 cursor-pointer"
+              >
+                <Play className="w-3 h-3 fill-current" />
+                <span>5m</span>
+              </button>
+            )}
           </div>
 
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectCategory('CAT1_MUSIC');
-              onStartCategory5mStep();
-            }}
-            className="w-full py-1.5 px-3 rounded-full bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs flex items-center justify-center gap-1.5 cursor-pointer"
-          >
-            <Play className="w-3 h-3 fill-current" />
-            <span>Begin 5m</span>
-          </button>
+          <AnimatePresence>
+            {(isCardDisclosed('CAT1_MUSIC') || isSplitMode) && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden space-y-1.5"
+              >
+                <p className="text-xs text-amber-100/75 leading-snug truncate">
+                  5m Startup: “
+                  {recharge.fluidCategories?.CAT1_MUSIC.startupStep ||
+                    'Play 1 familiar song cold — no DAW or drills'}
+                  ”
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {isSplitMode && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectCategory('CAT1_MUSIC');
+                onStartCategory5mStep();
+              }}
+              className="w-full py-1.5 px-3 rounded-full bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Play className="w-3 h-3 fill-current" />
+              <span>Begin 5m</span>
+            </button>
+          )}
         </article>
 
         {/* CARD 2: MAKER / HARDWARE [STICKY] */}
@@ -515,52 +543,69 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
           onMouseEnter={() => setHoveredCat('CAT2_MAKER')}
           onMouseLeave={() => setHoveredCat(null)}
           onClick={() => toggleCardExpand('CAT2_MAKER')}
-          className={`rounded-2xl p-3 border transition-all duration-300 cursor-pointer flex flex-col justify-between space-y-2.5 ${
+          className={`rounded-2xl ${
+            isSplitMode ? 'p-3 space-y-2.5' : 'py-2.5 px-3 space-y-2'
+          } border transition-all duration-300 cursor-pointer flex flex-col justify-between ${
             recharge.activeCategory === 'CAT2_MAKER'
               ? 'bento-hero-border-evening border-amber-400/35'
               : 'bento-surface-evening'
           }`}
         >
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="px-2 py-0.5 rounded-full bg-orange-500/10 border border-orange-400/25 font-mono text-[11px] uppercase tracking-wider text-orange-200 flex items-center gap-1">
-                <Cpu className="w-3 h-3 text-orange-300" />
-                <span>2. Maker • Sticky</span>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="px-2 py-0.5 rounded-full bg-orange-500/10 border border-orange-400/25 font-mono text-[10px] uppercase tracking-wider text-orange-200 flex items-center gap-1 shrink-0">
+                <Cpu className="w-2.5 h-2.5 text-orange-300" />
+                <span>2. Maker</span>
               </span>
+              <h3 className="font-serif text-lg leading-snug font-medium text-amber-50 truncate">
+                {makerSlot.activeTitle}
+              </h3>
             </div>
 
-            <h3 className="font-serif text-lg leading-snug font-medium tracking-tight text-amber-50">
-              {makerSlot.activeTitle}
-            </h3>
-
-            <AnimatePresence>
-              {isCardDisclosed('CAT2_MAKER') && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="overflow-hidden pt-1 space-y-2"
-                  onClick={(e) => e.stopPropagation()}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="font-mono text-[10px] text-amber-200/80 tabular-nums">
+                [{makerSlot.startsLogged ?? makerSlot.fiveMinStarts}/3]
+              </span>
+              {!isSplitMode && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectCategory('CAT2_MAKER');
+                    onStartCategory5mStep();
+                  }}
+                  className="px-2.5 py-1 rounded-full bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs flex items-center gap-1 cursor-pointer"
                 >
+                  <Play className="w-3 h-3 fill-current" />
+                  <span>5m</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          <AnimatePresence>
+            {(isCardDisclosed('CAT2_MAKER') || isSplitMode) && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden space-y-2"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between gap-2">
                   <StickyDotsCounter
                     starts={makerSlot.startsLogged ?? makerSlot.fiveMinStarts}
                     unlockedViaCheckIn={
                       makerSlot.unlockedViaCheckIn || recharge.checkInModalOpen
                     }
                   />
-                  <p className="text-xs text-amber-100/75 leading-snug">
-                    5m Startup: “{makerSlot.startupStep}”
-                  </p>
-                  <div className="text-[11px] font-mono text-stone-400 truncate">
-                    Next: {makerSlot.queuedNextTitle || makerSlot.backlogQueue[0] || 'None'}
-                  </div>
-                  <div className="flex items-center gap-1.5 pt-0.5">
+                  <div className="flex items-center gap-1">
                     {onIncrementStickyStart && (
                       <button
                         id="btn-log-start-CAT2_MAKER"
                         type="button"
                         onClick={() => onIncrementStickyStart('CAT2_MAKER')}
-                        className="px-2 py-0.5 rounded-full bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.05] text-amber-200 font-mono text-[11px] cursor-pointer"
+                        className="px-2 py-0.5 rounded-full bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.05] text-amber-200 font-mono text-[10px] cursor-pointer"
                       >
                         +1 Start
                       </button>
@@ -574,29 +619,34 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                         !recharge.checkInModalOpen
                       }
                       onClick={() => onSwapStickyItemFromBacklog('CAT2_MAKER')}
-                      className="px-2.5 py-0.5 rounded-full bg-white/[0.05] hover:bg-white/[0.11] disabled:opacity-35 border border-white/[0.06] text-amber-100 font-mono text-[11px] flex items-center gap-1 cursor-pointer"
+                      className="px-2 py-0.5 rounded-full bg-white/[0.05] hover:bg-white/[0.11] disabled:opacity-35 border border-white/[0.06] text-amber-100 font-mono text-[10px] flex items-center gap-1 cursor-pointer"
                     >
-                      <RefreshCw className="w-3 h-3" />
+                      <RefreshCw className="w-2.5 h-2.5" />
                       <span>Swap</span>
                     </button>
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+                </div>
+                <p className="text-xs text-amber-100/75 leading-snug truncate">
+                  5m Startup: “{makerSlot.startupStep}”
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectCategory('CAT2_MAKER');
-              onStartCategory5mStep();
-            }}
-            className="w-full py-1.5 px-3 rounded-full bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs flex items-center justify-center gap-1.5 cursor-pointer"
-          >
-            <Play className="w-3 h-3 fill-current" />
-            <span>Begin 5m</span>
-          </button>
+          {isSplitMode && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectCategory('CAT2_MAKER');
+                onStartCategory5mStep();
+              }}
+              className="w-full py-1.5 px-3 rounded-full bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Play className="w-3 h-3 fill-current" />
+              <span>Begin 5m</span>
+            </button>
+          )}
         </article>
 
         {/* CARD 3: MEDIA [STICKY TRIPLE-TRACK] */}
@@ -605,83 +655,106 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
           onMouseEnter={() => setHoveredCat('CAT3_MEDIA')}
           onMouseLeave={() => setHoveredCat(null)}
           onClick={() => toggleCardExpand('CAT3_MEDIA')}
-          className={`rounded-2xl p-3 border transition-all duration-300 cursor-pointer flex flex-col justify-between space-y-2.5 ${
+          className={`rounded-2xl ${
+            isSplitMode ? 'p-3 space-y-2.5' : 'py-2.5 px-3 space-y-2'
+          } border transition-all duration-300 cursor-pointer flex flex-col justify-between ${
             recharge.activeCategory === 'CAT3_MEDIA'
               ? 'bento-hero-border-evening border-amber-400/35'
               : 'bento-surface-evening'
           }`}
         >
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-400/25 font-mono text-[11px] uppercase tracking-wider text-amber-200 flex items-center gap-1">
-                <Headphones className="w-3 h-3 text-amber-300" />
-                <span>3. Media • Sticky ({recharge.activeMediaTab.slice(0, 2)})</span>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-400/25 font-mono text-[10px] uppercase tracking-wider text-amber-200 flex items-center gap-1 shrink-0">
+                <Headphones className="w-2.5 h-2.5 text-amber-300" />
+                <span>3. Media ({recharge.activeMediaTab.slice(0, 2)})</span>
               </span>
+              <h3 className="font-serif text-lg leading-snug font-medium text-amber-50 truncate">
+                {activeMediaSlot.activeTitle}
+              </h3>
             </div>
 
-            <h3 className="font-serif text-lg leading-snug font-medium tracking-tight text-amber-50">
-              {activeMediaSlot.activeTitle}
-            </h3>
-
-            <AnimatePresence>
-              {isCardDisclosed('CAT3_MEDIA') && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="overflow-hidden pt-1 space-y-2"
-                  onClick={(e) => e.stopPropagation()}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="font-mono text-[10px] text-amber-200/80 tabular-nums">
+                [{activeMediaSlot.startsLogged ?? activeMediaSlot.fiveMinStarts}/3]
+              </span>
+              {!isSplitMode && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectCategory('CAT3_MEDIA');
+                    onStartCategory5mStep();
+                  }}
+                  className="px-2.5 py-1 rounded-full bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs flex items-center gap-1 cursor-pointer"
                 >
-                  {/* Triple-Track Switcher (3A Fiction, 3B Nonfiction, 3C Video) */}
-                  <div
-                    role="tablist"
-                    aria-label="Triple-Track Media Switcher"
-                    className="p-0.5 rounded-full bg-black/45 border border-white/[0.05] grid grid-cols-3 gap-1"
-                  >
-                    {(
-                      [
-                        { id: '3A_FICTION' as MediaSubTrackId, short: '3A Fiction', icon: BookOpen },
-                        { id: '3B_NONFICTION' as MediaSubTrackId, short: '3B Nonfic', icon: Headphones },
-                        { id: '3C_VIDEO' as MediaSubTrackId, short: '3C Video', icon: Film },
-                      ] as const
-                    ).map((tab) => {
-                      const active = recharge.activeMediaTab === tab.id;
-                      return (
-                        <button
-                          key={tab.id}
-                          id={`media-subtab-${tab.id}`}
-                          type="button"
-                          role="tab"
-                          aria-selected={active}
-                          onClick={() => onSelectMediaSubTab(tab.id)}
-                          className={`py-0.5 px-1.5 rounded-full font-mono text-[10px] text-center transition cursor-pointer ${
-                            active
-                              ? 'bg-amber-400 text-stone-950 font-medium'
-                              : 'text-amber-100/75 hover:text-amber-50'
-                          }`}
-                        >
-                          {tab.short}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <Play className="w-3 h-3 fill-current" />
+                  <span>5m</span>
+                </button>
+              )}
+            </div>
+          </div>
 
-                  <div className="flex items-center justify-between gap-2">
-                    <StickyDotsCounter
-                      starts={activeMediaSlot.startsLogged ?? activeMediaSlot.fiveMinStarts}
-                      unlockedViaCheckIn={
-                        activeMediaSlot.unlockedViaCheckIn || recharge.checkInModalOpen
-                      }
-                    />
+          <AnimatePresence>
+            {(isCardDisclosed('CAT3_MEDIA') || isSplitMode) && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden space-y-2"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Triple-Track Switcher (3A Fiction, 3B Nonfiction, 3C Video) */}
+                <div
+                  role="tablist"
+                  aria-label="Triple-Track Media Switcher"
+                  className="p-0.5 rounded-full bg-black/45 border border-white/[0.05] grid grid-cols-3 gap-1"
+                >
+                  {(
+                    [
+                      { id: '3A_FICTION' as MediaSubTrackId, short: '3A Fiction', icon: BookOpen },
+                      { id: '3B_NONFICTION' as MediaSubTrackId, short: '3B Nonfic', icon: Headphones },
+                      { id: '3C_VIDEO' as MediaSubTrackId, short: '3C Video', icon: Film },
+                    ] as const
+                  ).map((tab) => {
+                    const active = recharge.activeMediaTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        id={`media-subtab-${tab.id}`}
+                        type="button"
+                        role="tab"
+                        aria-selected={active}
+                        onClick={() => onSelectMediaSubTab(tab.id)}
+                        className={`py-0.5 px-1.5 rounded-full font-mono text-[10px] text-center transition cursor-pointer ${
+                          active
+                            ? 'bg-amber-400 text-stone-950 font-medium'
+                            : 'text-amber-100/75 hover:text-amber-50'
+                        }`}
+                      >
+                        {tab.short}
+                      </button>
+                    );
+                  })}
+                </div>
 
+                <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                  <StickyDotsCounter
+                    starts={activeMediaSlot.startsLogged ?? activeMediaSlot.fiveMinStarts}
+                    unlockedViaCheckIn={
+                      activeMediaSlot.unlockedViaCheckIn || recharge.checkInModalOpen
+                    }
+                  />
+
+                  <div className="flex items-center gap-1">
                     {recharge.activeMediaTab === '3A_FICTION' && (
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-0.5">
                         {(['1.75x', '2.00x', '2.25x'] as const).map((spd) => (
                           <button
                             key={spd}
                             type="button"
                             onClick={() => onSelectFictionSpeed(spd)}
-                            className={`px-1.5 py-0.5 rounded font-mono text-[10px] border cursor-pointer ${
+                            className={`px-1 py-0.5 rounded font-mono text-[10px] border cursor-pointer ${
                               recharge.fictionSpeed === spd
                                 ? 'bg-amber-400/20 border-amber-400/50 text-amber-100'
                                 : 'bg-black/40 border-white/[0.05] text-amber-200/70'
@@ -692,25 +765,15 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                         ))}
                       </div>
                     )}
-                  </div>
 
-                  <p className="text-xs text-amber-100/75 leading-snug">
-                    5m Startup: “{activeMediaSlot.startupStep}”
-                  </p>
-
-                  <div className="text-[11px] font-mono text-stone-400 truncate">
-                    Next: {activeMediaSlot.queuedNextTitle || activeMediaSlot.backlogQueue[0] || 'None'}
-                  </div>
-
-                  <div className="flex items-center gap-1.5 pt-0.5">
                     {onIncrementStickyStart && (
                       <button
                         id={`btn-log-start-${recharge.activeMediaTab}`}
                         type="button"
                         onClick={() => onIncrementStickyStart(recharge.activeMediaTab)}
-                        className="px-2 py-0.5 rounded-full bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.05] text-amber-200 font-mono text-[11px] cursor-pointer"
+                        className="px-2 py-0.5 rounded-full bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.05] text-amber-200 font-mono text-[10px] cursor-pointer"
                       >
-                        +1 Start
+                        +1
                       </button>
                     )}
                     <button
@@ -722,29 +785,35 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                         !recharge.checkInModalOpen
                       }
                       onClick={() => onSwapStickyItemFromBacklog(recharge.activeMediaTab)}
-                      className="px-2.5 py-0.5 rounded-full bg-white/[0.05] hover:bg-white/[0.11] disabled:opacity-35 border border-white/[0.06] text-amber-100 font-mono text-[11px] flex items-center gap-1 cursor-pointer"
+                      className="px-2 py-0.5 rounded-full bg-white/[0.05] hover:bg-white/[0.11] disabled:opacity-35 border border-white/[0.06] text-amber-100 font-mono text-[10px] flex items-center gap-1 cursor-pointer"
                     >
-                      <RefreshCw className="w-3 h-3" />
+                      <RefreshCw className="w-2.5 h-2.5" />
                       <span>Swap</span>
                     </button>
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+                </div>
 
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectCategory('CAT3_MEDIA');
-              onStartCategory5mStep();
-            }}
-            className="w-full py-1.5 px-3 rounded-full bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs flex items-center justify-center gap-1.5 cursor-pointer"
-          >
-            <Play className="w-3 h-3 fill-current" />
-            <span>Begin 5m</span>
-          </button>
+                <p className="text-xs text-amber-100/75 leading-snug truncate">
+                  5m Startup: “{activeMediaSlot.startupStep}”
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {isSplitMode && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectCategory('CAT3_MEDIA');
+                onStartCategory5mStep();
+              }}
+              className="w-full py-1.5 px-3 rounded-full bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Play className="w-3 h-3 fill-current" />
+              <span>Begin 5m</span>
+            </button>
+          )}
         </article>
 
         {/* CARD 4: COMFORT SHOW [FLUID] */}
@@ -753,56 +822,74 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
           onMouseEnter={() => setHoveredCat('CAT4_COMFORT')}
           onMouseLeave={() => setHoveredCat(null)}
           onClick={() => toggleCardExpand('CAT4_COMFORT')}
-          className={`rounded-2xl p-3 border transition-all duration-300 cursor-pointer flex flex-col justify-between space-y-2.5 ${
+          className={`rounded-2xl ${
+            isSplitMode ? 'p-3 space-y-2.5' : 'py-2.5 px-3 space-y-2'
+          } border transition-all duration-300 cursor-pointer flex flex-col justify-between ${
             recharge.activeCategory === 'CAT4_COMFORT'
               ? 'bento-hero-border-evening border-amber-400/35'
               : 'bento-surface-evening'
           }`}
         >
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-400/25 font-mono text-[11px] uppercase tracking-wider text-amber-200 flex items-center gap-1">
-                <Tv className="w-3 h-3 text-amber-300" />
-                <span>4. Comfort Show • Fluid</span>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-400/25 font-mono text-[10px] uppercase tracking-wider text-amber-200 flex items-center gap-1 shrink-0">
+                <Tv className="w-2.5 h-2.5 text-amber-300" />
+                <span>4. Comfort</span>
               </span>
+              <h3 className="font-serif text-lg leading-snug font-medium text-amber-50 truncate">
+                {recharge.fluidCategories?.CAT4_COMFORT.activeTitle ||
+                  "It's Always Sunny in Philadelphia"}
+              </h3>
             </div>
 
-            <h3 className="font-serif text-lg leading-snug font-medium tracking-tight text-amber-50">
-              {recharge.fluidCategories?.CAT4_COMFORT.activeTitle ||
-                "It's Always Sunny in Philadelphia"}
-            </h3>
-
-            <AnimatePresence>
-              {isCardDisclosed('CAT4_COMFORT') && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="overflow-hidden pt-1 space-y-1.5"
-                >
-                  <p className="text-xs text-amber-100/75 leading-snug">
-                    5m Startup: “
-                    {recharge.fluidCategories?.CAT4_COMFORT.startupStep ||
-                      'First 5m of episode away from work monitor'}
-                    ”
-                  </p>
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {!isSplitMode && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectCategory('CAT4_COMFORT');
+                  onStartCategory5mStep();
+                }}
+                className="px-2.5 py-1 rounded-full bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs flex items-center gap-1 shrink-0 cursor-pointer"
+              >
+                <Play className="w-3 h-3 fill-current" />
+                <span>5m</span>
+              </button>
+            )}
           </div>
 
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectCategory('CAT4_COMFORT');
-              onStartCategory5mStep();
-            }}
-            className="w-full py-1.5 px-3 rounded-full bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs flex items-center justify-center gap-1.5 cursor-pointer"
-          >
-            <Play className="w-3 h-3 fill-current" />
-            <span>Begin 5m</span>
-          </button>
+          <AnimatePresence>
+            {(isCardDisclosed('CAT4_COMFORT') || isSplitMode) && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden space-y-1.5"
+              >
+                <p className="text-xs text-amber-100/75 leading-snug truncate">
+                  5m Startup: “
+                  {recharge.fluidCategories?.CAT4_COMFORT.startupStep ||
+                    'First 5m of episode away from work monitor'}
+                  ”
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {isSplitMode && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectCategory('CAT4_COMFORT');
+                onStartCategory5mStep();
+              }}
+              className="w-full py-1.5 px-3 rounded-full bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Play className="w-3 h-3 fill-current" />
+              <span>Begin 5m</span>
+            </button>
+          )}
         </article>
 
         {/* CARD 5: GAMING [STICKY] */}
@@ -811,52 +898,69 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
           onMouseEnter={() => setHoveredCat('CAT5_GAMING')}
           onMouseLeave={() => setHoveredCat(null)}
           onClick={() => toggleCardExpand('CAT5_GAMING')}
-          className={`rounded-2xl p-3 border transition-all duration-300 cursor-pointer flex flex-col justify-between space-y-2.5 ${
+          className={`rounded-2xl ${
+            isSplitMode ? 'p-3 space-y-2.5' : 'py-2.5 px-3 space-y-2'
+          } border transition-all duration-300 cursor-pointer flex flex-col justify-between ${
             recharge.activeCategory === 'CAT5_GAMING'
               ? 'bento-hero-border-evening border-amber-400/35'
               : 'bento-surface-evening'
           }`}
         >
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-400/25 font-mono text-[11px] uppercase tracking-wider text-emerald-200 flex items-center gap-1">
-                <Gamepad2 className="w-3 h-3 text-emerald-300" />
-                <span>5. Gaming • Sticky</span>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-400/25 font-mono text-[10px] uppercase tracking-wider text-emerald-200 flex items-center gap-1 shrink-0">
+                <Gamepad2 className="w-2.5 h-2.5 text-emerald-300" />
+                <span>5. Gaming</span>
               </span>
+              <h3 className="font-serif text-lg leading-snug font-medium text-amber-50 truncate">
+                {gamingSlot.activeTitle}
+              </h3>
             </div>
 
-            <h3 className="font-serif text-lg leading-snug font-medium tracking-tight text-amber-50">
-              {gamingSlot.activeTitle}
-            </h3>
-
-            <AnimatePresence>
-              {isCardDisclosed('CAT5_GAMING') && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="overflow-hidden pt-1 space-y-2"
-                  onClick={(e) => e.stopPropagation()}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="font-mono text-[10px] text-amber-200/80 tabular-nums">
+                [{gamingSlot.startsLogged ?? gamingSlot.fiveMinStarts}/3]
+              </span>
+              {!isSplitMode && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectCategory('CAT5_GAMING');
+                    onStartCategory5mStep();
+                  }}
+                  className="px-2.5 py-1 rounded-full bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs flex items-center gap-1 cursor-pointer"
                 >
+                  <Play className="w-3 h-3 fill-current" />
+                  <span>5m</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          <AnimatePresence>
+            {(isCardDisclosed('CAT5_GAMING') || isSplitMode) && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden space-y-2"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between gap-2">
                   <StickyDotsCounter
                     starts={gamingSlot.startsLogged ?? gamingSlot.fiveMinStarts}
                     unlockedViaCheckIn={
                       gamingSlot.unlockedViaCheckIn || recharge.checkInModalOpen
                     }
                   />
-                  <p className="text-xs text-amber-100/75 leading-snug">
-                    5m Startup: “{gamingSlot.startupStep}”
-                  </p>
-                  <div className="text-[11px] font-mono text-stone-400 truncate">
-                    Next: {gamingSlot.queuedNextTitle || gamingSlot.backlogQueue[0] || 'None'}
-                  </div>
-                  <div className="flex items-center gap-1.5 pt-0.5">
+                  <div className="flex items-center gap-1">
                     {onIncrementStickyStart && (
                       <button
                         id="btn-log-start-CAT5_GAMING"
                         type="button"
                         onClick={() => onIncrementStickyStart('CAT5_GAMING')}
-                        className="px-2 py-0.5 rounded-full bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.05] text-amber-200 font-mono text-[11px] cursor-pointer"
+                        className="px-2 py-0.5 rounded-full bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.05] text-amber-200 font-mono text-[10px] cursor-pointer"
                       >
                         +1 Start
                       </button>
@@ -870,29 +974,34 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                         !recharge.checkInModalOpen
                       }
                       onClick={() => onSwapStickyItemFromBacklog('CAT5_GAMING')}
-                      className="px-2.5 py-0.5 rounded-full bg-white/[0.05] hover:bg-white/[0.11] disabled:opacity-35 border border-white/[0.06] text-amber-100 font-mono text-[11px] flex items-center gap-1 cursor-pointer"
+                      className="px-2 py-0.5 rounded-full bg-white/[0.05] hover:bg-white/[0.11] disabled:opacity-35 border border-white/[0.06] text-amber-100 font-mono text-[10px] flex items-center gap-1 cursor-pointer"
                     >
-                      <RefreshCw className="w-3 h-3" />
+                      <RefreshCw className="w-2.5 h-2.5" />
                       <span>Swap</span>
                     </button>
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+                </div>
+                <p className="text-xs text-amber-100/75 leading-snug truncate">
+                  5m Startup: “{gamingSlot.startupStep}”
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectCategory('CAT5_GAMING');
-              onStartCategory5mStep();
-            }}
-            className="w-full py-1.5 px-3 rounded-full bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs flex items-center justify-center gap-1.5 cursor-pointer"
-          >
-            <Play className="w-3 h-3 fill-current" />
-            <span>Begin 5m</span>
-          </button>
+          {isSplitMode && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectCategory('CAT5_GAMING');
+                onStartCategory5mStep();
+              }}
+              className="w-full py-1.5 px-3 rounded-full bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Play className="w-3 h-3 fill-current" />
+              <span>Begin 5m</span>
+            </button>
+          )}
         </article>
       </div>
 
@@ -902,43 +1011,43 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
       <section
         id="flow-extension-card"
         aria-labelledby="flow-extension-heading"
-        className="rounded-2xl bento-surface-evening py-2 px-3.5 space-y-2"
+        className="rounded-2xl bento-surface-evening py-2.5 px-3 space-y-2"
       >
-        <div className="flex flex-wrap items-center justify-between gap-2.5">
-          <div className="flex items-center gap-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <div className="flex flex-wrap items-baseline gap-2">
+            <div className="flex items-baseline gap-2 min-w-0 truncate">
               <h3
                 id="flow-extension-heading"
-                className="font-serif text-lg leading-snug font-medium text-amber-50"
+                className="font-serif text-lg leading-snug font-medium text-amber-50 shrink-0"
               >
                 Flow Extension
               </h3>
-              <p className="text-[11px] font-mono text-amber-200/70">
-                Weekly used: {recharge.weeklyExtensionsUsed}/2 • Tomorrow deduction: -{tomorrowDay?.deductedBlocksFromExtension || 0} blks
-              </p>
+              <span className="text-[11px] font-mono text-amber-200/70 truncate">
+                {recharge.weeklyExtensionsUsed}/2 wk • -{tomorrowDay?.deductedBlocksFromExtension || 0} blks
+              </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               id="btn-flow-extension"
               type="button"
               disabled={!canUseFlowExtension && !recharge.flowExtensionActive}
               onClick={onOpenFlowExtensionPrompt}
-              className="px-3 py-1 rounded-full bg-amber-400/90 hover:bg-amber-300 disabled:opacity-35 text-stone-950 font-mono font-medium text-xs cursor-pointer"
+              className="px-2.5 py-1 rounded-full bg-amber-400/90 hover:bg-amber-300 disabled:opacity-35 text-stone-950 font-mono font-medium text-xs cursor-pointer"
             >
               {recharge.flowExtensionActive
-                ? 'Flow Extension Active'
+                ? 'Active'
                 : canUseFlowExtension
-                ? 'Request Flow Extension'
-                : 'Flow Extension Locked'}
+                ? 'Extend Flow'
+                : 'Locked'}
             </button>
 
             <button
               type="button"
               onClick={() => setFlowDetailsOpen((prev) => !prev)}
-              className="p-1.5 rounded-full bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.05] text-amber-200/75 cursor-pointer"
+              className="p-1 rounded-full bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.05] text-amber-200/75 cursor-pointer"
               aria-label="Toggle Flow Extension Eligibility Details"
             >
               {flowDetailsOpen ? (
@@ -982,22 +1091,22 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
 
         {/* Active Flow Extension Open Count-Up Console */}
         {recharge.flowExtensionActive && (
-          <div className="p-3 rounded-xl bg-black/50 border border-amber-400/35 flex flex-wrap items-center justify-between gap-2.5">
-            <div className="space-y-0.5">
-              <span className="text-[10px] font-mono uppercase text-amber-300">
+          <div className="p-2.5 rounded-xl bg-black/50 border border-amber-400/35 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <span className="text-[10px] font-mono uppercase text-amber-300 block">
                 Open Count-Up • 20m Chimes + 60m Micro-Break
               </span>
-              <div className="font-mono text-lg font-normal tabular-nums text-amber-100">
+              <div className="font-mono text-lg font-light tabular-nums text-amber-100">
                 +{formatMMSS(recharge.flowExtensionElapsedSeconds)} •{' '}
                 {recharge.flowExtensionBlocksLoggedToday} ext blocks
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={onToggleFlowExtensionTimer}
-                className="px-3 py-1 rounded-full bg-amber-400 text-stone-950 font-mono font-medium text-xs cursor-pointer"
+                className="px-2.5 py-1 rounded-full bg-amber-400 text-stone-950 font-mono font-medium text-xs cursor-pointer"
               >
                 {recharge.flowExtensionRunning ? 'Pause' : 'Resume'}
               </button>
@@ -1005,7 +1114,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                 id="btn-log-flow-extension-20m"
                 type="button"
                 onClick={onLogFlowExtensionBlock20m}
-                className="px-3 py-1 rounded-full bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-amber-100 font-mono text-xs cursor-pointer"
+                className="px-2.5 py-1 rounded-full bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-amber-100 font-mono text-xs cursor-pointer"
               >
                 Log +20m Block
               </button>
@@ -1020,10 +1129,12 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="pt-2 border-t border-white/[0.05] grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] font-mono overflow-hidden"
+              className={`pt-2 border-t border-white/[0.05] grid grid-cols-1 ${
+                isSplitMode ? 'sm:grid-cols-3' : ''
+              } gap-2 text-xs font-mono overflow-hidden`}
             >
-              <div className="p-2.5 rounded-xl bg-black/35 border border-white/[0.05] flex items-center justify-between">
-                <span>1. Tomorrow Early Event: {tomorrowHasZeroEarlyEvents ? 'None' : 'Active'}</span>
+              <div className="p-2 rounded-xl bg-black/35 border border-white/[0.05] flex items-center justify-between">
+                <span>1. Early Event: {tomorrowHasZeroEarlyEvents ? 'None' : 'Active'}</span>
                 <button
                   type="button"
                   onClick={onToggleTomorrowEarlyAnchor}
@@ -1033,14 +1144,14 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                 </button>
               </div>
 
-              <div className="p-2.5 rounded-xl bg-black/35 border border-white/[0.05] flex items-center justify-between">
+              <div className="p-2 rounded-xl bg-black/35 border border-white/[0.05] flex items-center justify-between">
                 <span>2. Task: {state.timer.activeTaskType}</span>
                 <span className={activeTaskNotFlashcards ? 'text-emerald-300' : 'text-red-300'}>
                   {activeTaskNotFlashcards ? 'PASS' : 'LOCKED'}
                 </span>
               </div>
 
-              <div className="p-2.5 rounded-xl bg-black/35 border border-white/[0.05] flex items-center justify-between">
+              <div className="p-2 rounded-xl bg-black/35 border border-white/[0.05] flex items-center justify-between">
                 <span>3. Weekly: {recharge.weeklyExtensionsUsed}/2</span>
                 <div className="flex gap-1">
                   {[0, 1, 2].map((n) => (
