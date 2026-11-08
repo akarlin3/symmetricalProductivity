@@ -10,6 +10,7 @@ import {
   Maximize2,
   Moon,
   Pause,
+  PictureInPicture2,
   Play,
   RotateCcw,
   Sparkles,
@@ -41,6 +42,8 @@ interface CommandPaletteModalProps {
   onFastForwardCurrentStage: () => void;
   cinemaFocusMode: boolean;
   onToggleCinemaFocusMode: () => void;
+  onOpenMiniHudPip?: () => void;
+  isMiniHudOpen?: boolean;
   onSelectLoadMode: (mode: LoadMode, targetBlocks: number) => void;
   onTriggerStressReset: () => void;
   smartIntakeText: string;
@@ -64,6 +67,8 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onFastForwardCurrentStage,
   cinemaFocusMode,
   onToggleCinemaFocusMode,
+  onOpenMiniHudPip,
+  isMiniHudOpen = false,
   onSelectLoadMode,
   onTriggerStressReset,
   smartIntakeText,
@@ -153,6 +158,26 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
         onClose();
       },
     },
+    ...(onOpenMiniHudPip
+      ? [
+          {
+            id: 'cmd-pop-out-mini-hud',
+            label: isMiniHudOpen
+              ? 'Close External OS Mini HUD'
+              : 'Pop Out Mini HUD (OS Always-on-Top Window)',
+            subtitle:
+              'Float 300×135 Document PiP React Portal or 480×220 Canvas Stream Video PiP over desktop apps',
+            shortcut: 'P',
+            icon: PictureInPicture2,
+            accent: 'text-cyan-300',
+            action: () => {
+              triggerHaptic([15]);
+              onOpenMiniHudPip();
+              onClose();
+            },
+          },
+        ]
+      : []),
     {
       id: 'cmd-reset-stage',
       label: 'Reset Current Timer Stage',

@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import {
   Check,
   Clock,
@@ -107,6 +106,10 @@ import {
 } from './utils/smartIntakePlanner';
 import { playHarmonicChord, SOUNDSCAPE_METADATA, soundEngine } from './utils/soundEngine';
 import { DualRingTimerSvg } from './components/DualRingTimerSvg';
+import {
+  ExternalMiniHud,
+  useExternalMiniHudController,
+} from './components/ExternalMiniHud';
 import { HeaderBar } from './components/HeaderBar';
 import { InsightsModal } from './components/InsightsModal';
 import { KeyboardShortcutModal } from './components/KeyboardShortcutModal';
@@ -246,9 +249,6 @@ export function App() {
   const [notificationLog, setNotificationLog] = useState<NotificationLogEntry[]>([]);
   const [notificationsGranted, setNotificationsGranted] = useState(false);
   const [swOfflineReady, setSwOfflineReady] = useState(false);
-  // Document Picture-in-Picture & Floating Corner Fallback state
-  const [pipWindow, setPipWindow] = useState<Window | null>(null);
-  const [floatingMiniHudOpen, setFloatingMiniHudOpen] = useState(false);
 
   // Smart Intake & Week Planner state + Gemini API Key storage
   const [smartIntakeText, setSmartIntakeText] = useState('');
@@ -271,6 +271,7 @@ export function App() {
   const undoStackRef = useRef<SymmetryState[]>([]);
   const [undoToast, setUndoToast] = useState<UndoToastState | null>(null);
   const [undoSecondsLeft, setUndoSecondsLeft] = useState<number>(10);
+  const toggleMiniHudRef = useRef<() => void>(() => {});
 
   const pushUndoSnapshot = useCallback((snapshot: SymmetryState, label: string) => {
     const cloned: SymmetryState = JSON.parse(JSON.stringify(snapshot));
@@ -1097,6 +1098,14 @@ export function App() {
         triggerHaptic([12]);
         soundEngine.playTactileClick('MODE_TOGGLE');
         setCinemaFocusMode((prev) => !prev);
+        return;
+      }
+
+      // P pops out / closes OS-level Always-on-Top Mini HUD (Document PiP / Video Stream PiP)
+      if (!e.shiftKey && e.key.toLowerCase() === 'p' && !e.repeat) {
+        e.preventDefault();
+        soundEngine.playTactileClick('MODE_TOGGLE');
+        toggleMiniHudRef.current();
         return;
       }
 
@@ -3453,57 +3462,6 @@ export function App() {
     });
   };
 
-  // Document Picture-in-Picture API (width: 260, height: 110) with Floating Corner Fallback
-  const handleToggleMiniHudPip = async () => {
-    triggerHaptic([15]);
-    if (typeof window === 'undefined') return;
-
-    if (pipWindow && !pipWindow.closed) {
-      pipWindow.close();
-      setPipWindow(null);
-      setFloatingMiniHudOpen(false);
-      showNotice('Closed Mini HUD (PiP).');
-      return;
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const docPip = (window as any).documentPictureInPicture;
-    if (docPip && typeof docPip.requestWindow === 'function') {
-      try {
-        const win: Window = await docPip.requestWindow({
-          width: 260,
-          height: 110,
-        });
-        win.document.title = 'Symmetry Mini HUD';
-        win.document.body.style.margin = '0';
-        win.document.body.style.backgroundColor = '#060911';
-        win.document.body.style.color = '#f8fafc';
-        win.document.body.style.fontFamily =
-          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
-        win.document.body.style.overflow = 'hidden';
-
-        const handlePipClose = () => {
-          setPipWindow(null);
-        };
-        win.addEventListener('pagehide', handlePipClose);
-        setPipWindow(win);
-        setFloatingMiniHudOpen(true);
-        showNotice('Opened Always-on-Top Mini HUD (Document Picture-in-Picture 260×110).');
-        return;
-      } catch {
-        // Fall through to compact floating corner fallback
-      }
-    }
-
-    const nextFallback = !floatingMiniHudOpen;
-    setFloatingMiniHudOpen(nextFallback);
-    showNotice(
-      nextFallback
-        ? 'Opened Floating Mini HUD (260×110 corner HUD active).'
-        : 'Closed Floating Mini HUD.'
-    );
-  };
-
   // Toggle between On-Duty and 0m work left simulation
   const handleToggleZeroWorkSimulation = () => {
     setState((prev) => {
@@ -3536,6 +3494,28 @@ export function App() {
           })),
         };
       }
+    });
+  };
+
+  const handleToggleTimerRun = () => {
+    const now = Date.now();
+    setState((prev) => {
+      const nextRunning = !prev.timer.isRunning;
+      const currentSecondsLeft =
+        prev.timer.isRunning && prev.timer.targetEndTimeMs
+          ? Math.max(0, Math.ceil((prev.timer.targetEndTimeMs - now) / 1000))
+          : prev.timer.secondsLeft;
+      return {
+        ...prev,
+        timer: {
+          ...prev.timer,
+          isRunning: nextRunning,
+          secondsLeft: currentSecondsLeft,
+          targetEndTimeMs: nextRunning
+            ? now + currentSecondsLeft * 1000
+            : null,
+        },
+      };
     });
   };
 
@@ -3633,6 +3613,18 @@ export function App() {
         },
       };
     });
+  };
+
+  // External OS-Level Mini HUD Controller (Document PiP 300x135 React Portal + Universal 480x220 Canvas Stream Video PiP)
+  const miniHudController = useExternalMiniHudController({
+    state,
+    onToggleTimerRun: handleToggleTimerRun,
+    onFastForwardCurrentStage: handleFastForwardTimerStage,
+    onShrinkStartupStep: () => handleShrinkStartupStep(),
+    onNotify: showNotice,
+  });
+  toggleMiniHudRef.current = () => {
+    void miniHudController.onToggleMiniHud();
   };
 
   return (
@@ -3787,8 +3779,12 @@ export function App() {
               onRecalibrateReSequenceNow={handleRecalibrateReSequenceNow}
               onOpenPipelineDrawer={() => setPipelineDrawerOpen(true)}
               onUpdatePipelineDay={handleUpdatePipelineDay}
-              onOpenMiniHudPip={handleToggleMiniHudPip}
-              isMiniHudOpen={Boolean(pipWindow) || floatingMiniHudOpen}
+              onOpenMiniHudPip={() => void miniHudController.onToggleMiniHud()}
+              isMiniHudOpen={miniHudController.isMiniHudOpen}
+              autoFloatOnTabSwitch={miniHudController.autoFloatOnTabSwitch}
+              onToggleAutoFloatOnTabSwitch={() =>
+                miniHudController.onToggleAutoFloatOnTabSwitch()
+              }
               onTriggerMidDayReset={() => {
                 const now = Date.now();
                 setState((prev) => {
@@ -4305,8 +4301,12 @@ export function App() {
                 dispatchLockScreenAlert(eventType, title, body);
                 showNotice(`Dispatched Lock-Screen Alert: ${title}`);
               }}
-              onOpenMiniHudPip={handleToggleMiniHudPip}
-              isMiniHudOpen={Boolean(pipWindow) || floatingMiniHudOpen}
+              onOpenMiniHudPip={() => void miniHudController.onToggleMiniHud()}
+              isMiniHudOpen={miniHudController.isMiniHudOpen}
+              autoFloatOnTabSwitch={miniHudController.autoFloatOnTabSwitch}
+              onToggleAutoFloatOnTabSwitch={() =>
+                miniHudController.onToggleAutoFloatOnTabSwitch()
+              }
               onSelectElasticMultiplier={handleSelectElasticMultiplier}
               onShrinkStartupStep={handleShrinkStartupStep}
             />
@@ -4984,264 +4984,30 @@ export function App() {
         isEveningTheme={isEveningTheme}
       />
 
-      {/* Document Picture-in-Picture (260x110) Portal */}
-      {pipWindow &&
-        !pipWindow.closed &&
-        createPortal(
-          <div
-            id="doc-pip-mini-hud"
-            style={{
-              width: '100%',
-              height: '100vh',
-              boxSizing: 'border-box',
-              padding: '8px 10px',
-              background: '#060911',
-              color: '#f8fafc',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between',
-              fontFamily:
-                'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '6px',
-                fontSize: '10px',
-                color: '#67e8f9',
-                fontWeight: 700,
-              }}
-            >
-              <span>
-                {state.timer.mode === 'WORK_20M'
-                  ? state.timer.workStage === 'IGNITION_5M'
-                    ? '5m Startup'
-                    : '15m Momentum'
-                  : state.timer.mode}
-              </span>
-              <span
-                style={{
-                  padding: '1px 5px',
-                  borderRadius: '6px',
-                  background: 'rgba(6, 182, 212, 0.16)',
-                  border: '1px solid rgba(34, 211, 238, 0.4)',
-                  color: '#cffafe',
-                  fontSize: '9px',
-                }}
-              >
-                {metrics.durationPrefix}
-              </span>
-            </div>
-
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '8px',
-              }}
-            >
-              <span
-                style={{
-                  fontSize: '24px',
-                  fontWeight: 800,
-                  letterSpacing: '-0.03em',
-                  fontVariantNumeric: 'tabular-nums',
-                  color: '#ffffff',
-                }}
-              >
-                {`${String(Math.floor(state.timer.secondsLeft / 60)).padStart(
-                  2,
-                  '0'
-                )}:${String(state.timer.secondsLeft % 60).padStart(2, '0')}`}
-              </span>
-
-              <div style={{ display: 'flex', gap: '5px' }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const now = Date.now();
-                    setState((prev) => {
-                      const nextRunning = !prev.timer.isRunning;
-                      const currentSec =
-                        prev.timer.isRunning && prev.timer.targetEndTimeMs
-                          ? Math.max(
-                              0,
-                              Math.ceil(
-                                (prev.timer.targetEndTimeMs - now) / 1000
-                              )
-                            )
-                          : prev.timer.secondsLeft;
-                      return {
-                        ...prev,
-                        timer: {
-                          ...prev.timer,
-                          isRunning: nextRunning,
-                          secondsLeft: currentSec,
-                          targetEndTimeMs: nextRunning
-                            ? now + currentSec * 1000
-                            : null,
-                        },
-                      };
-                    });
-                  }}
-                  style={{
-                    padding: '4px 8px',
-                    borderRadius: '8px',
-                    border: 'none',
-                    background: state.timer.isRunning ? '#fbbf24' : '#22d3ee',
-                    color: '#020617',
-                    fontWeight: 800,
-                    fontSize: '10px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {state.timer.isRunning ? 'Pause' : 'Start'}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleFastForwardTimerStage}
-                  style={{
-                    padding: '4px 8px',
-                    borderRadius: '8px',
-                    border: '1px solid rgba(148, 163, 184, 0.35)',
-                    background: 'rgba(255, 255, 255, 0.08)',
-                    color: '#e2e8f0',
-                    fontWeight: 700,
-                    fontSize: '10px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Skip
-                </button>
-              </div>
-            </div>
-          </div>,
-          pipWindow.document.body
-        )}
-
-      {/* Compact Floating Always-on-Top Corner Fallback Mini-Timer (260x110) */}
-      {floatingMiniHudOpen && (
-        <aside
-          id="floating-mini-hud-pip"
-          aria-label="Floating Always-on-Top Mini-Timer HUD"
-          style={{ width: '260px', height: '110px' }}
-          className="fixed bottom-16 sm:bottom-5 right-4 z-50 rounded-2xl bg-slate-950/95 border border-cyan-400/60 shadow-[0_12px_35px_rgba(6,182,212,0.28)] backdrop-blur-xl px-3 py-2.5 flex flex-col justify-between font-mono"
-        >
-          <div className="flex items-center justify-between gap-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-300 flex items-center gap-1 truncate">
-              <PictureInPicture2 className="w-3 h-3 text-cyan-400 shrink-0" />
-              <span>
-                {state.timer.mode === 'WORK_20M'
-                  ? state.timer.workStage === 'IGNITION_5M'
-                    ? '5m Startup'
-                    : '15m Momentum'
-                  : state.timer.mode === 'STRESS_RESET'
-                  ? '4-7-8 Reset'
-                  : 'Break'}
-              </span>
-            </span>
-            <div className="flex items-center gap-1 shrink-0">
-              <span
-                id="mini-hud-work-left-badge"
-                className="px-1.5 py-0.5 rounded bg-cyan-500/15 border border-cyan-400/40 text-[9px] font-bold text-cyan-200 tabular-nums"
-              >
-                {metrics.durationPrefix}
-              </span>
-              <button
-                id="btn-close-floating-mini-hud"
-                type="button"
-                onClick={() => setFloatingMiniHudOpen(false)}
-                className="p-0.5 rounded hover:bg-white/10 text-slate-400 hover:text-white cursor-pointer"
-                title="Close Mini HUD"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between gap-2">
-            <span
-              id="mini-hud-countdown"
-              className="text-2xl font-extrabold tabular-nums tracking-tight text-white"
-            >
-              {`${String(Math.floor(state.timer.secondsLeft / 60)).padStart(
-                2,
-                '0'
-              )}:${String(state.timer.secondsLeft % 60).padStart(2, '0')}`}
-            </span>
-
-            <div className="flex items-center gap-1.5">
-              <button
-                id="btn-mini-hud-pause-resume"
-                type="button"
-                onClick={() => {
-                  triggerHaptic([10]);
-                  const now = Date.now();
-                  setState((prev) => {
-                    const nextRunning = !prev.timer.isRunning;
-                    const currentSec =
-                      prev.timer.isRunning && prev.timer.targetEndTimeMs
-                        ? Math.max(
-                            0,
-                            Math.ceil((prev.timer.targetEndTimeMs - now) / 1000)
-                          )
-                        : prev.timer.secondsLeft;
-                    return {
-                      ...prev,
-                      timer: {
-                        ...prev.timer,
-                        isRunning: nextRunning,
-                        secondsLeft: currentSec,
-                        targetEndTimeMs: nextRunning
-                          ? now + currentSec * 1000
-                          : null,
-                      },
-                    };
-                  });
-                }}
-                className={`px-2.5 py-1 rounded-lg font-mono text-[10px] font-bold flex items-center gap-1 cursor-pointer ${
-                  state.timer.isRunning
-                    ? 'bg-amber-400 text-slate-950'
-                    : 'bg-cyan-400 text-slate-950'
-                }`}
-              >
-                {state.timer.isRunning ? (
-                  <>
-                    <Pause className="w-3 h-3 fill-current" />
-                    <span>Pause</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-3 h-3 fill-current" />
-                    <span>Start</span>
-                  </>
-                )}
-              </button>
-
-              <button
-                id="btn-mini-hud-skip"
-                type="button"
-                onClick={() => {
-                  triggerHaptic([10]);
-                  handleFastForwardTimerStage();
-                }}
-                className="px-2 py-1 rounded-lg bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.15] text-cyan-200 font-mono text-[10px] font-bold flex items-center gap-0.5 cursor-pointer"
-              >
-                <FastForward className="w-3 h-3" />
-                <span>Skip</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="text-[9px] text-slate-400 truncate">
-            {state.timer.activeTaskTitle}
-          </div>
-        </aside>
-      )}
+      {/* External OS-Level Mini HUD (Interactive Document PiP 300x135 React Portal + Universal 480x220 Canvas Stream Video PiP) */}
+      <ExternalMiniHud
+        state={state}
+        onToggleTimerRun={handleToggleTimerRun}
+        onFastForwardCurrentStage={handleFastForwardTimerStage}
+        onShrinkStartupStep={() => handleShrinkStartupStep()}
+        onNotify={showNotice}
+        pipWindow={miniHudController.pipWindow}
+        setPipWindow={miniHudController.setPipWindow}
+        engineMode={miniHudController.engineMode}
+        setEngineMode={miniHudController.setEngineMode}
+        autoFloatOnTabSwitch={miniHudController.autoFloatOnTabSwitch}
+        onToggleAutoFloatOnTabSwitch={
+          miniHudController.onToggleAutoFloatOnTabSwitch
+        }
+        onRequestPopOut={miniHudController.onRequestPopOut}
+        onCloseMiniHud={miniHudController.onCloseMiniHud}
+        tabSwitchFloatPromptOpen={miniHudController.tabSwitchFloatPromptOpen}
+        onDismissTabSwitchFloatPrompt={
+          miniHudController.onDismissTabSwitchFloatPrompt
+        }
+        canvasRef={miniHudController.canvasRef}
+        videoRef={miniHudController.videoRef}
+      />
 
       {/* State Sync Modal (Settings / Profile Archetype / Day-Boundary Preferences / Rolling Auto-Backups / Gemini API Key / 3-Part state.md Compiler & Parser) */}
       <MobileBottomSheet
@@ -6219,6 +5985,8 @@ export function App() {
         onFastForwardCurrentStage={handleFastForwardTimerStage}
         cinemaFocusMode={cinemaFocusMode}
         onToggleCinemaFocusMode={() => setCinemaFocusMode((prev) => !prev)}
+        onOpenMiniHudPip={() => void miniHudController.onToggleMiniHud()}
+        isMiniHudOpen={miniHudController.isMiniHudOpen}
         onSelectLoadMode={(mode, targetBlocks) =>
           handleSelectLoadMode(mode, targetBlocks, false)
         }

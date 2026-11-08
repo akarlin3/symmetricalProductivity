@@ -138,6 +138,8 @@ interface Tab1PipelineProps {
   onSmartIntakeSubmit?: (rawText: string) => void;
   onOpenMiniHudPip?: () => void;
   isMiniHudOpen?: boolean;
+  autoFloatOnTabSwitch?: boolean;
+  onToggleAutoFloatOnTabSwitch?: () => void;
   onTriggerMidDayReset: () => void;
   // Timer HUD & Quick Triage Dock handlers
   onToggleTimerRun: () => void;
@@ -198,6 +200,8 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   onUpdatePipelineDay,
   onOpenMiniHudPip,
   isMiniHudOpen,
+  autoFloatOnTabSwitch,
+  onToggleAutoFloatOnTabSwitch,
   onTriggerMidDayReset,
   onToggleTimerRun,
   onResetCurrentStage,
@@ -850,6 +854,8 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               }}
               onOpenMiniHudPip={onOpenMiniHudPip}
               isMiniHudOpen={isMiniHudOpen}
+              autoFloatOnTabSwitch={autoFloatOnTabSwitch}
+              onToggleAutoFloatOnTabSwitch={onToggleAutoFloatOnTabSwitch}
               cinemaFocusMode={cinemaFocusMode}
               onToggleCinemaFocusMode={onToggleCinemaFocusMode}
               startupSeconds={activeDurations.startupSeconds}

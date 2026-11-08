@@ -61,6 +61,8 @@ interface Tab2TimerTriageProps {
   ) => void;
   onOpenMiniHudPip?: () => void;
   isMiniHudOpen?: boolean;
+  autoFloatOnTabSwitch?: boolean;
+  onToggleAutoFloatOnTabSwitch?: () => void;
   onSelectElasticMultiplier: (multiplier: ElasticBlockMultiplier) => void;
   onShrinkStartupStep: (targetLevel?: StartupShrinkLevel) => void;
 }
@@ -86,6 +88,8 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
   onManualTriggerNotification,
   onOpenMiniHudPip,
   isMiniHudOpen,
+  autoFloatOnTabSwitch,
+  onToggleAutoFloatOnTabSwitch,
   onSelectElasticMultiplier,
   onShrinkStartupStep,
 }) => {
@@ -301,6 +305,8 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
                 }}
                 onOpenMiniHudPip={onOpenMiniHudPip}
                 isMiniHudOpen={isMiniHudOpen}
+                autoFloatOnTabSwitch={autoFloatOnTabSwitch}
+                onToggleAutoFloatOnTabSwitch={onToggleAutoFloatOnTabSwitch}
                 startupSeconds={activeDurations.startupSeconds}
                 momentumSeconds={activeDurations.momentumSeconds}
               />

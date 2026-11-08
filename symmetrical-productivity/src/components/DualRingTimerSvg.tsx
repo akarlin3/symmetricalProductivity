@@ -11,6 +11,8 @@ interface DualRingTimerSvgProps {
   onToggleRun?: () => void;
   onOpenMiniHudPip?: () => void;
   isMiniHudOpen?: boolean;
+  autoFloatOnTabSwitch?: boolean;
+  onToggleAutoFloatOnTabSwitch?: () => void;
   cinemaFocusMode?: boolean;
   onToggleCinemaFocusMode?: () => void;
   startupSeconds?: number;
@@ -26,6 +28,8 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
   onToggleRun,
   onOpenMiniHudPip,
   isMiniHudOpen = false,
+  autoFloatOnTabSwitch = false,
+  onToggleAutoFloatOnTabSwitch,
   cinemaFocusMode = false,
   onToggleCinemaFocusMode,
   startupSeconds,
@@ -473,13 +477,45 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
                 ? 'bg-cyan-400 text-slate-950 border-cyan-300 font-bold shadow-[0_0_12px_rgba(34,211,238,0.35)]'
                 : 'bg-cyan-500/15 hover:bg-cyan-500/25 border-cyan-400/50 text-cyan-200 font-bold'
             }`}
-            title="Float live 5m Startup / 15m Momentum countdown (260x110 Document Picture-in-Picture or corner overlay)"
+            title="Pop out OS-level Always-on-Top Mini HUD (300x135 Document Picture-in-Picture or 480x220 Canvas Stream Video PiP) [Hotkey: P]"
           >
             <PictureInPicture2 className="w-3 h-3 shrink-0" />
-            <span>Mini HUD (PiP)</span>
+            <span>{isMiniHudOpen ? 'Close Mini HUD' : 'Pop Out Mini HUD'}</span>
+            <kbd
+              className={`px-1 py-0.2 rounded text-[9px] font-mono ${
+                isMiniHudOpen
+                  ? 'bg-slate-950/20 text-slate-950'
+                  : 'bg-black/40 text-cyan-300'
+              }`}
+            >
+              P
+            </kbd>
           </button>
         )}
       </div>
+
+      {/* Mini HUD Auto-Pop-Out Convenience Toggle */}
+      {onToggleAutoFloatOnTabSwitch && (
+        <div
+          id="mini-hud-auto-float-menu"
+          className="flex items-center justify-center"
+        >
+          <label
+            onClick={(e) => e.stopPropagation()}
+            className="px-2.5 py-1 rounded-xl bg-white/[0.025] hover:bg-white/[0.05] border border-white/[0.08] text-[10px] font-mono text-slate-300 flex items-center gap-2 cursor-pointer select-none transition"
+            title="Automatically pop out the OS-level Mini HUD (or show a 1-click float bar) when switching away from this tab"
+          >
+            <input
+              id="toggle-auto-float-mini-hud"
+              type="checkbox"
+              checked={autoFloatOnTabSwitch}
+              onChange={() => onToggleAutoFloatOnTabSwitch()}
+              className="rounded border-slate-600 bg-slate-900 text-cyan-400 focus:ring-cyan-400 cursor-pointer"
+            />
+            <span>Auto-float Mini HUD when switching tabs</span>
+          </label>
+        </div>
+      )}
     </div>
   );
 };
