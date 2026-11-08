@@ -248,21 +248,22 @@ export function App() {
     try {
       if (typeof window !== 'undefined') {
         const stored = localStorage.getItem('symmetrical_layout_mode');
-        if (stored === 'SPLIT' || stored === 'WIDGET') {
+        if (stored === 'FULL' || stored === 'COMPACT') {
           return stored;
         }
+        localStorage.setItem('symmetrical_layout_mode', 'FULL');
       }
     } catch {
-      // Fallback to WIDGET
+      // Fallback to FULL
     }
-    return 'WIDGET';
+    return 'FULL';
   });
 
   const handleToggleLayoutMode = useCallback(() => {
     triggerHaptic([10]);
     soundEngine.playTactileClick('MODE_TOGGLE');
     setLayoutMode((prev) => {
-      const next: LayoutMode = prev === 'WIDGET' ? 'SPLIT' : 'WIDGET';
+      const next: LayoutMode = prev === 'FULL' ? 'COMPACT' : 'FULL';
       try {
         localStorage.setItem('symmetrical_layout_mode', next);
       } catch {
@@ -4120,7 +4121,7 @@ export function App() {
 
   return (
     <div
-      className={`min-h-screen flex flex-col justify-between transition-colors duration-500 ${
+      className={`w-full max-w-none min-h-screen flex flex-col justify-between transition-colors duration-500 ${
         isEveningTheme
           ? 'theme-evening text-amber-50'
           : 'theme-on-duty text-slate-100'
@@ -4129,9 +4130,12 @@ export function App() {
       <motion.div
         layout
         transition={{ type: 'spring', stiffness: 420, damping: 34 }}
-        className={`w-full mx-auto px-3 py-2.5 flex flex-col gap-2.5 ${
-          layoutMode === 'SPLIT' ? 'max-w-3xl' : 'max-w-[440px]'
-        }`}
+        style={
+          layoutMode === 'COMPACT'
+            ? { maxWidth: '460px', marginInline: 'auto' }
+            : undefined
+        }
+        className="w-full max-w-none px-3 sm:px-5 py-3 flex flex-col gap-3"
       >
         <HeaderBar
           state={state}
@@ -4226,7 +4230,7 @@ export function App() {
         )}
 
         {/* Active Tab Viewport */}
-        <main className="w-full">
+        <main className="w-full max-w-none">
           {activeTab === 'PIPELINE' && (
             <Tab1Pipeline
               state={state}
@@ -5363,9 +5367,12 @@ export function App() {
 
       {/* Footer */}
       <footer
-        className={`${
-          layoutMode === 'SPLIT' ? 'max-w-3xl' : 'max-w-[440px]'
-        } w-full mx-auto px-3 py-2 border-t border-white/[0.04] text-[10px] font-mono tabular-nums flex flex-wrap items-center justify-between gap-2 transition-colors duration-500 ${
+        style={
+          layoutMode === 'COMPACT'
+            ? { maxWidth: '460px', marginInline: 'auto' }
+            : undefined
+        }
+        className={`w-full max-w-none px-3 sm:px-5 py-2 border-t border-white/[0.04] text-[10px] font-mono tabular-nums flex flex-wrap items-center justify-between gap-2 transition-colors duration-500 ${
           isEveningTheme ? 'text-stone-500' : 'text-slate-500'
         }`}
       >
@@ -5521,7 +5528,7 @@ export function App() {
         onClose={() => setStateModalOpen(false)}
         id="modal-state-io"
         ariaLabel="Settings, Profile Archetypes, Auto-Backups & 3-Part state.md Sync"
-        maxWidthClass="max-w-3xl"
+        maxWidthClass="w-full max-w-none"
       >
         <div className="w-full p-5 sm:p-6 rounded-2xl bg-slate-900 border border-slate-700 space-y-4 shadow-2xl">
           <div className="flex items-center justify-between">
@@ -6529,8 +6536,8 @@ export function App() {
           id="global-gemini-file-drop-overlay"
           className="fixed inset-0 z-[70] bg-slate-950/85 backdrop-blur-md border-4 border-dashed border-emerald-400 flex items-center justify-center p-6 pointer-events-none"
         >
-          <div className="max-w-lg w-full p-6 rounded-3xl bg-emerald-950/60 border border-emerald-400/50 text-center space-y-2 shadow-[0_0_50px_rgba(52,211,153,0.35)]">
-            <Upload className="w-10 h-10 text-emerald-300 mx-auto" />
+          <div className="w-full p-6 rounded-3xl bg-emerald-950/60 border border-emerald-400/50 text-center flex flex-col items-center space-y-2 shadow-[0_0_50px_rgba(52,211,153,0.35)]">
+            <Upload className="w-10 h-10 text-emerald-300" />
             <div className="text-lg font-mono font-bold text-emerald-100">
               Drop <code className="text-emerald-300">state.md</code> or{' '}
               <code className="text-emerald-300">.json</code> to Preview &amp; Sync from Gemini

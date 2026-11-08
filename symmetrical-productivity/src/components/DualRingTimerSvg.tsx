@@ -421,7 +421,7 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
           <div
             id="main-timer-digits"
             className={`${
-              layoutMode === 'SPLIT' || dialSize >= 156 ? 'text-3xl' : 'text-2xl'
+              layoutMode === 'FULL' || dialSize >= 156 ? 'text-3xl' : 'text-2xl'
             } font-mono font-light tracking-tight tabular-nums my-1 leading-none ${
               isWarmGlow ? 'text-amber-50' : 'text-white'
             }`}

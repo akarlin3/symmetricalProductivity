@@ -24,7 +24,7 @@ export const MobileBottomSheet: React.FC<MobileBottomSheetProps> = ({
   id,
   ariaLabel,
   desktopVariant = 'modal',
-  maxWidthClass = 'max-w-4xl',
+  maxWidthClass = 'w-full max-w-none',
   isEvening = false,
   zIndexClass = 'z-50',
 }) => {

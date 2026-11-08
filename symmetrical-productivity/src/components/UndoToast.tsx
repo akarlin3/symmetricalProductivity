@@ -30,7 +30,7 @@ export const UndoToast: React.FC<UndoToastProps> = ({
       id="floating-undo-toast"
       role="status"
       aria-live="polite"
-      className="fixed bottom-16 sm:bottom-5 right-3 sm:right-6 z-50 max-w-md w-[calc(100vw-1.5rem)] sm:w-auto animate-tab-enter"
+      className="fixed bottom-16 sm:bottom-5 right-3 sm:right-6 z-50 w-[calc(100vw-1.5rem)] sm:w-auto animate-tab-enter"
     >
       <div
         className={`px-4 py-3 rounded-2xl border backdrop-blur-2xl shadow-2xl flex items-center justify-between gap-3 font-mono text-xs ${

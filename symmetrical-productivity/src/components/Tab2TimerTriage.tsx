@@ -126,7 +126,7 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
   );
 
   return (
-    <div className="max-w-3xl mx-auto space-y-3 animate-tab-enter">
+    <div className="w-full max-w-none space-y-4 animate-tab-enter">
       {/* Queued 5m Flashcard Block Banner (Triggered after Stress / Fatigue Reset completes) */}
       {timer.queuedRecoveryFlashcard5m && (
         <div

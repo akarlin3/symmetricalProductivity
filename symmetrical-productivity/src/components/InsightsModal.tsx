@@ -213,7 +213,7 @@ export const InsightsModal: React.FC<InsightsModalProps> = ({
       id="modal-empirical-insights"
       ariaLabel="Empirical Insights Telemetry & 90-Day Symmetry Heatmap"
       desktopVariant="modal"
-      maxWidthClass="max-w-5xl"
+      maxWidthClass="w-full max-w-none"
       isEvening={isEvening}
     >
       {/* Modal Header */}

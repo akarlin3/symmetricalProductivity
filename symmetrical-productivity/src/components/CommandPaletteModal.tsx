@@ -261,7 +261,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
             exit={{ opacity: 0, scale: 0.96, y: -12 }}
             transition={{ type: 'spring', stiffness: 420, damping: 32 }}
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-2xl rounded-3xl backdrop-blur-3xl bg-slate-950/85 border border-white/15 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.85)] overflow-hidden"
+            className="w-full max-w-none rounded-3xl backdrop-blur-3xl bg-slate-950/85 border border-white/15 shadow-[0_25px_70px_-15px_rgba(0,0,0,0.85)] overflow-hidden"
             style={{
               boxShadow:
                 'inset 0 1px 0 0 rgba(255, 255, 255, 0.12), 0 25px 70px -15px rgba(0, 0, 0, 0.85)',

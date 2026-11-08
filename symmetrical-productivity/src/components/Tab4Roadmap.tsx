@@ -26,11 +26,16 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
   onUpdateRoadmapRung,
   onToggleTrackSandboxType,
 }) => {
-  // Progressive disclosure: only expand the 4-Rung milestone details for the single track currently selected
-  const [selectedTrackId, setSelectedTrackId] = useState<TrackId>(
-    state.roadmapTracks[0]?.id || 'science'
-  );
+  // Track expansion: default all tracks to expanded in the 5-column full-width grid, with individual toggle support
+  const [collapsedTracks, setCollapsedTracks] = useState<Record<string, boolean>>({});
   const [showArchiveDrawer, setShowArchiveDrawer] = useState(false);
+
+  const toggleTrackRungs = (trackId: TrackId) => {
+    setCollapsedTracks((prev) => ({
+      ...prev,
+      [trackId]: !prev[trackId],
+    }));
+  };
 
   // Compute global Input (50%) and Output (50%) ledger totals across all 5 tracks
   const totalInputBlocks = state.roadmapTracks.reduce(
@@ -46,11 +51,11 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
   const outputSharePct = 100 - inputSharePct;
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 sm:space-y-8 animate-tab-enter pb-10">
+    <div className="w-full max-w-none space-y-5 animate-tab-enter pb-10">
       {/* Top Hero Ledger Card: 50% Input / 50% Output Symmetrical Ledger with Cormorant Garamond Header */}
       <section
         aria-labelledby="roadmap-ledger-heading"
-        className="p-8 sm:p-10 rounded-3xl bento-hero-border border border-white/[0.05] space-y-5"
+        className="w-full p-6 sm:p-8 rounded-3xl bento-hero-border border border-white/[0.05] space-y-5"
       >
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="space-y-1.5">
@@ -101,10 +106,10 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
         </div>
       </section>
 
-      {/* 5 Tracks Overview (Core Tracks + Zero-Quota Sandbox Tracks) — Only Selected Track Expands 4-Rung Milestones */}
-      <div className="grid grid-cols-1 gap-6">
+      {/* 5 Tracks Full-Width Multi-Column Grid (Core Tracks + Zero-Quota Sandbox Tracks) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3.5 w-full items-start">
         {state.roadmapTracks.map((track) => {
-          const isSelected = selectedTrackId === track.id;
+          const isSelected = !collapsedTracks[track.id];
           const isCoastingSandbox = track.isSandbox && !track.activeThisWeek;
           const inputPct =
             track.inputWeeklyTarget > 0
@@ -132,19 +137,19 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
             <section
               key={track.id}
               id={`roadmap-track-${track.id}`}
-              className={`p-6 sm:p-8 rounded-3xl bento-surface border transition-all space-y-5 ${
+              className={`p-5 rounded-3xl bento-surface border transition-all space-y-4 ${
                 isSelected
                   ? 'border-cyan-400/25 shadow-[0_18px_45px_-20px_rgba(6,182,212,0.18)]'
                   : 'border-white/[0.05] hover:border-white/[0.1]'
               }`}
             >
-              {/* Clean Track Overview Row (Always Visible) */}
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-                <div className="text-left flex-1 min-w-0 space-y-1.5">
-                  <div className="flex flex-wrap items-center gap-2">
+              {/* Clean Track Overview Header */}
+              <div className="flex flex-col justify-between gap-3.5">
+                <div className="text-left min-w-0 space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <span
                       id={track.isSandbox ? `sandbox-status-${track.id}` : undefined}
-                      className={`px-2.5 py-0.5 rounded-full font-mono text-[10px] uppercase tracking-wider border ${
+                      className={`px-2 py-0.5 rounded-full font-mono text-[10px] uppercase tracking-wider border ${
                         track.isSandbox
                           ? isCoastingSandbox
                             ? 'bg-white/[0.03] border-white/[0.05] text-slate-300'
@@ -175,28 +180,28 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
                         {track.isSandbox ? 'Zero-Quota Sandbox ⇄ Core' : 'Core Track ⇄ Sandbox'}
                       </button>
                     )}
-
-                    {/* Inline Editable Track Subtitle / Role */}
-                    <span className="text-[11px] font-mono text-slate-400">
-                      <InlineEditableText
-                        id={`inline-track-subtitle-${track.id}`}
-                        value={track.archetypeRole || track.categoryLabel}
-                        onSave={(nextSubtitle) =>
-                          onUpdateRoadmapTrack?.(track.id, {
-                            archetypeRole: nextSubtitle,
-                          })
-                        }
-                        textClassName="text-[11px] font-mono text-slate-400"
-                        inputClassName="text-[11px] font-mono w-48"
-                        ariaLabel={`Edit subtitle for ${track.name}`}
-                      />
-                    </span>
                   </div>
 
-                  <div className="flex items-center gap-2.5">
+                  {/* Inline Editable Track Subtitle / Role */}
+                  <div className="text-[11px] font-mono text-slate-400">
+                    <InlineEditableText
+                      id={`inline-track-subtitle-${track.id}`}
+                      value={track.archetypeRole || track.categoryLabel}
+                      onSave={(nextSubtitle) =>
+                        onUpdateRoadmapTrack?.(track.id, {
+                          archetypeRole: nextSubtitle,
+                        })
+                      }
+                      textClassName="text-[11px] font-mono text-slate-400"
+                      inputClassName="text-[11px] font-mono w-full"
+                      ariaLabel={`Edit subtitle for ${track.name}`}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between gap-2">
                     <h3
-                      onClick={() => setSelectedTrackId(track.id)}
-                      className="font-serif text-2xl sm:text-3xl font-medium tracking-tight text-white hover:text-cyan-100 transition cursor-pointer"
+                      onClick={() => toggleTrackRungs(track.id)}
+                      className="font-serif text-xl sm:text-2xl font-medium tracking-tight text-white hover:text-cyan-100 transition cursor-pointer min-w-0"
                     >
                       <InlineEditableText
                         id={`inline-track-title-${track.id}`}
@@ -204,16 +209,16 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
                         onSave={(nextName) =>
                           onUpdateRoadmapTrack?.(track.id, { name: nextName })
                         }
-                        textClassName="font-serif text-2xl sm:text-3xl font-medium tracking-tight text-white"
-                        inputClassName="text-lg font-serif w-72"
+                        textClassName="font-serif text-xl sm:text-2xl font-medium tracking-tight text-white"
+                        inputClassName="text-base font-serif w-full"
                         ariaLabel={`Edit track title for ${track.name}`}
                       />
                     </h3>
                     <button
                       type="button"
-                      onClick={() => setSelectedTrackId(track.id)}
+                      onClick={() => toggleTrackRungs(track.id)}
                       aria-label={`Toggle rungs for ${track.name}`}
-                      className="p-1 text-slate-400 hover:text-cyan-300 cursor-pointer"
+                      className="p-1 text-slate-400 hover:text-cyan-300 cursor-pointer shrink-0"
                     >
                       {isSelected ? (
                         <ChevronDown className="w-4 h-4 text-cyan-300 shrink-0" />
@@ -225,8 +230,8 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
                 </div>
 
                 {/* Dual Input / Output Progress Bars & Controls */}
-                <div className="flex flex-col sm:flex-row sm:items-center gap-4 lg:w-[440px] shrink-0">
-                  <div className="flex-1 space-y-2">
+                <div className="flex flex-col gap-3 w-full">
+                  <div className="space-y-2">
                     {/* Input Bar */}
                     <div className="space-y-1">
                       <div className="flex items-center justify-between text-[11px] font-mono tabular-nums text-slate-400">
@@ -264,20 +269,20 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex flex-wrap items-center gap-2">
                     {track.isSandbox && (
                       <button
                         type="button"
                         onClick={() => onToggleSandboxActiveWeek(track.id)}
-                        className="px-3 py-1.5 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.05] text-slate-200 font-mono text-[11px] cursor-pointer transition"
+                        className="px-2.5 py-1 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.05] text-slate-200 font-mono text-[10px] cursor-pointer transition"
                       >
                         {track.activeThisWeek ? 'Set Coasting' : 'Set Active'}
                       </button>
                     )}
                     <button
                       type="button"
-                      onClick={() => setSelectedTrackId(track.id)}
-                      className={`px-3.5 py-1.5 rounded-full font-mono text-[11px] border cursor-pointer transition ${
+                      onClick={() => toggleTrackRungs(track.id)}
+                      className={`px-2.5 py-1 rounded-full font-mono text-[10px] border cursor-pointer transition ${
                         isSelected
                           ? 'bg-cyan-500/15 border-cyan-400/35 text-cyan-200'
                           : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.05] text-slate-300'
@@ -289,9 +294,9 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
                 </div>
               </div>
 
-              {/* Progressive Disclosure: 4-Rung Milestone Details (Expanded ONLY for Selected Track) */}
+              {/* 4-Rung Milestone Details across the column */}
               {isSelected && (
-                <div className="pt-4 border-t border-white/[0.05] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="pt-3 border-t border-white/[0.05] grid grid-cols-1 gap-3">
                   {track.rungs.map((rung) => {
                     const pct =
                       rung.targetBlocks > 0
@@ -309,9 +314,9 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
                     return (
                       <div
                         key={rung.rungNumber}
-                        className="p-4 rounded-2xl bg-black/25 border border-white/[0.05] flex flex-col justify-between space-y-3"
+                        className="p-3.5 rounded-2xl bg-black/25 border border-white/[0.05] flex flex-col justify-between space-y-2.5"
                       >
-                        <div className="space-y-2">
+                        <div className="space-y-1.5">
                           <div className="flex items-center justify-between gap-1.5">
                             <button
                               type="button"
@@ -351,7 +356,7 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
                           </div>
 
                           {/* Inline Editable Rung Time Horizon / Label */}
-                          <h4 className="font-serif text-lg font-medium tracking-tight text-white">
+                          <h4 className="font-serif text-base font-medium tracking-tight text-white">
                             <InlineEditableText
                               id={`inline-rung-label-${track.id}-${rung.rungNumber}`}
                               value={rung.label}
@@ -360,7 +365,7 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
                                   label: nextLabel,
                                 })
                               }
-                              textClassName="font-serif text-lg font-medium tracking-tight text-white"
+                              textClassName="font-serif text-base font-medium tracking-tight text-white"
                               inputClassName="text-xs font-mono w-full"
                               ariaLabel={`Edit Rung ${rung.rungNumber} time horizon label`}
                             />
@@ -436,7 +441,7 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
                           </button>
                         </div>
 
-                        <div className="space-y-2.5 pt-1">
+                        <div className="space-y-2 pt-1">
                           <div className="w-full h-1.5 rounded-full bg-black/60 overflow-hidden">
                             <div
                               className={`h-full transition-all ${
@@ -471,7 +476,7 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
       <section
         id="roadmap-completed-deliverables-archive"
         aria-labelledby="completed-deliverables-heading"
-        className="p-6 sm:p-8 rounded-3xl bento-surface border border-white/[0.05] space-y-4"
+        className="w-full p-6 sm:p-8 rounded-3xl bento-surface border border-white/[0.05] space-y-4"
       >
         <button
           type="button"

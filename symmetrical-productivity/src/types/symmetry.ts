@@ -1,6 +1,6 @@
 export type TabId = 'PIPELINE' | 'TIMER' | 'RECHARGE' | 'ROADMAP';
 
-export type LayoutMode = 'WIDGET' | 'SPLIT';
+export type LayoutMode = 'FULL' | 'COMPACT';
 
 export type LoadMode = 'CRUISE' | 'SURGE' | 'TAPER';
 

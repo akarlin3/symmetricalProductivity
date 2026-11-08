@@ -80,7 +80,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   state,
   activeTab,
   onSelectTab,
-  layoutMode = 'WIDGET',
+  layoutMode = 'FULL',
   onToggleLayoutMode,
   onOpenTodayLogDrawer,
   onOpenPipelineDrawer,
@@ -173,9 +173,9 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
 
   return (
     <>
-      <header className="sticky top-0 z-30 pointer-events-none">
+      <header className="sticky top-0 z-30 w-full max-w-none pointer-events-none">
         <div
-          className={`w-full min-h-10 px-3 py-1 pointer-events-auto rounded-2xl sm:rounded-full border backdrop-blur-2xl flex flex-wrap items-center justify-between gap-1.5 transition-all duration-500 ${
+          className={`w-full flex items-center justify-between px-4 py-2.5 pointer-events-auto rounded-2xl border backdrop-blur-2xl flex-wrap gap-1.5 transition-all duration-500 ${
             isEveningTheme
               ? 'bg-[#090706]/85 border-white/[0.05] text-amber-50 shadow-[inset_0_1px_0_0_rgba(255,251,235,0.06),0_12px_28px_-14px_rgba(0,0,0,0.85)]'
               : 'bg-[#06080d]/85 border-white/[0.05] text-slate-100 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.07),0_12px_28px_-14px_rgba(0,0,0,0.85)]'
@@ -232,7 +232,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               <div
                 id="fixed-event-timestamp-pill"
                 className={`${
-                  layoutMode === 'SPLIT' ? 'hidden md:flex' : 'hidden'
+                  layoutMode === 'FULL' ? 'hidden md:flex' : 'hidden'
                 } px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/25 text-amber-200 font-mono tracking-tight tabular-nums text-[10px] items-center gap-1 shrink-0`}
               >
                 <Calendar className="w-2.5 h-2.5 text-amber-400 shrink-0" />
@@ -312,7 +312,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                   onToggleLayoutMode();
                 }}
                 className={`h-7 w-7 rounded-full border flex items-center justify-center cursor-pointer transition ${
-                  layoutMode === 'SPLIT'
+                  layoutMode === 'FULL'
                     ? isEveningTheme
                       ? 'bg-amber-500/15 border-amber-400/35 text-amber-200'
                       : 'bg-cyan-500/15 border-cyan-400/35 text-cyan-200'
@@ -320,11 +320,11 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                     ? 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.05] text-amber-100/90'
                     : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.05] text-slate-300'
                 }`}
-                title="Toggle Widget / Split Layout (Cmd+\)"
-                aria-label="Toggle Widget / Split Layout (Cmd+\)"
+                title="Toggle Full-Viewport Widescreen / Compact Layout (Cmd+\)"
+                aria-label="Toggle Full-Viewport Widescreen / Compact Layout (Cmd+\)"
               >
-                {layoutMode === 'WIDGET' ? (
-                  <Columns2 className="w-3.5 h-3.5" />
+                {layoutMode === 'COMPACT' ? (
+                  <Maximize2 className="w-3.5 h-3.5" />
                 ) : (
                   <Minimize2 className="w-3.5 h-3.5" />
                 )}

@@ -331,7 +331,7 @@ export const AveryCorpEmblem: React.FC<AveryCorpEmblemProps> = ({
           role="tooltip"
           className="absolute left-0 top-full mt-2.5 z-50 w-64 p-3 rounded-xl bg-[#0b111e]/95 backdrop-blur-2xl border border-amber-400/40 shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_25px_rgba(212,175,55,0.2)] text-left pointer-events-none animate-fadeIn"
         >
-          <div className="w-full aspect-square rounded-md overflow-hidden bg-[#121b2d] border border-amber-400/50 shadow-inner flex items-center justify-center mx-auto">
+          <div className="w-full aspect-square rounded-md overflow-hidden bg-[#121b2d] border border-amber-400/50 shadow-inner flex items-center justify-center">
             <img
               src="/averycorp-emblem-512.png"
               alt="AveryCorp Institute Full Crest"

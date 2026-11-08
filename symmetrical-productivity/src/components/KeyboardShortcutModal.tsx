@@ -193,7 +193,7 @@ export const KeyboardShortcutModal: React.FC<KeyboardShortcutModalProps> = ({
       id="modal-keyboard-shortcuts"
       ariaLabel="Keyboard Shortcut Cheat-Sheet & Command Palette"
       desktopVariant="modal"
-      maxWidthClass="max-w-2xl"
+      maxWidthClass="w-full max-w-none"
       isEvening={isEvening}
     >
       {/* Top Raycast/Linear Search & Spotlight Banner */}

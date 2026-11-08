@@ -358,7 +358,7 @@ export const PipelineDrawer: React.FC<PipelineDrawerProps> = ({
       id="pipeline-drawer-backdrop"
       ariaLabel="Interactive 7-Day Master Pipeline Drawer"
       desktopVariant="drawer"
-      maxWidthClass="max-w-4xl"
+      maxWidthClass="w-full max-w-none"
     >
       <div className="flex-1 flex flex-col justify-between overflow-y-auto p-4 sm:p-6">
         <div className="space-y-4">

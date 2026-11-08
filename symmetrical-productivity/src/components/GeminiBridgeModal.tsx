@@ -399,7 +399,7 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
             exit={{ opacity: 0, scale: 0.96, y: 12 }}
             transition={{ type: 'spring', stiffness: 420, damping: 32 }}
             onClick={(e) => e.stopPropagation()}
-            className={`w-full max-w-5xl rounded-3xl border shadow-[0_25px_80px_-15px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col max-h-[92vh] ${
+            className={`w-full max-w-none rounded-3xl border shadow-[0_25px_80px_-15px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col max-h-[92vh] ${
               isEveningTheme
                 ? 'bg-[#0c0a08]/95 border-amber-500/25 text-amber-50'
                 : 'bg-slate-950/95 border-sky-500/30 text-slate-100'

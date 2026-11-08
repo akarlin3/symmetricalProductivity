@@ -223,7 +223,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
   };
 
   return (
-    <div className="relative max-w-5xl mx-auto space-y-8 text-amber-50 animate-tab-enter pb-12">
+    <div className="relative w-full max-w-none space-y-5 text-amber-50 animate-tab-enter pb-12">
       {/* Subtle Ambient Warm Halo */}
       <div
         aria-hidden="true"
@@ -235,7 +235,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
       />
 
       {/* Editorial Section Header */}
-      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-white/[0.05] pb-5">
+      <div className="w-full flex flex-wrap items-end justify-between gap-4 border-b border-white/[0.05] pb-4">
         <div className="flex items-center gap-3.5">
           <AveryCorpEmblem
             size={42}
@@ -300,7 +300,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
       <section
         id="option-0-stillness-card"
         aria-labelledby="option-0-heading"
-        className="rounded-3xl bento-hero-border-evening px-6 py-4 transition-all duration-300 space-y-4"
+        className="w-full rounded-3xl bento-hero-border-evening px-6 py-4 transition-all duration-300 space-y-4"
       >
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3 sm:gap-4 min-w-0">
@@ -431,7 +431,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
         <section
           id="recharge-pacing-console"
           aria-label="Evening Category Pacing Console"
-          className="rounded-3xl bento-surface-evening px-6 py-4 space-y-4"
+          className="w-full rounded-3xl bento-surface-evening px-6 py-4 space-y-4"
         >
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -537,7 +537,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
       {/* =====================================================================
           RECHARGE CATEGORIES GRID WITH DIRECT INLINE "EDIT CARD" TOGGLES
          ===================================================================== */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3.5 w-full">
         {visibleCategoryCards.map((card) => {
           const isEditingCard = Boolean(editingCardIds[card.id]);
           const isTriple = card.trackMode === 'TRIPLE' && Array.isArray(card.subTracks);
@@ -606,7 +606,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
               onMouseEnter={() => setHoveredCat(card.id)}
               onMouseLeave={() => setHoveredCat(null)}
               onClick={() => toggleCardExpand(card)}
-              className={`rounded-3xl p-7 border transition-all duration-300 cursor-pointer flex flex-col justify-between space-y-6 ${
+              className={`rounded-3xl p-5 border transition-all duration-300 cursor-pointer flex flex-col justify-between space-y-5 ${
                 isSelectedCard
                   ? 'bento-hero-border-evening border-amber-400/35'
                   : 'bento-surface-evening'
@@ -1219,7 +1219,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
       <section
         id="flow-extension-card"
         aria-labelledby="flow-extension-heading"
-        className="rounded-3xl bento-surface-evening px-6 py-4 space-y-4"
+        className="w-full rounded-3xl bento-surface-evening px-6 py-4 space-y-4"
       >
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">

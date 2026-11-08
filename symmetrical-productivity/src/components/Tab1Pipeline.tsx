@@ -601,12 +601,12 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
       : 0;
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 sm:space-y-8 animate-tab-enter pb-10">
+    <div className="w-full max-w-none space-y-4 animate-tab-enter pb-10">
       {/* Contextual State-Machine Alerts (Only when active) */}
       {metrics.isZeroWorkLeft && (
         <div
           id="end-of-shift-lock-banner"
-          className="p-5 rounded-3xl bento-hero-border-evening text-amber-100 flex flex-wrap items-center justify-between gap-4"
+          className="w-full p-5 rounded-3xl bento-hero-border-evening text-amber-100 flex flex-wrap items-center justify-between gap-4"
         >
           <div className="flex items-center gap-3.5">
             <div className="w-9 h-9 rounded-full bg-amber-500/15 border border-amber-400/35 flex items-center justify-center">
@@ -637,7 +637,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
       {isSurgeMidDayResetRequired && !metrics.isZeroWorkLeft && (
         <div
           id="surge-midday-reset-alert"
-          className="p-5 rounded-3xl bento-surface border-amber-400/35 text-amber-100 flex flex-wrap items-center justify-between gap-4"
+          className="w-full p-5 rounded-3xl bento-surface border-amber-400/35 text-amber-100 flex flex-wrap items-center justify-between gap-4"
         >
           <div className="flex items-center gap-3">
             <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0" />
@@ -662,137 +662,140 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
       )}
 
       {/* =====================================================================
-          VISUAL GROUP 1: CENTERPIECE CHRONOGRAPH & ACTIVE "UP NEXT" ACTION
-          Unified, spacious focal stage (p-8 to p-10, max-w-4xl mx-auto)
+          FULL-WIDTH 12-COLUMN FOCUS VIEW GRID
+          Left (lg:col-span-7 xl:col-span-8): Chronograph Timer + Active "Up Next" Hero Stage
+          Right (lg:col-span-5 xl:col-span-4): Daily Core Baseline, Closed List #1, Quick Reset / Triage
          ===================================================================== */}
-      <section
-        id="focal-chronograph-stage"
-        aria-label="Centerpiece Chronograph and Active Up Next Stage"
-        className={`rounded-3xl bento-surface p-8 sm:p-10 transition-all duration-500 space-y-8 ${
-          isCinemaReceding
-            ? 'border-sky-400/30 shadow-[0_0_60px_-15px_rgba(56,189,248,0.22)]'
-            : ''
-        }`}
-      >
-        {/* Top Row of Focal Stage: Single Status Pill + Subtle "Options" Pill */}
-        <div className="flex items-center justify-between gap-3">
-          <span className="px-3 py-1 rounded-full bg-white/[0.03] border border-white/[0.05] font-mono text-[11px] text-slate-300 tracking-tight tabular-nums">
-            {metrics.durationPrefix}
-          </span>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 w-full items-start">
+        <div className="lg:col-span-7 xl:col-span-8 w-full space-y-4">
+          <section
+            id="focal-chronograph-stage"
+            aria-label="Centerpiece Chronograph and Active Up Next Stage"
+            className={`w-full rounded-3xl bento-surface p-5 sm:p-7 transition-all duration-500 space-y-6 ${
+              isCinemaReceding
+                ? 'border-sky-400/30 shadow-[0_0_60px_-15px_rgba(56,189,248,0.22)]'
+                : ''
+            }`}
+          >
+            {/* Top Row of Focal Stage: Single Status Pill + Subtle "Options" Pill */}
+            <div className="flex items-center justify-between gap-3">
+              <span className="px-3 py-1 rounded-full bg-white/[0.03] border border-white/[0.05] font-mono text-[11px] text-slate-300 tracking-tight tabular-nums">
+                {metrics.durationPrefix}
+              </span>
 
-          <div className="flex items-center gap-2">
-            <button
-              id="btn-focal-stage-options"
-              type="button"
-              onClick={() => {
-                triggerHaptic([8]);
-                setStageOptionsOpen((prev) => !prev);
-              }}
-              className={`px-3 py-1 rounded-full border text-xs font-mono flex items-center gap-1.5 cursor-pointer transition ${
-                stageOptionsOpen
-                  ? 'bg-white/[0.09] border-white/[0.15] text-white'
-                  : 'bg-white/[0.025] hover:bg-white/[0.06] border-white/[0.05] text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Sliders className="w-3 h-3" />
-              <span>Options</span>
-              {stageOptionsOpen ? (
-                <ChevronUp className="w-3 h-3" />
-              ) : (
-                <ChevronDown className="w-3 h-3" />
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* Unified Centerpiece Grid: Left = Chronograph Dial, Right = Active & Up Next Action */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-center">
-          {/* Left 5 Cols: Chronograph Dial + Primary Transport */}
-          <div className="lg:col-span-5 flex flex-col items-center space-y-5">
-            <DualRingTimerSvg
-              timer={timer}
-              isEveningTheme={metrics.isZeroWorkLeft}
-              formattedTime={formatMMSS(timer.secondsLeft)}
-              stageBadgeText={stageBadgeText}
-              durationPrefix={metrics.durationPrefix}
-              onToggleRun={() => {
-                triggerHaptic([15]);
-                onToggleTimerRun();
-              }}
-              onOpenMiniHudPip={onOpenMiniHudPip}
-              isMiniHudOpen={isMiniHudOpen}
-              autoFloatOnTabSwitch={autoFloatOnTabSwitch}
-              onToggleAutoFloatOnTabSwitch={onToggleAutoFloatOnTabSwitch}
-              cinemaFocusMode={cinemaFocusMode}
-              onToggleCinemaFocusMode={onToggleCinemaFocusMode}
-              startupSeconds={activeDurations.startupSeconds}
-              momentumSeconds={activeDurations.momentumSeconds}
-            />
-
-            {/* Sleek Transport Bar */}
-            <div className="flex items-center justify-center gap-2.5 w-full max-w-[280px]">
-              <button
-                id="btn-hud-timer-start-pause"
-                type="button"
-                onClick={() => {
-                  triggerHaptic([15]);
-                  onToggleTimerRun();
-                }}
-                className={`flex-1 py-2.5 px-5 rounded-full font-mono font-medium text-xs flex items-center justify-center gap-2 cursor-pointer transition ${
-                  timer.isRunning
-                    ? 'bg-amber-400 hover:bg-amber-300 text-slate-950'
-                    : 'bg-cyan-400 hover:bg-cyan-300 text-slate-950'
-                }`}
-              >
-                {timer.isRunning ? (
-                  <>
-                    <Pause className="w-3.5 h-3.5 fill-current" />
-                    <span>Pause</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-3.5 h-3.5 fill-current" />
-                    <span>
-                      {timer.mode === 'WORK_20M' && timer.workStage === 'IGNITION_5M'
-                        ? `Start ${activeDurations.startupMinutes}m`
-                        : 'Start'}
-                    </span>
-                  </>
-                )}
-              </button>
-
-              <button
-                id="btn-hud-timer-skip-stage"
-                type="button"
-                onClick={() => {
-                  triggerHaptic([15]);
-                  onFastForwardCurrentStage();
-                }}
-                className="p-2.5 rounded-full bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.05] text-slate-300 hover:text-white cursor-pointer"
-                title="Skip stage [S]"
-                aria-label="Skip current stage"
-              >
-                <FastForward className="w-3.5 h-3.5" />
-              </button>
-
-              <button
-                id="btn-hud-timer-reset"
-                type="button"
-                onClick={() => {
-                  triggerHaptic([10]);
-                  onResetCurrentStage();
-                }}
-                className="p-2.5 rounded-full bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.05] text-slate-400 hover:text-slate-200 cursor-pointer"
-                title="Reset current stage [R]"
-                aria-label="Reset current stage"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  id="btn-focal-stage-options"
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic([8]);
+                    setStageOptionsOpen((prev) => !prev);
+                  }}
+                  className={`px-3 py-1 rounded-full border text-xs font-mono flex items-center gap-1.5 cursor-pointer transition ${
+                    stageOptionsOpen
+                      ? 'bg-white/[0.09] border-white/[0.15] text-white'
+                      : 'bg-white/[0.025] hover:bg-white/[0.06] border-white/[0.05] text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Sliders className="w-3 h-3" />
+                  <span>Options</span>
+                  {stageOptionsOpen ? (
+                    <ChevronUp className="w-3 h-3" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3" />
+                  )}
+                </button>
+              </div>
             </div>
-          </div>
 
-          {/* Right 7 Cols: Active Task + 5m Startup Script + "Up Next" Action */}
-          <div className="lg:col-span-7 flex flex-col justify-between space-y-6">
+            {/* Sleek Horizontal Split: Left 180px = Chronograph Dial, Right 1fr = Active & Up Next Action */}
+            <div className="grid grid-cols-1 md:grid-cols-[180px_1fr] gap-5 items-center w-full">
+              {/* Left Column: Chronograph Dial + Primary Transport */}
+              <div className="flex flex-col items-center space-y-3.5 w-full">
+                <DualRingTimerSvg
+                  timer={timer}
+                  isEveningTheme={metrics.isZeroWorkLeft}
+                  formattedTime={formatMMSS(timer.secondsLeft)}
+                  stageBadgeText={stageBadgeText}
+                  durationPrefix={metrics.durationPrefix}
+                  onToggleRun={() => {
+                    triggerHaptic([15]);
+                    onToggleTimerRun();
+                  }}
+                  onOpenMiniHudPip={onOpenMiniHudPip}
+                  isMiniHudOpen={isMiniHudOpen}
+                  autoFloatOnTabSwitch={autoFloatOnTabSwitch}
+                  onToggleAutoFloatOnTabSwitch={onToggleAutoFloatOnTabSwitch}
+                  cinemaFocusMode={cinemaFocusMode}
+                  onToggleCinemaFocusMode={onToggleCinemaFocusMode}
+                  startupSeconds={activeDurations.startupSeconds}
+                  momentumSeconds={activeDurations.momentumSeconds}
+                />
+
+                {/* Sleek Transport Bar */}
+                <div className="flex items-center justify-center gap-1.5 w-full">
+                  <button
+                    id="btn-hud-timer-start-pause"
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic([15]);
+                      onToggleTimerRun();
+                    }}
+                    className={`flex-1 py-2 px-3 rounded-full font-mono font-medium text-xs flex items-center justify-center gap-1.5 cursor-pointer transition ${
+                      timer.isRunning
+                        ? 'bg-amber-400 hover:bg-amber-300 text-slate-950'
+                        : 'bg-cyan-400 hover:bg-cyan-300 text-slate-950'
+                    }`}
+                  >
+                    {timer.isRunning ? (
+                      <>
+                        <Pause className="w-3.5 h-3.5 fill-current" />
+                        <span>Pause</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <span>
+                          {timer.mode === 'WORK_20M' && timer.workStage === 'IGNITION_5M'
+                            ? `Start ${activeDurations.startupMinutes}m`
+                            : 'Start'}
+                        </span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    id="btn-hud-timer-skip-stage"
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic([15]);
+                      onFastForwardCurrentStage();
+                    }}
+                    className="p-2 rounded-full bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.05] text-slate-300 hover:text-white cursor-pointer"
+                    title="Skip stage [S]"
+                    aria-label="Skip current stage"
+                  >
+                    <FastForward className="w-3.5 h-3.5" />
+                  </button>
+
+                  <button
+                    id="btn-hud-timer-reset"
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic([10]);
+                      onResetCurrentStage();
+                    }}
+                    className="p-2 rounded-full bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.05] text-slate-400 hover:text-slate-200 cursor-pointer"
+                    title="Reset current stage [R]"
+                    aria-label="Reset current stage"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Right Column: Active Task + 5m Startup Script + "Up Next" Action */}
+              <div className="flex flex-col justify-between space-y-5 min-w-0 w-full">
             {/* Active Task Section */}
             <div className="space-y-3">
               <div className="flex items-center gap-2">
@@ -2050,358 +2053,359 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 </div>
               </div>
 
-              {/* On-Demand Collapsible Accordions for Sequential Checklist, Smart Intake, and 7-Day Table */}
-              <div className="pt-3 border-t border-white/[0.05] flex flex-wrap items-center gap-2">
-                <button
-                  id="btn-toggle-sequential-checklist"
-                  type="button"
-                  onClick={() => setSequentialViewOpen(!sequentialViewOpen)}
-                  className={`px-3 py-1.5 rounded-full border font-mono text-xs flex items-center gap-1.5 cursor-pointer ${
-                    sequentialViewOpen
-                      ? 'bg-cyan-400/20 border-cyan-400/50 text-cyan-100'
-                      : 'bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.05] text-slate-400'
-                  }`}
-                >
-                  <ListOrdered className="w-3.5 h-3.5" />
-                  <span>Sequential 20m Checklist</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIntakeDrawerOpen(!intakeDrawerOpen)}
-                  className={`px-3 py-1.5 rounded-full border font-mono text-xs flex items-center gap-1.5 cursor-pointer ${
-                    intakeDrawerOpen
-                      ? 'bg-cyan-400/20 border-cyan-400/50 text-cyan-100'
-                      : 'bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.05] text-slate-400'
-                  }`}
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Smart Intake Planner</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setSevenDayAccordionOpen(!sevenDayAccordionOpen)}
-                  className={`px-3 py-1.5 rounded-full border font-mono text-xs flex items-center gap-1.5 cursor-pointer ${
-                    sevenDayAccordionOpen
-                      ? 'bg-cyan-400/20 border-cyan-400/50 text-cyan-100'
-                      : 'bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.05] text-slate-400'
-                  }`}
-                >
-                  <Calendar className="w-3.5 h-3.5" />
-                  <span>7-Day Pipeline Table</span>
-                </button>
-              </div>
-
-              {intakeDrawerOpen && (
-                <div className="pt-2">
-                  <SmartIntakeBar
-                    state={state}
-                    contextVariant="FOCUS_PIPELINE"
-                    inputText={smartIntakeText}
-                    onChangeInputText={onChangeSmartIntakeText}
-                    previewPlan={smartIntakePreview}
-                    onSetPreviewPlan={onSetSmartIntakePreview}
-                    onApplyPlan={onApplySmartIntakePlan}
-                    onOpenSettingsModal={onOpenStateModal}
-                    onOpenCommandDock={onOpenCommandDock}
-                    onUnlockArchitectMode={onUnlockArchitectMode}
-                    apiKeyVersion={apiKeyVersion}
-                  />
-                </div>
-              )}
-
-              {sequentialViewOpen && (
-                <div
-                  id="sequential-checklist-view"
-                  className="p-4 rounded-2xl bg-black/25 border border-white/[0.05] space-y-2 max-h-96 overflow-y-auto"
-                >
-                  {sequentialSteps.map((step) => (
-                    <div
-                      key={step.id}
-                      id={`seq-row-${step.id}`}
-                      onClick={() => handleClickSequentialStep(step)}
-                      className={`p-3 rounded-xl border transition cursor-pointer flex items-center justify-between gap-3 ${
-                        step.isCurrentNext
-                          ? 'bg-cyan-500/10 border-cyan-400/40'
-                          : step.completed || step.banked
-                          ? 'bg-emerald-950/15 border-emerald-500/20 opacity-65'
-                          : 'bg-white/[0.015] hover:bg-white/[0.04] border-white/[0.05]'
+                  {/* On-Demand Collapsible Accordions for Sequential Checklist, Smart Intake, and 7-Day Table */}
+                  <div className="pt-3 border-t border-white/[0.05] flex flex-wrap items-center gap-2">
+                    <button
+                      id="btn-toggle-sequential-checklist"
+                      type="button"
+                      onClick={() => setSequentialViewOpen(!sequentialViewOpen)}
+                      className={`px-3 py-1.5 rounded-full border font-mono text-xs flex items-center gap-1.5 cursor-pointer ${
+                        sequentialViewOpen
+                          ? 'bg-cyan-400/20 border-cyan-400/50 text-cyan-100'
+                          : 'bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.05] text-slate-400'
                       }`}
                     >
-                      <div className="min-w-0">
-                        <div className="text-xs font-medium text-white truncate">
-                          #{step.stepNumber} • {step.title}
-                        </div>
-                        <div className="text-[11px] font-mono text-slate-400 truncate">
-                          {step.startupStep}
-                        </div>
-                      </div>
-                      <span className="font-mono text-[11px] text-cyan-200 tabular-nums shrink-0">
-                        {step.countdownBadge}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
+                      <ListOrdered className="w-3.5 h-3.5" />
+                      <span>Sequential 20m Checklist</span>
+                    </button>
 
-              {sevenDayAccordionOpen && (
-                <div
-                  id="bento-interactive-7day-pipeline"
-                  className="p-4 rounded-2xl bg-black/25 border border-white/[0.05] space-y-3"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-mono text-slate-300">
-                      7-Day Master Pipeline
-                    </span>
                     <button
                       type="button"
-                      onClick={onOpenPipelineDrawer}
-                      className="text-[11px] font-mono text-cyan-300 underline cursor-pointer"
+                      onClick={() => setIntakeDrawerOpen(!intakeDrawerOpen)}
+                      className={`px-3 py-1.5 rounded-full border font-mono text-xs flex items-center gap-1.5 cursor-pointer ${
+                        intakeDrawerOpen
+                          ? 'bg-cyan-400/20 border-cyan-400/50 text-cyan-100'
+                          : 'bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.05] text-slate-400'
+                      }`}
                     >
-                      Open Full Drawer →
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Smart Intake Planner</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setSevenDayAccordionOpen(!sevenDayAccordionOpen)}
+                      className={`px-3 py-1.5 rounded-full border font-mono text-xs flex items-center gap-1.5 cursor-pointer ${
+                        sevenDayAccordionOpen
+                          ? 'bg-cyan-400/20 border-cyan-400/50 text-cyan-100'
+                          : 'bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.05] text-slate-400'
+                      }`}
+                    >
+                      <Calendar className="w-3.5 h-3.5" />
+                      <span>7-Day Pipeline Table</span>
                     </button>
                   </div>
-                  <InteractivePipelineTable
-                    state={state}
-                    onUpdateDay={onUpdatePipelineDay}
-                    compact={true}
-                  />
-                </div>
+                </motion.div>
               )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </section>
+            </AnimatePresence>
+          </section>
 
-      {/* =====================================================================
-          VISUAL GROUP 3: QUIET SINGLE-LINE TRIAGE BAR
-          Collapses break/reset cards into a single subtle bottom pill bar:
-          `Micro-Reset 5m` • `Switch Buffer 15m` • `Stress Reset`
-          Click the pencil on any Break pill to edit its custom recovery options on the spot.
-         ===================================================================== */}
-      <section
-        id="bento-quick-triage-dock"
-        aria-label="Quiet Single-Line Triage Bar"
-        className={`rounded-3xl bento-surface px-5 py-3 space-y-2 transition-all duration-500 ${
-          isCinemaReceding
-            ? 'opacity-15 blur-[2px] hover:opacity-100 hover:blur-0'
-            : ''
-        }`}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            <div className="inline-flex items-center gap-1">
-              <button
-                type="button"
-                disabled={timer.chainedBlocksCount >= 2}
-                onClick={() => {
-                  triggerHaptic([10]);
-                  onSelectL1Minutes(5);
-                }}
-                className={`px-3.5 py-1.5 rounded-full font-mono text-xs border transition cursor-pointer disabled:opacity-40 ${
-                  timer.mode === 'BREAK_L1'
-                    ? 'bg-cyan-500/15 border-cyan-400/40 text-cyan-100'
-                    : 'bg-white/[0.025] hover:bg-white/[0.06] border-white/[0.05] text-slate-300'
-                }`}
-              >
-                Micro-Reset {timer.l1DurationMinutes || 5}m
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setEditingBreakPill((prev) => (prev === 'L1' ? null : 'L1'))
-                }
-                title="Edit Micro-Reset 5m recovery options inline"
-                className="p-1 rounded-full text-slate-500 hover:text-teal-300 hover:bg-slate-800/70 transition"
-              >
-                <Pencil className="w-3 h-3" />
-              </button>
-            </div>
-
-            <span className="text-slate-600 hidden sm:inline">•</span>
-
-            <div className="inline-flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic([10]);
-                  onSelectL2Minutes(15);
-                }}
-                className={`px-3.5 py-1.5 rounded-full font-mono text-xs border transition cursor-pointer ${
-                  timer.mode === 'BREAK_L2'
-                    ? 'bg-indigo-500/15 border-indigo-400/40 text-indigo-100'
-                    : 'bg-white/[0.025] hover:bg-white/[0.06] border-white/[0.05] text-slate-300'
-                }`}
-              >
-                Switch Buffer {timer.l2DurationMinutes || 15}m
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setEditingBreakPill((prev) => (prev === 'L2' ? null : 'L2'))
-                }
-                title="Edit Switch Buffer 15m recovery options inline"
-                className="p-1 rounded-full text-slate-500 hover:text-teal-300 hover:bg-slate-800/70 transition"
-              >
-                <Pencil className="w-3 h-3" />
-              </button>
-            </div>
-
-            <span className="text-slate-600 hidden sm:inline">•</span>
-
-            <div className="inline-flex items-center gap-1">
-              <button
-                id="btn-dock-stress-reset"
-                type="button"
-                onClick={() => {
-                  triggerHaptic([20, 40, 20]);
-                  onTriggerStressReset('BREATHING_478', 15);
-                }}
-                className={`px-3.5 py-1.5 rounded-full font-mono text-xs border flex items-center gap-1.5 transition cursor-pointer ${
-                  timer.mode === 'STRESS_RESET'
-                    ? 'bg-amber-500/20 border-amber-400/50 text-amber-100'
-                    : 'bg-amber-500/[0.06] hover:bg-amber-500/15 border-amber-400/20 text-amber-200/90'
-                }`}
-              >
-                <Wind className="w-3.5 h-3.5 text-amber-400" />
-                <span>Stress Reset</span>
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setEditingBreakPill((prev) =>
-                    prev === 'STRESS' ? null : 'STRESS'
-                  )
-                }
-                title="Edit Stress Reset recovery options inline"
-                className="p-1 rounded-full text-slate-500 hover:text-teal-300 hover:bg-slate-800/70 transition"
-              >
-                <Pencil className="w-3 h-3" />
-              </button>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setTriageDetailsOpen((prev) => !prev)}
-            className="px-3 py-1 rounded-full text-[11px] font-mono text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer"
+          {/* =====================================================================
+              QUICK RESET / TRIAGE CONTROLS (Right-Hand Column)
+             ===================================================================== */}
+          <section
+            id="bento-quick-triage-dock"
+            aria-label="Quiet Single-Line Triage Bar"
+            className={`w-full rounded-3xl bento-surface px-5 py-3.5 space-y-2 transition-all duration-500 ${
+              isCinemaReceding
+                ? 'opacity-15 blur-[2px] hover:opacity-100 hover:blur-0'
+                : ''
+            }`}
           >
-            <span>Protocols</span>
-            {triageDetailsOpen ? (
-              <ChevronUp className="w-3 h-3" />
-            ) : (
-              <ChevronDown className="w-3 h-3" />
-            )}
-          </button>
-        </div>
-
-        {editingBreakPill && state.breakOptions && (
-          <InlineBreakOptionsEditor
-            pillType={editingBreakPill}
-            breakOptions={state.breakOptions}
-            onUpdateBreakOptions={(patch) => onUpdateBreakOptions?.(patch)}
-            onClose={() => setEditingBreakPill(null)}
-          />
-        )}
-      </section>
-
-      {/* Optional Triage Protocol Picker (Only when "Protocols" clicked) */}
-      <AnimatePresence>
-        {triageDetailsOpen && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="rounded-3xl bento-surface p-6 grid grid-cols-1 sm:grid-cols-3 gap-4 overflow-hidden"
-          >
-            <div className="space-y-2">
-              <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400">
-                Same-Task Micro-Reset (Max 2 Chained)
-              </span>
-              <div className="flex gap-2">
-                {([3, 5] as const).map((m) => (
+            <div className="flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="inline-flex items-center gap-1">
                   <button
-                    key={m}
                     type="button"
                     disabled={timer.chainedBlocksCount >= 2}
-                    onClick={() => onSelectL1Minutes(m)}
-                    className={`flex-1 py-1.5 rounded-xl font-mono text-xs border cursor-pointer disabled:opacity-40 ${
-                      timer.mode === 'BREAK_L1' && timer.l1DurationMinutes === m
-                        ? 'bg-cyan-400/20 border-cyan-400/50 text-cyan-100'
-                        : 'bg-white/[0.02] border-white/[0.05] text-slate-300'
+                    onClick={() => {
+                      triggerHaptic([10]);
+                      onSelectL1Minutes(5);
+                    }}
+                    className={`px-3 py-1.5 rounded-full font-mono text-xs border transition cursor-pointer disabled:opacity-40 ${
+                      timer.mode === 'BREAK_L1'
+                        ? 'bg-cyan-500/15 border-cyan-400/40 text-cyan-100'
+                        : 'bg-white/[0.025] hover:bg-white/[0.06] border-white/[0.05] text-slate-300'
                     }`}
                   >
-                    {m}m
+                    Micro-Reset {timer.l1DurationMinutes || 5}m
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditingBreakPill((prev) => (prev === 'L1' ? null : 'L1'))
+                    }
+                    title="Edit Micro-Reset 5m recovery options inline"
+                    className="p-1 rounded-full text-slate-500 hover:text-teal-300 hover:bg-slate-800/70 transition"
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                </div>
+
+                <div className="inline-flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic([10]);
+                      onSelectL2Minutes(15);
+                    }}
+                    className={`px-3 py-1.5 rounded-full font-mono text-xs border transition cursor-pointer ${
+                      timer.mode === 'BREAK_L2'
+                        ? 'bg-indigo-500/15 border-indigo-400/40 text-indigo-100'
+                        : 'bg-white/[0.025] hover:bg-white/[0.06] border-white/[0.05] text-slate-300'
+                    }`}
+                  >
+                    Switch Buffer {timer.l2DurationMinutes || 15}m
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditingBreakPill((prev) => (prev === 'L2' ? null : 'L2'))
+                    }
+                    title="Edit Switch Buffer 15m recovery options inline"
+                    className="p-1 rounded-full text-slate-500 hover:text-teal-300 hover:bg-slate-800/70 transition"
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                </div>
+
+                <div className="inline-flex items-center gap-1">
+                  <button
+                    id="btn-dock-stress-reset"
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic([20, 40, 20]);
+                      onTriggerStressReset('BREATHING_478', 15);
+                    }}
+                    className={`px-3 py-1.5 rounded-full font-mono text-xs border flex items-center gap-1.5 transition cursor-pointer ${
+                      timer.mode === 'STRESS_RESET'
+                        ? 'bg-amber-500/20 border-amber-400/50 text-amber-100'
+                        : 'bg-amber-500/[0.06] hover:bg-amber-500/15 border-amber-400/20 text-amber-200/90'
+                    }`}
+                  >
+                    <Wind className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Stress Reset</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditingBreakPill((prev) =>
+                        prev === 'STRESS' ? null : 'STRESS'
+                      )
+                    }
+                    title="Edit Stress Reset recovery options inline"
+                    className="p-1 rounded-full text-slate-500 hover:text-teal-300 hover:bg-slate-800/70 transition"
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
+
+              <button
+                type="button"
+                onClick={() => setTriageDetailsOpen((prev) => !prev)}
+                className="px-3 py-1 rounded-full text-[11px] font-mono text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer"
+              >
+                <span>Protocols</span>
+                {triageDetailsOpen ? (
+                  <ChevronUp className="w-3 h-3" />
+                ) : (
+                  <ChevronDown className="w-3 h-3" />
+                )}
+              </button>
             </div>
 
-            <div className="space-y-2">
-              <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400">
-                Task-Switch Buffer (10–15m)
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {(
-                  [
-                    {
-                      id: 'ESPRESSO' as Level2BreakProtocol,
-                      label: state.breakOptions?.l2EspressoLabel || 'Espresso',
-                      icon: Coffee,
-                    },
-                    {
-                      id: 'BASS_GUITAR_5M' as Level2BreakProtocol,
-                      label: state.breakOptions?.l2MusicLabel || '5m Cold Song',
-                      icon: Music,
-                    },
-                    {
-                      id: 'TENS_NORMATEC_15M' as Level2BreakProtocol,
-                      label: state.breakOptions?.l2PhysicalLabel || '15m Normatec',
-                      icon: Activity,
-                    },
-                  ] as const
-                ).map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => onSelectL2Protocol(p.id)}
-                    className={`px-2.5 py-1 rounded-xl font-mono text-[11px] border cursor-pointer ${
-                      timer.l2Protocol === p.id
-                        ? 'bg-indigo-400/20 border-indigo-400/50 text-indigo-100'
-                        : 'bg-white/[0.02] border-white/[0.05] text-slate-300'
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+            {editingBreakPill && state.breakOptions && (
+              <InlineBreakOptionsEditor
+                pillType={editingBreakPill}
+                breakOptions={state.breakOptions}
+                onUpdateBreakOptions={(patch) => onUpdateBreakOptions?.(patch)}
+                onClose={() => setEditingBreakPill(null)}
+              />
+            )}
+          </section>
 
-            <div className="space-y-2">
-              <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400">
-                Split-Shift Mid-Day Reset (60–120m)
-              </span>
-              <div className="flex gap-1.5">
-                {([60, 90, 120] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => onSelectL3Minutes(m)}
-                    className={`flex-1 py-1.5 rounded-xl font-mono text-xs border cursor-pointer ${
-                      timer.mode === 'BREAK_L3' && timer.l3DurationMinutes === m
-                        ? 'bg-emerald-400/20 border-emerald-400/50 text-emerald-100'
-                        : 'bg-white/[0.02] border-white/[0.05] text-slate-300'
-                    }`}
-                  >
-                    {m}m
-                  </button>
-                ))}
+          {/* Optional Triage Protocol Picker (Only when "Protocols" clicked) */}
+          <AnimatePresence>
+            {triageDetailsOpen && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="w-full rounded-3xl bento-surface p-5 grid grid-cols-1 gap-4 overflow-hidden"
+              >
+                <div className="space-y-2">
+                  <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400">
+                    Same-Task Micro-Reset (Max 2 Chained)
+                  </span>
+                  <div className="flex gap-2">
+                    {([3, 5] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        disabled={timer.chainedBlocksCount >= 2}
+                        onClick={() => onSelectL1Minutes(m)}
+                        className={`flex-1 py-1.5 rounded-xl font-mono text-xs border cursor-pointer disabled:opacity-40 ${
+                          timer.mode === 'BREAK_L1' && timer.l1DurationMinutes === m
+                            ? 'bg-cyan-400/20 border-cyan-400/50 text-cyan-100'
+                            : 'bg-white/[0.02] border-white/[0.05] text-slate-300'
+                        }`}
+                      >
+                        {m}m
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400">
+                    Task-Switch Buffer (10–15m)
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(
+                      [
+                        {
+                          id: 'ESPRESSO' as Level2BreakProtocol,
+                          label: state.breakOptions?.l2EspressoLabel || 'Espresso',
+                          icon: Coffee,
+                        },
+                        {
+                          id: 'BASS_GUITAR_5M' as Level2BreakProtocol,
+                          label: state.breakOptions?.l2MusicLabel || '5m Cold Song',
+                          icon: Music,
+                        },
+                        {
+                          id: 'TENS_NORMATEC_15M' as Level2BreakProtocol,
+                          label: state.breakOptions?.l2PhysicalLabel || '15m Normatec',
+                          icon: Activity,
+                        },
+                      ] as const
+                    ).map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => onSelectL2Protocol(p.id)}
+                        className={`px-2.5 py-1 rounded-xl font-mono text-[11px] border cursor-pointer ${
+                          timer.l2Protocol === p.id
+                            ? 'bg-indigo-400/20 border-indigo-400/50 text-indigo-100'
+                            : 'bg-white/[0.02] border-white/[0.05] text-slate-300'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400">
+                    Split-Shift Mid-Day Reset (60–120m)
+                  </span>
+                  <div className="flex gap-1.5">
+                    {([60, 90, 120] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => onSelectL3Minutes(m)}
+                        className={`flex-1 py-1.5 rounded-xl font-mono text-xs border cursor-pointer ${
+                          timer.mode === 'BREAK_L3' && timer.l3DurationMinutes === m
+                            ? 'bg-emerald-400/20 border-emerald-400/50 text-emerald-100'
+                            : 'bg-white/[0.02] border-white/[0.05] text-slate-300'
+                        }`}
+                      >
+                        {m}m
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+
+      {/* =====================================================================
+          FULL-WIDTH EXPANDED PANELS BELOW MAIN STAGE:
+          Smart Intake Planner, Sequential 20m Checklist, and 7-Day Master Pipeline
+         ===================================================================== */}
+      {intakeDrawerOpen && (
+        <div className="w-full rounded-3xl bento-surface p-5">
+          <SmartIntakeBar
+            state={state}
+            contextVariant="FOCUS_PIPELINE"
+            inputText={smartIntakeText}
+            onChangeInputText={onChangeSmartIntakeText}
+            previewPlan={smartIntakePreview}
+            onSetPreviewPlan={onSetSmartIntakePreview}
+            onApplyPlan={onApplySmartIntakePlan}
+            onOpenSettingsModal={onOpenStateModal}
+            onOpenCommandDock={onOpenCommandDock}
+            onUnlockArchitectMode={onUnlockArchitectMode}
+            apiKeyVersion={apiKeyVersion}
+          />
+        </div>
+      )}
+
+      {sequentialViewOpen && (
+        <div
+          id="sequential-checklist-view"
+          className="w-full p-5 rounded-3xl bento-surface space-y-2.5 max-h-96 overflow-y-auto"
+        >
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2.5 w-full">
+            {sequentialSteps.map((step) => (
+              <div
+                key={step.id}
+                id={`seq-row-${step.id}`}
+                onClick={() => handleClickSequentialStep(step)}
+                className={`p-3 rounded-xl border transition cursor-pointer flex items-center justify-between gap-3 ${
+                  step.isCurrentNext
+                    ? 'bg-cyan-500/10 border-cyan-400/40'
+                    : step.completed || step.banked
+                    ? 'bg-emerald-950/15 border-emerald-500/20 opacity-65'
+                    : 'bg-white/[0.015] hover:bg-white/[0.04] border-white/[0.05]'
+                }`}
+              >
+                <div className="min-w-0">
+                  <div className="text-xs font-medium text-white truncate">
+                    #{step.stepNumber} • {step.title}
+                  </div>
+                  <div className="text-[11px] font-mono text-slate-400 truncate">
+                    {step.startupStep}
+                  </div>
+                </div>
+                <span className="font-mono text-[11px] text-cyan-200 tabular-nums shrink-0">
+                  {step.countdownBadge}
+                </span>
               </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {sevenDayAccordionOpen && (
+        <div
+          id="bento-interactive-7day-pipeline"
+          className="w-full p-5 rounded-3xl bento-surface space-y-3"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-mono text-slate-300">
+              7-Day Master Pipeline
+            </span>
+            <button
+              type="button"
+              onClick={onOpenPipelineDrawer}
+              className="text-[11px] font-mono text-cyan-300 underline cursor-pointer"
+            >
+              Open Full Drawer →
+            </button>
+          </div>
+          <InteractivePipelineTable
+            state={state}
+            onUpdateDay={onUpdatePipelineDay}
+            compact={false}
+          />
+        </div>
+      )}
     </div>
   );
 };

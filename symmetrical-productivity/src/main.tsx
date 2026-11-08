@@ -29,7 +29,7 @@ class RootErrorBoundary extends React.Component<
     if (this.state.hasError) {
       return (
         <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-6">
-          <div className="max-w-md w-full rounded-2xl border border-slate-800 bg-slate-900 p-6 space-y-4">
+          <div className="w-full max-w-none rounded-2xl border border-slate-800 bg-slate-900 p-6 space-y-4">
             <h1 className="text-base font-bold text-slate-100">
               State Recovery Required
             </h1>

@@ -123,7 +123,7 @@ export const TodayLogDrawer: React.FC<TodayLogDrawerProps> = ({
       id="today-log-drawer-backdrop"
       ariaLabel="Today's Block Log Drawer"
       desktopVariant="drawer"
-      maxWidthClass="max-w-2xl"
+      maxWidthClass="w-full max-w-none"
       isEvening={isEveningTheme}
     >
       <div className="flex-1 flex flex-col justify-between overflow-y-auto p-4 sm:p-6">
@@ -305,7 +305,7 @@ export const TodayLogDrawer: React.FC<TodayLogDrawerProps> = ({
           <div className="space-y-2.5" id="today-log-entries-list">
             {todayEntries.length === 0 ? (
               <div className="p-8 rounded-2xl bg-slate-950/60 border border-slate-800 text-center space-y-2">
-                <Clock className="w-6 h-6 text-slate-500 mx-auto" />
+                <Clock className="w-6 h-6 text-slate-500 inline-block" />
                 <p className="text-xs font-mono text-slate-400">
                   No blocks logged yet for logical day {currentLogicalDay} (since 4:00 AM).
                 </p>

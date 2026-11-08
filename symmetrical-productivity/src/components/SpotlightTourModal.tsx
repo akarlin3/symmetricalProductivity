@@ -232,7 +232,7 @@ export const SpotlightTourModal: React.FC<SpotlightTourModalProps> = ({
       id="modal-spotlight-tour"
       ariaLabel="How Symmetrical Works — 4-Step Interactive Spotlight Tour"
       desktopVariant="modal"
-      maxWidthClass="max-w-2xl"
+      maxWidthClass="w-full max-w-none"
       isEvening={isEvening}
     >
       {/* Header */}

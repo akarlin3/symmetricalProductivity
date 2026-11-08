@@ -1136,7 +1136,7 @@ export const ExternalMiniHud: React.FC<
           id="mini-hud-one-click-float-bar"
           role="region"
           aria-label="Pop Out OS Mini HUD Prompt"
-          className="fixed bottom-4 right-4 z-50 max-w-md rounded-2xl bg-[#06080d]/95 border border-cyan-400/60 shadow-[0_14px_40px_rgba(6,182,212,0.32)] backdrop-blur-2xl px-3.5 py-2.5 flex items-center justify-between gap-3 font-mono text-xs text-slate-100"
+          className="fixed bottom-4 right-4 z-50 rounded-2xl bg-[#06080d]/95 border border-cyan-400/60 shadow-[0_14px_40px_rgba(6,182,212,0.32)] backdrop-blur-2xl px-3.5 py-2.5 flex items-center justify-between gap-3 font-mono text-xs text-slate-100"
         >
           <div className="flex items-center gap-2 min-w-0">
             <PictureInPicture2 className="w-4 h-4 text-cyan-400 shrink-0" />

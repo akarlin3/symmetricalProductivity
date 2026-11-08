@@ -496,7 +496,7 @@ Return ONLY valid JSON matching:
       id="planning-assistant-drawer"
       ariaLabel="Planning Assistant AI Side-Panel"
       desktopVariant="drawer"
-      maxWidthClass="max-w-md"
+      maxWidthClass="sm:w-96 max-w-none"
       isEvening={isEveningTheme}
     >
       <div className="flex-1 flex flex-col justify-between overflow-hidden">

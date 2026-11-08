@@ -60,6 +60,16 @@
     color: #fffbeb;
   }
 
+  html,
+  body,
+  #root {
+    width: 100%;
+    min-height: 100vh;
+    margin: 0;
+    padding: 0;
+    max-width: none;
+  }
+
   body {
     font-family: var(--font-sans);
     letter-spacing: -0.015em;
@@ -67,8 +77,6 @@
     font-size: 0.875rem;
     background-color: var(--bg-app);
     color: #f8fafc;
-    margin: 0;
-    padding: 0;
     overflow-x: hidden;
     transition: background-color 500ms cubic-bezier(0.22, 1, 0.36, 1), color 350ms ease;
     -webkit-font-smoothing: antialiased;
