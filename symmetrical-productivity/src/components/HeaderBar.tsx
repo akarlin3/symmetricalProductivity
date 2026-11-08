@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   BarChart3,
@@ -36,7 +36,7 @@ import {
   isPre4amRolloverWindow,
 } from '../state/defaultState';
 import { triggerHaptic } from '../utils/haptics';
-import { SOUNDSCAPE_METADATA, soundEngine } from '../utils/soundEngine';
+import { playHarmonicChord, SOUNDSCAPE_METADATA, soundEngine } from '../utils/soundEngine';
 
 interface HeaderBarProps {
   state: SymmetryState;
@@ -57,6 +57,8 @@ interface HeaderBarProps {
   onOpenCommandDock?: () => void;
   cinemaFocusMode?: boolean;
   onToggleCinemaFocusMode?: () => void;
+  architectModeUnlocked?: boolean;
+  onUnlockArchitectMode?: (source: string) => void;
 }
 
 const SPRING_TRANSITION = {
@@ -84,8 +86,37 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   onOpenCommandDock,
   cinemaFocusMode = false,
   onToggleCinemaFocusMode,
+  architectModeUnlocked = false,
+  onUnlockArchitectMode,
 }) => {
+  const tapTimestampsRef = useRef<number[]>([]);
   const [audioMenuOpen, setAudioMenuOpen] = useState(false);
+
+  // Trigger B: 5 taps within 3 seconds on the geometric Prism logo or app title
+  const handleBrandPrismTap = () => {
+    const now = Date.now();
+    const recent = tapTimestampsRef.current.filter((t) => now - t <= 3000);
+    recent.push(now);
+    tapTimestampsRef.current = recent;
+
+    if (recent.length >= 5) {
+      tapTimestampsRef.current = [];
+      try {
+        if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+          navigator.vibrate([20, 40, 20]);
+        } else {
+          triggerHaptic([20, 40, 20]);
+        }
+      } catch {
+        // ignore vibration errors
+      }
+      playHarmonicChord();
+      onUnlockArchitectMode?.('5-Tap Header Prism Gesture');
+    } else {
+      triggerHaptic([8]);
+    }
+  };
+
   const audioSettings: AudioEngineSettings = {
     ...DEFAULT_AUDIO_ENGINE_SETTINGS,
     ...(state.audioSettings || {}),
@@ -110,6 +141,12 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   ).length;
 
   const isCinemaReceding = cinemaFocusMode && state.timer.isRunning;
+
+  const visibleMilestones = (state.upcomingMilestones || []).filter((m) => {
+    if (architectModeUnlocked) return true;
+    const lower = m.toLowerCase();
+    return !lower.includes('nov 12') && !lower.includes('dec 8');
+  });
 
   const tabs: { id: TabId; label: string; shortLabel: string; badge?: string }[] = [
     {
@@ -156,19 +193,36 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                 : ''
             }`}
           >
-            <div
-              className={`w-9 h-9 rounded-xl flex items-center justify-center border font-mono font-bold text-xs tracking-tighter transition-all duration-500 ${
+            <button
+              id="header-brand-prism-trigger"
+              type="button"
+              onClick={handleBrandPrismTap}
+              aria-label="SymmetryManager Geometric Prism Logo"
+              className={`w-9 h-9 rounded-xl flex items-center justify-center border font-mono font-bold text-xs tracking-tighter transition-all duration-500 cursor-pointer select-none ${
                 isEveningTheme
                   ? 'bg-amber-500/15 border-amber-400/35 text-amber-200 shadow-[inset_0_1px_0_0_rgba(255,251,235,0.18)]'
                   : 'bg-sky-500/15 border-sky-400/40 text-sky-300 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18)]'
               }`}
             >
-              SM
-            </div>
+              <svg
+                viewBox="0 0 24 24"
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polygon points="12 2 22 19 2 19" />
+                <line x1="12" y1="2" x2="12" y2="19" />
+              </svg>
+            </button>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h1
-                  className={`font-bold tracking-tight ${
+                  id="header-app-title-trigger"
+                  onClick={handleBrandPrismTap}
+                  className={`font-bold tracking-tight cursor-pointer select-none ${
                     isEveningTheme
                       ? 'font-serif text-xl sm:text-2xl text-amber-50 font-normal tracking-normal'
                       : 'text-base sm:text-lg text-white'
@@ -176,6 +230,20 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                 >
                   {isEveningTheme ? 'Evening Recharge Menu' : 'SymmetryManager'}
                 </h1>
+                {architectModeUnlocked && (
+                  <button
+                    id="badge-architect-mode"
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic([10]);
+                      onOpenStateModal();
+                    }}
+                    title="Architect Mode Active — Click to manage or lock in Settings"
+                    className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-full border bg-amber-500/20 border-amber-400/50 text-amber-200 hover:bg-amber-500/30 transition cursor-pointer"
+                  >
+                    ARCHITECT
+                  </button>
+                )}
                 <span
                   className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded-full border transition-colors duration-500 ${
                     isEveningTheme
@@ -245,30 +313,29 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             )}
 
             {/* Compact Upcoming Milestones Pills */}
-            <div
-              id="upcoming-milestones-banner"
-              className={`hidden xl:flex items-center gap-1.5 transition-all duration-500 ${
-                isCinemaReceding
-                  ? 'opacity-15 blur-[2px] hover:opacity-100 hover:blur-0'
-                  : ''
-              }`}
-            >
-              {(state.upcomingMilestones?.length
-                ? state.upcomingMilestones
-                : ['Nov 12: Anatomy Exam', 'Dec 8–9: Comp Exam']
-              ).map((milestone, idx) => (
-                <span
-                  key={idx}
-                  className={`px-2.5 py-1 rounded-lg font-mono text-[11px] tracking-tight tabular-nums font-semibold border ${
-                    isEveningTheme
-                      ? 'bg-white/[0.03] border-amber-500/15 text-amber-200/90'
-                      : 'bg-white/[0.03] border-white/[0.08] text-slate-300 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]'
-                  }`}
-                >
-                  {milestone}
-                </span>
-              ))}
-            </div>
+            {visibleMilestones.length > 0 && (
+              <div
+                id="upcoming-milestones-banner"
+                className={`hidden xl:flex items-center gap-1.5 transition-all duration-500 ${
+                  isCinemaReceding
+                    ? 'opacity-15 blur-[2px] hover:opacity-100 hover:blur-0'
+                    : ''
+                }`}
+              >
+                {visibleMilestones.map((milestone, idx) => (
+                  <span
+                    key={idx}
+                    className={`px-2.5 py-1 rounded-lg font-mono text-[11px] tracking-tight tabular-nums font-semibold border ${
+                      isEveningTheme
+                        ? 'bg-white/[0.03] border-amber-500/15 text-amber-200/90'
+                        : 'bg-white/[0.03] border-white/[0.08] text-slate-300 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]'
+                    }`}
+                  >
+                    {milestone}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Utility Buttons: Soundscape HUD, Insights, Command Dock (Cmd+K), Cinema Focus (F), Assistant, Today's Log, 7-Day Pipeline Drawer, Simulate 0m Work Left, Profile Wizard, State.md Import/Export, ? Tour */}

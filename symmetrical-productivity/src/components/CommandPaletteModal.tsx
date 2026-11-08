@@ -26,6 +26,7 @@ import {
   TabId,
 } from '../types/symmetry';
 import { computeShiftMetrics } from '../state/defaultState';
+import { isArchitectPassphrase } from '../state/profilePresets';
 import { generateSmartIntakePlan } from '../utils/smartIntakePlanner';
 import { triggerHaptic } from '../utils/haptics';
 
@@ -47,6 +48,9 @@ interface CommandPaletteModalProps {
   smartIntakePreview: SmartIntakePlanResult | null;
   onSetSmartIntakePreview: (plan: SmartIntakePlanResult | null) => void;
   onApplySmartIntakePlan: (plan: SmartIntakePlanResult) => void;
+  architectModeUnlocked?: boolean;
+  onUnlockArchitectMode?: (source: string) => void;
+  onLockArchitectMode?: () => void;
 }
 
 export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
@@ -66,6 +70,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   smartIntakePreview,
   onSetSmartIntakePreview,
   onApplySmartIntakePlan,
+  onUnlockArchitectMode,
 }) => {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [isParsing, setIsParsing] = useState(false);
@@ -80,10 +85,28 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
     }
   }, [isOpen]);
 
+  const handleInputChange = (val: string) => {
+    if (isArchitectPassphrase(val) && onUnlockArchitectMode) {
+      onChangeSmartIntakeText('');
+      onSetSmartIntakePreview(null);
+      onUnlockArchitectMode(`Command Palette (${val.trim().toLowerCase()})`);
+      onClose();
+      return;
+    }
+    onChangeSmartIntakeText(val);
+  };
+
   const handleParseIntake = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = smartIntakeText.trim();
     if (!trimmed || isParsing) return;
+    if (isArchitectPassphrase(trimmed) && onUnlockArchitectMode) {
+      onChangeSmartIntakeText('');
+      onSetSmartIntakePreview(null);
+      onUnlockArchitectMode(`Command Palette (${trimmed.toLowerCase()})`);
+      onClose();
+      return;
+    }
     triggerHaptic([12]);
     setIsParsing(true);
     try {
@@ -210,7 +233,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                 id="command-palette-intake-input"
                 type="text"
                 value={smartIntakeText}
-                onChange={(e) => onChangeSmartIntakeText(e.target.value)}
+                onChange={(e) => handleInputChange(e.target.value)}
                 placeholder="Type a command or brain-dump week plan (+paper Draft 8b, +lab Tue 2h)..."
                 className="flex-1 bg-transparent text-sm text-white placeholder:text-slate-500 font-mono focus:outline-none"
               />

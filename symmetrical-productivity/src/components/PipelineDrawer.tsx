@@ -331,6 +331,7 @@ interface PipelineDrawerProps {
   onSetSmartIntakePreview: (plan: SmartIntakePlanResult | null) => void;
   onApplySmartIntakePlan: (plan: SmartIntakePlanResult) => void;
   onOpenStateModal: () => void;
+  onUnlockArchitectMode?: (source: string) => void;
   apiKeyVersion: number;
 }
 
@@ -345,6 +346,7 @@ export const PipelineDrawer: React.FC<PipelineDrawerProps> = ({
   onSetSmartIntakePreview,
   onApplySmartIntakePlan,
   onOpenStateModal,
+  onUnlockArchitectMode,
   apiKeyVersion,
 }) => {
   if (!isOpen) return null;
@@ -390,6 +392,7 @@ export const PipelineDrawer: React.FC<PipelineDrawerProps> = ({
             onSetPreviewPlan={onSetSmartIntakePreview}
             onApplyPlan={onApplySmartIntakePlan}
             onOpenSettingsModal={onOpenStateModal}
+            onUnlockArchitectMode={onUnlockArchitectMode}
             apiKeyVersion={apiKeyVersion}
           />
 

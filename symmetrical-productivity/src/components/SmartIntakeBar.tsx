@@ -20,6 +20,7 @@ import {
   generateSmartIntakePlan,
   getEffectiveGeminiApiKey,
 } from '../utils/smartIntakePlanner';
+import { isArchitectPassphrase } from '../state/profilePresets';
 import { triggerHaptic } from '../utils/haptics';
 
 interface SmartIntakeBarProps {
@@ -32,6 +33,7 @@ interface SmartIntakeBarProps {
   onApplyPlan: (plan: SmartIntakePlanResult) => void;
   onOpenSettingsModal?: () => void;
   onOpenCommandDock?: () => void;
+  onUnlockArchitectMode?: (source: string) => void;
   apiKeyVersion?: number;
   className?: string;
 }
@@ -46,6 +48,7 @@ export const SmartIntakeBar: React.FC<SmartIntakeBarProps> = ({
   onApplyPlan,
   onOpenSettingsModal,
   onOpenCommandDock,
+  onUnlockArchitectMode,
   className = '',
 }) => {
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -80,10 +83,27 @@ export const SmartIntakeBar: React.FC<SmartIntakeBarProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [contextVariant]);
 
+  const handleInputChange = (val: string) => {
+    if (isArchitectPassphrase(val)) {
+      onChangeInputText('');
+      onSetPreviewPlan(null);
+      onUnlockArchitectMode?.(`Command Bar Passphrase (${val.trim().toLowerCase()})`);
+      return;
+    }
+    onChangeInputText(val);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = inputText.trim();
     if (!trimmed || isParsing) return;
+
+    if (isArchitectPassphrase(trimmed)) {
+      onChangeInputText('');
+      onSetPreviewPlan(null);
+      onUnlockArchitectMode?.(`Command Bar Passphrase (${trimmed.toLowerCase()})`);
+      return;
+    }
 
     triggerHaptic([10]);
     setIsParsing(true);
@@ -184,7 +204,7 @@ export const SmartIntakeBar: React.FC<SmartIntakeBarProps> = ({
     {
       label: 'Full Brain-Dump Example',
       value:
-        'Lab Tue 2h, theater Thu 6pm shutdown, finish 8-block AI paper by Fri, Journal Club slide deck 4b',
+        'Lab Tue 2h, theater Thu 6pm shutdown, finish 8-block Manuscript Draft by Fri, Journal Club slide deck 4b',
     },
   ];
 
@@ -315,8 +335,8 @@ export const SmartIntakeBar: React.FC<SmartIntakeBarProps> = ({
             id={`${barIdPrefix}-input`}
             type="text"
             value={inputText}
-            onChange={(e) => onChangeInputText(e.target.value)}
-            placeholder="Brain-dump tasks, labs, or 6 PM outings (e.g., 'Lab Tue 2h, theater Thu 6pm shutdown, finish 8-block AI paper by Fri')..."
+            onChange={(e) => handleInputChange(e.target.value)}
+            placeholder="Brain-dump tasks, labs, or 6 PM outings (e.g., 'Lab Tue 2h, theater Thu 6pm shutdown, finish 8-block Manuscript Draft by Fri')..."
             className="w-full bg-transparent text-xs sm:text-sm text-slate-100 placeholder:text-slate-500 font-mono focus:outline-none"
           />
           {inputText && (
