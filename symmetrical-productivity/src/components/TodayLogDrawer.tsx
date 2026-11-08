@@ -15,6 +15,7 @@ import {
 } from '../types/symmetry';
 import { computeShiftMetrics, getLogicalDayKey } from '../state/defaultState';
 import { triggerHaptic } from '../utils/haptics';
+import { MobileBottomSheet } from './MobileBottomSheet';
 
 interface TodayLogDrawerProps {
   isOpen: boolean;
@@ -115,17 +116,16 @@ export const TodayLogDrawer: React.FC<TodayLogDrawerProps> = ({
   };
 
   return (
-    <div
+    <MobileBottomSheet
+      isOpen={isOpen}
+      onClose={onClose}
       id="today-log-drawer-backdrop"
-      className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex justify-end"
+      ariaLabel="Today's Block Log Drawer"
+      desktopVariant="drawer"
+      maxWidthClass="max-w-2xl"
+      isEvening={isEveningTheme}
     >
-      <div
-        className={`w-full max-w-2xl border-l h-full flex flex-col justify-between overflow-y-auto p-4 sm:p-6 ${
-          isEveningTheme
-            ? 'bg-[#0e0b09] border-amber-500/25 text-amber-50'
-            : 'bg-slate-900 border-slate-800 text-slate-100'
-        }`}
-      >
+      <div className="flex-1 flex flex-col justify-between overflow-y-auto p-4 sm:p-6">
         <div className="space-y-5">
           {/* Header */}
           <div className="flex items-center justify-between border-b border-slate-800 pb-4">
@@ -472,6 +472,6 @@ export const TodayLogDrawer: React.FC<TodayLogDrawerProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </MobileBottomSheet>
   );
 };

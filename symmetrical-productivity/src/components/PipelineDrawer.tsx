@@ -9,6 +9,7 @@ import {
 } from '../types/symmetry';
 import { SmartIntakeBar } from './SmartIntakeBar';
 import { triggerHaptic } from '../utils/haptics';
+import { MobileBottomSheet } from './MobileBottomSheet';
 
 interface InteractivePipelineTableProps {
   state: SymmetryState;
@@ -349,11 +350,15 @@ export const PipelineDrawer: React.FC<PipelineDrawerProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div
+    <MobileBottomSheet
+      isOpen={isOpen}
+      onClose={onClose}
       id="pipeline-drawer-backdrop"
-      className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex justify-end"
+      ariaLabel="Interactive 7-Day Master Pipeline Drawer"
+      desktopVariant="drawer"
+      maxWidthClass="max-w-4xl"
     >
-      <div className="w-full max-w-4xl bg-slate-900 border-l border-slate-800 h-full flex flex-col justify-between overflow-y-auto p-4 sm:p-6">
+      <div className="flex-1 flex flex-col justify-between overflow-y-auto p-4 sm:p-6">
         <div className="space-y-4">
           <div className="flex items-center justify-between border-b border-slate-800 pb-4">
             <div>
@@ -422,6 +427,6 @@ export const PipelineDrawer: React.FC<PipelineDrawerProps> = ({
           </button>
         </div>
       </div>
-    </div>
+    </MobileBottomSheet>
   );
 };

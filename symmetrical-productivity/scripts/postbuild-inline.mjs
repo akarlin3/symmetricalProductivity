@@ -58,7 +58,7 @@ const selfContainedDistHtml = `<!doctype html>
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
-    <meta name="theme-color" content="#060911" />
+    <meta name="theme-color" content="#06080d" />
     <meta
       name="description"
       content="Symmetrical Productivity — Split-Screen Dual-Ring HUD, Bento Focus Pipeline, Break Triage Dock, Evening Recharge Sanctuary, and 4-Rung Roadmap."
@@ -67,7 +67,7 @@ const selfContainedDistHtml = `<!doctype html>
     ${googleFontsLinks}
     <style>${cssContent}</style>
   </head>
-  <body class="bg-[#060911] text-slate-100 antialiased selection:bg-cyan-500/30 selection:text-cyan-200">
+  <body class="bg-[#06080d] text-slate-100 antialiased selection:bg-cyan-500/30 selection:text-cyan-200">
     <div id="root">${ssrHtml}</div>
     <script type="module">${jsContent}</script>
     ${safeSwScript}
@@ -81,7 +81,7 @@ const sourceIndexHtml = `<!doctype html>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
-    <meta name="theme-color" content="#060911" />
+    <meta name="theme-color" content="#06080d" />
     <meta
       name="description"
       content="Symmetrical Productivity — Split-Screen Dual-Ring HUD, Bento Focus Pipeline, Break Triage Dock, Evening Recharge Sanctuary, and 4-Rung Roadmap."
@@ -89,7 +89,7 @@ const sourceIndexHtml = `<!doctype html>
     <title>Symmetrical Productivity</title>
     ${googleFontsLinks}
   </head>
-  <body class="bg-[#060911] text-slate-100 antialiased selection:bg-cyan-500/30 selection:text-cyan-200">
+  <body class="bg-[#06080d] text-slate-100 antialiased selection:bg-cyan-500/30 selection:text-cyan-200">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

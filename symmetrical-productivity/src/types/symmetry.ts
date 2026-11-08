@@ -310,6 +310,48 @@ export interface TodayBlockLogEntry {
   rungNumber?: 1 | 2 | 3 | 4;
 }
 
+export type SoundscapeMode = 'WARM_BROWN_NOISE' | 'SOFT_RAIN' | 'BINAURAL_40HZ';
+
+export interface AudioEngineSettings {
+  muted: boolean;
+  volume: number; // 0..1
+  soundscapeEnabled: boolean;
+  soundscapeMode: SoundscapeMode;
+  tactileClicksEnabled?: boolean;
+}
+
+export type DailyHistoryMode = LoadMode | 'EVENING_RECHARGE';
+
+export interface DailyHistoryEntry {
+  logicalDate: string;
+  mode: DailyHistoryMode;
+  blocksCompleted: number;
+  inputBlocks: number;
+  outputBlocks: number;
+  eveningSessions: number;
+}
+
+export type BackupTriggerReason =
+  | 'STATE_RESET'
+  | 'RESET_DEFAULT'
+  | 'NEW_DAY_RESET'
+  | 'PRESET_SWITCH'
+  | 'JSON_IMPORT'
+  | 'MANUAL_SNAPSHOT';
+
+export interface StateBackupSnapshot {
+  id: string;
+  createdAtIso: string;
+  logicalDate: string;
+  triggerReason: BackupTriggerReason;
+  label: string;
+  profileName: string;
+  loadMode: LoadMode;
+  blocksCompleted: number;
+  targetBlocks: number;
+  stateJson: string;
+}
+
 export interface SymmetryState {
   version: string;
   profilePresetId?: ProfilePresetId;
@@ -320,6 +362,9 @@ export interface SymmetryState {
   breakOptions?: BreakOptionsConfig;
   logicalDayKey?: string; // Logical day boundary key (hours < logicalDayRolloverHour counts as previous day)
   todayBlockLog: TodayBlockLogEntry[];
+  dailyHistory?: DailyHistoryEntry[];
+  stateBackups?: StateBackupSnapshot[];
+  audioSettings?: AudioEngineSettings;
   upcomingMilestones: string[];
   loadMode: LoadMode;
   preExamTaperActive: boolean; // Cancels heavy prose/synthesis, caps at 7-9 blocks, routes strictly to Exam Review & Active Recall
@@ -343,5 +388,6 @@ export interface SymmetryState {
   recharge: RechargeState;
   roadmapTracks: RoadmapTrack[];
 }
+
 
 

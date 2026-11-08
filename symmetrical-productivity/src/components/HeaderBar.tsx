@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
+  BarChart3,
   Bot,
   Calendar,
   Clock,
   Download,
+  HelpCircle,
   ListChecks,
   Lock,
   Moon,
@@ -11,16 +13,26 @@ import {
   Sliders,
   Sparkles,
   Sun,
+  Volume2,
+  VolumeX,
   Zap,
 } from 'lucide-react';
-import { FixedEventType, SymmetryState, TabId } from '../types/symmetry';
+import {
+  AudioEngineSettings,
+  FixedEventType,
+  SoundscapeMode,
+  SymmetryState,
+  TabId,
+} from '../types/symmetry';
 import {
   computeShiftMetrics,
+  DEFAULT_AUDIO_ENGINE_SETTINGS,
   formatRolloverHourLabel,
   getLogicalDayKey,
   isPre4amRolloverWindow,
 } from '../state/defaultState';
 import { triggerHaptic } from '../utils/haptics';
+import { SOUNDSCAPE_METADATA, soundEngine } from '../utils/soundEngine';
 
 interface HeaderBarProps {
   state: SymmetryState;
@@ -33,6 +45,10 @@ interface HeaderBarProps {
   onToggleAssistantDrawer: () => void;
   onToggleZeroWorkSimulation: () => void;
   onResetDefault: () => void;
+  onOpenInsightsModal?: () => void;
+  onOpenSpotlightTour?: () => void;
+  onOpenShortcutsModal?: () => void;
+  onUpdateAudioSettings?: (patch: Partial<AudioEngineSettings>) => void;
   isEveningTheme: boolean;
 }
 
@@ -47,8 +63,19 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   onToggleAssistantDrawer,
   onToggleZeroWorkSimulation,
   onResetDefault,
+  onOpenInsightsModal,
+  onOpenSpotlightTour,
+  onOpenShortcutsModal,
+  onUpdateAudioSettings,
   isEveningTheme,
 }) => {
+  const [audioMenuOpen, setAudioMenuOpen] = useState(false);
+  const audioSettings: AudioEngineSettings = {
+    ...DEFAULT_AUDIO_ENGINE_SETTINGS,
+    ...(state.audioSettings || {}),
+  };
+  const isWorkTimerRunning =
+    state.timer.isRunning && state.timer.mode === 'WORK_20M';
   const metrics = computeShiftMetrics(state);
   const rolloverHour = state.logicalDayRolloverHour ?? 4;
   const rolloverLabel = formatRolloverHourLabel(rolloverHour);
@@ -216,13 +243,222 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             </div>
           </div>
 
-          {/* Utility Buttons: Planning Assistant, Today's Log, 7-Day Pipeline Drawer, Simulate 0m Work Left, Profile Wizard, State.md Import/Export */}
-          <div className="flex items-center gap-1.5">
+          {/* Utility Buttons: Soundscape HUD, Insights, Assistant, Today's Log, 7-Day Pipeline Drawer, Simulate 0m Work Left, Profile Wizard, State.md Import/Export, ? Tour */}
+          <div className="flex flex-wrap items-center gap-1.5 relative">
+            {/* 1. Procedural Web Audio Soundscape & Tactile Acoustic HUD */}
+            <div className="relative">
+              <div className="inline-flex items-center rounded-xl border overflow-hidden bg-white/[0.03] border-white/[0.1]">
+                <button
+                  id="btn-hud-audio-mute-toggle"
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic([8]);
+                    const nextMuted = !audioSettings.muted;
+                    onUpdateAudioSettings?.({ muted: nextMuted });
+                    if (!nextMuted) {
+                      soundEngine.playTactileClick('MODE_TOGGLE');
+                    }
+                  }}
+                  className={`px-2 py-1.5 text-xs font-mono flex items-center gap-1 cursor-pointer transition ${
+                    audioSettings.muted
+                      ? 'text-slate-500 hover:text-slate-300'
+                      : isWorkTimerRunning
+                      ? 'bg-emerald-500/20 text-emerald-200'
+                      : 'text-cyan-300 hover:bg-white/[0.06]'
+                  }`}
+                  title={
+                    audioSettings.muted
+                      ? 'Unmute Procedural Web Audio Soundscape & Tactile Clicks'
+                      : 'Mute Procedural Web Audio Soundscape'
+                  }
+                >
+                  {audioSettings.muted ? (
+                    <VolumeX className="w-3.5 h-3.5" />
+                  ) : (
+                    <Volume2
+                      className={`w-3.5 h-3.5 ${
+                        isWorkTimerRunning ? 'animate-pulse text-emerald-300' : ''
+                      }`}
+                    />
+                  )}
+                </button>
+                <button
+                  id="btn-hud-audio-menu"
+                  type="button"
+                  onClick={() => {
+                    soundEngine.playTactileClick('UI_TAP');
+                    setAudioMenuOpen((prev) => !prev);
+                  }}
+                  className="px-2 py-1.5 border-l border-white/[0.08] text-[11px] font-mono text-slate-200 hover:bg-white/[0.06] cursor-pointer flex items-center gap-1"
+                  title="Configure Procedural Focus Soundscape (Warm Brown Noise, Soft Rain, 40Hz Binaural Focus Drone) & Volume"
+                >
+                  <span className="hidden xl:inline">
+                    {SOUNDSCAPE_METADATA[audioSettings.soundscapeMode]?.shortLabel ||
+                      'Brown Noise'}
+                  </span>
+                  <span className="text-[10px] text-slate-400">
+                    {audioSettings.muted
+                      ? 'Muted'
+                      : `${Math.round(audioSettings.volume * 100)}%`}
+                  </span>
+                </button>
+              </div>
+
+              {audioMenuOpen && (
+                <div
+                  id="hud-audio-popover"
+                  className="absolute right-0 mt-2 w-80 rounded-2xl bg-[#0b101b]/95 backdrop-blur-xl border border-cyan-500/35 shadow-2xl p-3.5 z-50 space-y-3 text-slate-100"
+                >
+                  <div className="flex items-center justify-between border-b border-white/[0.08] pb-2">
+                    <div>
+                      <div className="text-xs font-bold font-mono text-cyan-200">
+                        Procedural Web Audio Engine
+                      </div>
+                      <div className="text-[10px] font-mono text-slate-400">
+                        Auto-fades 2s in on 5m/15m timer start; fades out on Pause/Break
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAudioMenuOpen(false)}
+                      className="text-xs font-mono text-slate-400 hover:text-white cursor-pointer px-1.5"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {/* Soundscape Mode Selector */}
+                  <div className="space-y-1.5">
+                    <span className="block text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                      Focus Soundscape Mode
+                    </span>
+                    {(
+                      [
+                        'WARM_BROWN_NOISE',
+                        'SOFT_RAIN',
+                        'BINAURAL_40HZ',
+                      ] as SoundscapeMode[]
+                    ).map((modeKey) => {
+                      const meta = SOUNDSCAPE_METADATA[modeKey];
+                      const active = audioSettings.soundscapeMode === modeKey;
+                      return (
+                        <button
+                          key={modeKey}
+                          id={`btn-soundscape-${modeKey.toLowerCase()}`}
+                          type="button"
+                          onClick={() => {
+                            soundEngine.playTactileClick('MODE_TOGGLE');
+                            onUpdateAudioSettings?.({
+                              soundscapeMode: modeKey,
+                              muted: false,
+                            });
+                          }}
+                          className={`w-full text-left p-2 rounded-xl border transition cursor-pointer ${
+                            active
+                              ? 'bg-cyan-500/15 border-cyan-400/60 text-cyan-100'
+                              : 'bg-white/[0.02] hover:bg-white/[0.06] border-white/[0.07] text-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between text-xs font-mono font-bold">
+                            <span>{meta.label}</span>
+                            {active && (
+                              <span className="text-[10px] text-cyan-300">
+                                ACTIVE
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            {meta.subtitle}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Master Volume Slider */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-[11px] font-mono">
+                      <span className="text-slate-300">Ambient Gain</span>
+                      <span className="text-cyan-300 font-bold">
+                        {audioSettings.muted
+                          ? 'Muted'
+                          : `${Math.round(audioSettings.volume * 100)}%`}
+                      </span>
+                    </div>
+                    <input
+                      id="slider-hud-audio-volume"
+                      type="range"
+                      min={0.05}
+                      max={1}
+                      step={0.05}
+                      value={audioSettings.volume}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        onUpdateAudioSettings?.({
+                          volume: val,
+                          muted: false,
+                        });
+                      }}
+                      className="w-full accent-cyan-400 cursor-pointer"
+                    />
+                  </div>
+
+                  {/* Tactile Acoustic Clicks Toggle */}
+                  <div className="pt-1 border-t border-white/[0.08] flex items-center justify-between text-[11px] font-mono">
+                    <span className="text-slate-300">
+                      15ms Tactile Clicks &amp; 0m Chord
+                    </span>
+                    <button
+                      id="btn-toggle-tactile-clicks"
+                      type="button"
+                      onClick={() => {
+                        const next = !audioSettings.tactileClicksEnabled;
+                        onUpdateAudioSettings?.({
+                          tactileClicksEnabled: next,
+                        });
+                        if (next) soundEngine.playTactileClick('STICKY_PIP');
+                      }}
+                      className={`px-2.5 py-1 rounded-lg border font-bold cursor-pointer ${
+                        audioSettings.tactileClicksEnabled
+                          ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
+                          : 'bg-white/[0.04] border-white/[0.1] text-slate-400'
+                      }`}
+                    >
+                      {audioSettings.tactileClicksEnabled ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 2. Empirical Insights & 90-Day Symmetry Heatmap Button */}
+            {onOpenInsightsModal && (
+              <button
+                id="btn-open-insights-modal"
+                type="button"
+                onClick={() => {
+                  triggerHaptic([10]);
+                  soundEngine.playTactileClick('UI_TAP');
+                  onOpenInsightsModal();
+                }}
+                className={`px-2.5 py-1.5 rounded-xl border text-xs font-mono font-semibold flex items-center gap-1.5 cursor-pointer ${
+                  isEveningTheme
+                    ? 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/45 text-amber-100'
+                    : 'bg-indigo-500/15 hover:bg-indigo-500/25 border-indigo-400/45 text-indigo-100'
+                }`}
+                title="Open Empirical Insights Drawer & 90-Day Symmetry Heatmap"
+              >
+                <BarChart3 className="w-3.5 h-3.5 text-cyan-300 shrink-0" />
+                <span>Insights</span>
+              </button>
+            )}
+
             <button
               id="btn-open-planning-assistant"
               type="button"
               onClick={() => {
                 triggerHaptic([12]);
+                soundEngine.playTactileClick('UI_TAP');
                 onToggleAssistantDrawer();
               }}
               className={`px-2.5 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1.5 cursor-pointer ${
@@ -244,6 +480,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               type="button"
               onClick={() => {
                 triggerHaptic([10]);
+                soundEngine.playTactileClick('UI_TAP');
                 onOpenTodayLogDrawer();
               }}
               className={`px-2.5 py-1.5 rounded-xl border text-xs font-mono font-semibold flex items-center gap-1.5 cursor-pointer ${
@@ -260,7 +497,10 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             <button
               id="btn-open-pipeline-drawer"
               type="button"
-              onClick={onOpenPipelineDrawer}
+              onClick={() => {
+                soundEngine.playTactileClick('UI_TAP');
+                onOpenPipelineDrawer();
+              }}
               className={`px-2.5 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1.5 cursor-pointer ${
                 isEveningTheme
                   ? 'bg-white/[0.04] hover:bg-white/[0.08] border-amber-500/25 text-amber-100'
@@ -302,7 +542,10 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               <button
                 id="btn-header-open-onboarding-wizard"
                 type="button"
-                onClick={onOpenOnboardingWizard}
+                onClick={() => {
+                  soundEngine.playTactileClick('UI_TAP');
+                  onOpenOnboardingWizard();
+                }}
                 className={`px-2.5 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1.5 cursor-pointer ${
                   isEveningTheme
                     ? 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/45 text-amber-100'
@@ -318,17 +561,48 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             <button
               id="btn-open-state-io"
               type="button"
-              onClick={onOpenStateModal}
+              onClick={() => {
+                soundEngine.playTactileClick('UI_TAP');
+                onOpenStateModal();
+              }}
               className={`px-2.5 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1.5 cursor-pointer ${
                 isEveningTheme
                   ? 'bg-white/[0.04] hover:bg-white/[0.08] border-amber-500/25 text-amber-100'
                   : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.09] text-slate-200'
               }`}
-              title="Open Settings & State Sync modal (Switch / Reset Profile Template, Day-Boundary Preferences, State Sync)"
+              title="Open Settings & State Sync modal (Switch / Reset Profile Template, Rolling Auto-Backups, State Sync)"
             >
               <Download className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Settings &amp; Sync</span>
             </button>
+
+            {/* 5. Header `?` Button for 4-Step Spotlight Tour & Keyboard Shortcut Cheat-Sheet */}
+            {onOpenSpotlightTour && (
+              <button
+                id="btn-header-help-tour"
+                type="button"
+                onClick={() => {
+                  triggerHaptic([10]);
+                  soundEngine.playTactileClick('UI_TAP');
+                  onOpenSpotlightTour();
+                }}
+                onContextMenu={(e) => {
+                  if (onOpenShortcutsModal) {
+                    e.preventDefault();
+                    onOpenShortcutsModal();
+                  }
+                }}
+                className={`px-2.5 py-1.5 rounded-xl border font-mono font-bold text-xs flex items-center gap-1 cursor-pointer ${
+                  isEveningTheme
+                    ? 'border-amber-400/45 bg-amber-500/15 hover:bg-amber-500/25 text-amber-100'
+                    : 'border-cyan-400/45 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200'
+                }`}
+                title="How Symmetrical Works — Launch 4-Step Interactive Spotlight Tour & Keyboard Shortcut Cheat-Sheet (?)"
+              >
+                <HelpCircle className="w-3.5 h-3.5" />
+                <span>?</span>
+              </button>
+            )}
 
             <button
               id="btn-reset-default-state"

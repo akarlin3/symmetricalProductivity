@@ -1,6 +1,24 @@
-import { SymmetryState, TodayBlockLogEntry } from '../types/symmetry';
+import {
+  AudioEngineSettings,
+  BackupTriggerReason,
+  DailyHistoryEntry,
+  LoadMode,
+  StateBackupSnapshot,
+  SymmetryState,
+  TodayBlockLogEntry,
+} from '../types/symmetry';
 
 export const STORAGE_KEY = 'symmetry_manager_state_v1';
+export const BACKUP_STORAGE_KEY = 'symmetry_state_backups_v1';
+export const MAX_STATE_BACKUPS = 7;
+
+export const DEFAULT_AUDIO_ENGINE_SETTINGS: AudioEngineSettings = {
+  muted: false,
+  volume: 0.45,
+  soundscapeEnabled: true,
+  soundscapeMode: 'WARM_BROWN_NOISE',
+};
+
 
 /**
  * Logical Day-Rollover Boundary (Default 4:00 AM, adjustable 12:00 AM – 6:00 AM):
@@ -192,6 +210,109 @@ export const DEFAULT_TODAY_BLOCK_LOG: TodayBlockLogEntry[] = [
   },
 ];
 
+export function buildDefault90DayHistory(
+  anchorLogicalDay: string = initialLogicalDay
+): DailyHistoryEntry[] {
+  const parts = anchorLogicalDay.split('-').map(Number);
+  const baseDate =
+    parts.length === 3 && !parts.some(Number.isNaN)
+      ? new Date(parts[0], parts[1] - 1, parts[2], 12, 0, 0)
+      : new Date();
+
+  const entries: DailyHistoryEntry[] = [];
+  for (let offset = 89; offset >= 0; offset--) {
+    const d = new Date(baseDate.getTime());
+    d.setDate(d.getDate() - offset);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const dateKey = `${y}-${m}-${day}`;
+
+    if (offset === 0) {
+      entries.push({
+        logicalDate: dateKey,
+        mode: 'CRUISE',
+        blocksCompleted: 5,
+        inputBlocks: 3,
+        outputBlocks: 2,
+        eveningSessions: 3,
+      });
+      continue;
+    }
+
+    // Deterministic 7-day cycle strictly honoring <= 2 consecutive Surge days
+    const cycle = offset % 7;
+    if (cycle === 0) {
+      entries.push({
+        logicalDate: dateKey,
+        mode: 'CRUISE',
+        blocksCompleted: 12,
+        inputBlocks: 6,
+        outputBlocks: 6,
+        eveningSessions: 2,
+      });
+    } else if (cycle === 1) {
+      entries.push({
+        logicalDate: dateKey,
+        mode: 'TAPER',
+        blocksCompleted: 8,
+        inputBlocks: 5,
+        outputBlocks: 3,
+        eveningSessions: 2,
+      });
+    } else if (cycle === 2) {
+      entries.push({
+        logicalDate: dateKey,
+        mode: 'SURGE',
+        blocksCompleted: 14,
+        inputBlocks: 7,
+        outputBlocks: 7,
+        eveningSessions: 1,
+      });
+    } else if (cycle === 3) {
+      entries.push({
+        logicalDate: dateKey,
+        mode: 'SURGE',
+        blocksCompleted: 15,
+        inputBlocks: 7,
+        outputBlocks: 8,
+        eveningSessions: 2,
+      });
+    } else if (cycle === 4) {
+      entries.push({
+        logicalDate: dateKey,
+        mode: 'CRUISE',
+        blocksCompleted: 11,
+        inputBlocks: 6,
+        outputBlocks: 5,
+        eveningSessions: 2,
+      });
+    } else if (cycle === 5) {
+      entries.push({
+        logicalDate: dateKey,
+        mode: 'EVENING_RECHARGE',
+        blocksCompleted: 9,
+        inputBlocks: 5,
+        outputBlocks: 4,
+        eveningSessions: 3,
+      });
+    } else {
+      entries.push({
+        logicalDate: dateKey,
+        mode: offset % 14 === 6 ? 'TAPER' : 'CRUISE',
+        blocksCompleted: offset % 14 === 6 ? 8 : 12,
+        inputBlocks: offset % 14 === 6 ? 4 : 6,
+        outputBlocks: offset % 14 === 6 ? 4 : 6,
+        eveningSessions: 2,
+      });
+    }
+  }
+  return entries;
+}
+
+export const DEFAULT_DAILY_HISTORY: DailyHistoryEntry[] =
+  buildDefault90DayHistory(initialLogicalDay);
+
 export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
   version: '1.0.0',
   profilePresetId: 'AVERY_DEFAULT',
@@ -215,11 +336,15 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
   },
   logicalDayKey: initialLogicalDay,
   todayBlockLog: DEFAULT_TODAY_BLOCK_LOG,
+  dailyHistory: DEFAULT_DAILY_HISTORY,
+  stateBackups: [],
+  audioSettings: DEFAULT_AUDIO_ENGINE_SETTINGS,
   upcomingMilestones: ['Nov 12: Anatomy Exam', 'Dec 8–9: Comp Exam'],
   loadMode: 'CRUISE',
   preExamTaperActive: false,
   cruisePlus: false,
   customModeBlockAdjustment: 12, // 12 total blocks in Cruise; 3 completed = 9 left = 180m (3h 00m work left)
+
   surgeConsecutiveDays: 1,
   midDayResetCompletedToday: false,
   fixedEvent: 'NONE',
@@ -1334,6 +1459,17 @@ export function parseFromStateInput(rawText: string): SymmetryState {
         ...DEFAULT_SYMMETRY_STATE.timer,
         ...(parsed.timer || {}),
       },
+      dailyHistory:
+        Array.isArray(parsed.dailyHistory) && parsed.dailyHistory.length > 0
+          ? parsed.dailyHistory
+          : DEFAULT_SYMMETRY_STATE.dailyHistory,
+      stateBackups: Array.isArray(parsed.stateBackups)
+        ? parsed.stateBackups.slice(0, MAX_STATE_BACKUPS)
+        : DEFAULT_SYMMETRY_STATE.stateBackups || [],
+      audioSettings: {
+        ...DEFAULT_AUDIO_ENGINE_SETTINGS,
+        ...(parsed.audioSettings || {}),
+      },
       recharge: {
         ...DEFAULT_SYMMETRY_STATE.recharge,
         ...(parsed.recharge || {}),
@@ -1474,4 +1610,175 @@ export function parseFromStateInput(rawText: string): SymmetryState {
 
   return baseState;
 }
+
+/**
+ * Synchronizes today's live telemetry into the 90-day `dailyHistory` array.
+ */
+export function syncTodayIntoDailyHistory(
+  state: SymmetryState
+): import('../types/symmetry').DailyHistoryEntry[] {
+  const logicalDate =
+    state.logicalDayKey ||
+    getLogicalDayKey(new Date(), state.logicalDayRolloverHour ?? 4);
+  const existingHistory =
+    Array.isArray(state.dailyHistory) && state.dailyHistory.length > 0
+      ? [...state.dailyHistory]
+      : buildDefault90DayHistory(logicalDate);
+
+  const metrics = computeShiftMetrics(state);
+  const completedBaseline = state.baselineBlocks.filter(
+    (b) => b.completed || b.bankedViaEarlyClearance
+  ).length;
+  const mediaStartsToday = (state.todayBlockLog || []).filter(
+    (e) =>
+      e.logicalDate === logicalDate &&
+      e.category === 'EVENING_RECHARGE' &&
+      e.stroke === 'INPUT'
+  ).length;
+  const inputBlocks = completedBaseline + mediaStartsToday;
+  const outputBlocks =
+    state.discretionaryBlocksCompletedToday +
+    (state.recharge?.flowExtensionBlocksLoggedToday || 0);
+  const eveningSessions = Math.max(
+    state.recharge?.completedLog?.length || 0,
+    (state.todayBlockLog || []).filter(
+      (e) => e.logicalDate === logicalDate && e.category === 'EVENING_RECHARGE'
+    ).length
+  );
+
+  const todayEntry: import('../types/symmetry').DailyHistoryEntry = {
+    logicalDate,
+    mode:
+      metrics.isZeroWorkLeft && eveningSessions > 0
+        ? 'EVENING_RECHARGE'
+        : state.preExamTaperActive
+        ? 'TAPER'
+        : state.loadMode,
+    blocksCompleted: metrics.totalCompletedBlocks,
+    inputBlocks,
+    outputBlocks,
+    eveningSessions,
+  };
+
+  const idx = existingHistory.findIndex((h) => h.logicalDate === logicalDate);
+  if (idx >= 0) {
+    existingHistory[idx] = todayEntry;
+  } else {
+    existingHistory.push(todayEntry);
+  }
+
+  return existingHistory.slice(-90);
+}
+
+/**
+ * Loads persisted backups from localStorage (fallback ring buffer across resets)
+ */
+export function loadExternalStateBackups(): import('../types/symmetry').StateBackupSnapshot[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(BACKUP_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.slice(0, MAX_STATE_BACKUPS);
+    }
+  } catch {
+    // ignore corrupt storage
+  }
+  return [];
+}
+
+/**
+ * Creates a validated snapshot of the current state and pushes it to the 7-item ring buffer.
+ */
+export function pushStateBackup(
+  currentState: SymmetryState,
+  triggerReason: import('../types/symmetry').BackupTriggerReason,
+  label: string
+): import('../types/symmetry').StateBackupSnapshot[] {
+  const metrics = computeShiftMetrics(currentState);
+  const cleanStateToSerialize: SymmetryState = {
+    ...currentState,
+    stateBackups: undefined,
+  };
+  const snapshot: import('../types/symmetry').StateBackupSnapshot = {
+    id: `bkp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    createdAtIso: new Date().toISOString(),
+    logicalDate: currentState.logicalDayKey || getLogicalDayKey(),
+    triggerReason,
+    label,
+    profileName: currentState.profileName || DEFAULT_SYMMETRY_STATE.profileName!,
+    loadMode: currentState.loadMode,
+    blocksCompleted: metrics.totalCompletedBlocks,
+    targetBlocks: metrics.totalTargetBlocks,
+    stateJson: JSON.stringify(cleanStateToSerialize),
+  };
+
+  const existing =
+    currentState.stateBackups && currentState.stateBackups.length > 0
+      ? currentState.stateBackups
+      : loadExternalStateBackups();
+
+  const updated = [snapshot, ...existing.filter((b) => b.id !== snapshot.id)].slice(
+    0,
+    MAX_STATE_BACKUPS
+  );
+
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(BACKUP_STORAGE_KEY, JSON.stringify(updated));
+    } catch {
+      // ignore storage quota errors
+    }
+  }
+
+  return updated;
+}
+
+/**
+ * Validates a snapshot JSON string against full SymmetryState schema requirements
+ * before restoring it.
+ */
+export function validateAndRestoreStateSnapshot(
+  snapshotJson: string,
+  preserveBackups?: import('../types/symmetry').StateBackupSnapshot[]
+): SymmetryState {
+  if (!snapshotJson || typeof snapshotJson !== 'string') {
+    throw new Error('Snapshot payload is empty or invalid.');
+  }
+  let rawObj: Record<string, unknown>;
+  try {
+    rawObj = JSON.parse(snapshotJson);
+  } catch {
+    throw new Error('Snapshot JSON is malformed and cannot be parsed.');
+  }
+  if (!rawObj || typeof rawObj !== 'object') {
+    throw new Error('Snapshot root must be a JSON object.');
+  }
+  if (
+    !['CRUISE', 'SURGE', 'TAPER'].includes(String(rawObj.loadMode || '')) ||
+    !Array.isArray(rawObj.baselineBlocks) ||
+    rawObj.baselineBlocks.length === 0 ||
+    !Array.isArray(rawObj.projectQueue) ||
+    !Array.isArray(rawObj.roadmapTracks) ||
+    typeof rawObj.timer !== 'object' ||
+    typeof rawObj.recharge !== 'object'
+  ) {
+    throw new Error(
+      'Snapshot failed schema validation (missing loadMode, baselineBlocks, projectQueue, timer, or recharge).'
+    );
+  }
+
+  const restored = parseFromStateInput(snapshotJson);
+  return {
+    ...restored,
+    timer: {
+      ...restored.timer,
+      isRunning: false,
+      targetEndTimeMs: null,
+    },
+    stateBackups: preserveBackups ?? restored.stateBackups ?? loadExternalStateBackups(),
+  };
+}
+
 

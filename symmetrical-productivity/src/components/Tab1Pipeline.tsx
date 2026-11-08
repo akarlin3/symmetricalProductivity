@@ -51,6 +51,8 @@ import { BreathingVisualizer478 } from './BreathingVisualizer478';
 import { InteractivePipelineTable } from './PipelineDrawer';
 import { SmartIntakeBar } from './SmartIntakeBar';
 import { triggerHaptic } from '../utils/haptics';
+import { motion } from 'framer-motion';
+import { soundEngine } from '../utils/soundEngine';
 
 interface PendingIntakeDeliverable {
   title: string;
@@ -706,9 +708,35 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
           <section
             id="bento-up-next-hero"
             aria-label="Up Next Auto-Router and Load Mode"
-            className="rounded-3xl bento-hero-border p-5 space-y-4"
+            className="rounded-3xl bento-hero-border p-5 space-y-4 overflow-hidden"
           >
-            <div className="flex flex-wrap items-start justify-between gap-3">
+            <motion.div
+              drag="x"
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.22}
+              onDragEnd={(_, info) => {
+                if (metrics.isZeroWorkLeft || isSurgeMidDayResetRequired) return;
+                if (info.offset.x > 65 || info.velocity.x > 340) {
+                  triggerHaptic([15]);
+                  soundEngine.playTactileClick('MODE_TOGGLE');
+                  onLaunchBlockInTimer(
+                    upNextBlock.sourceId,
+                    upNextBlock.title,
+                    upNextBlock.taskType,
+                    upNextBlock.startupStep
+                  );
+                } else if (
+                  (info.offset.x < -65 || info.velocity.x < -340) &&
+                  upNextBlock.taskType === 'FLASHCARDS'
+                ) {
+                  triggerHaptic([15]);
+                  soundEngine.playTactileClick('MODE_TOGGLE');
+                  onToggleEarlyClearance();
+                }
+              }}
+              className="flex flex-wrap items-start justify-between gap-3 cursor-grab active:cursor-grabbing"
+              title="Swipe Right to launch 5m Startup Step • Swipe Left on Flashcard rows to toggle Early Clearance"
+            >
               <div className="space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="px-2.5 py-0.5 rounded-full bg-cyan-400/20 border border-cyan-300/50 text-cyan-200 font-mono text-[10px] font-bold uppercase tracking-wider flex items-center gap-1">
@@ -717,6 +745,12 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                   </span>
                   <span className="px-2 py-0.5 rounded-md bg-white/[0.05] border border-white/[0.1] font-mono text-[10px] text-slate-300">
                     {upNextBlock.badge}
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md bg-cyan-500/10 border border-cyan-400/30 font-mono text-[10px] text-cyan-200/90">
+                    ⇄ Swipe Right: 5m Startup
+                    {upNextBlock.taskType === 'FLASHCARDS'
+                      ? ' • Swipe Left: Early Clearance'
+                      : ''}
                   </span>
                   {isFinalBlockOfNight && (
                     <span className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-400/50 font-mono text-[10px] text-amber-200">
@@ -740,6 +774,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 disabled={metrics.isZeroWorkLeft || isSurgeMidDayResetRequired}
                 onClick={() => {
                   triggerHaptic([15]);
+                  soundEngine.playTactileClick('MODE_TOGGLE');
                   onLaunchBlockInTimer(
                     upNextBlock.sourceId,
                     upNextBlock.title,
@@ -755,7 +790,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                   Space
                 </kbd>
               </button>
-            </div>
+            </motion.div>
 
             {/* Compact Load Mode & Duration-Only Countdown Bar (includes Pre-Exam Taper toggle) */}
             <div className="pt-3 border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-2.5">
@@ -1127,18 +1162,36 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 </span>
               </div>
 
-              <div className="space-y-2 max-h-[540px] overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-[540px] overflow-y-auto overflow-x-hidden pr-1">
                 {sequentialSteps.map((step) => {
                   const isWork = step.kind === 'WORK_BLOCK';
                   const isBreakL1 = step.kind === 'BREAK_L1';
                   const isBreakL2 = step.kind === 'BREAK_L2';
                   const isBreakL3 = step.kind === 'BREAK_L3';
                   const isShutdown = step.kind === 'SHUTDOWN';
+                  const isFlashcardRow = step.taskType === 'FLASHCARDS';
 
                   return (
-                    <div
+                    <motion.div
                       key={step.id}
                       id={`seq-row-${step.id}`}
+                      drag="x"
+                      dragConstraints={{ left: 0, right: 0 }}
+                      dragElastic={0.2}
+                      onDragEnd={(_, info) => {
+                        if (info.offset.x > 60 || info.velocity.x > 320) {
+                          triggerHaptic([15]);
+                          soundEngine.playTactileClick('MODE_TOGGLE');
+                          handleClickSequentialStep(step);
+                        } else if (
+                          isFlashcardRow &&
+                          (info.offset.x < -60 || info.velocity.x < -320)
+                        ) {
+                          triggerHaptic([15]);
+                          soundEngine.playTactileClick('MODE_TOGGLE');
+                          onToggleEarlyClearance();
+                        }
+                      }}
                       onClick={() => handleClickSequentialStep(step)}
                       role="button"
                       tabIndex={0}
@@ -1148,6 +1201,11 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                           handleClickSequentialStep(step);
                         }
                       }}
+                      title={
+                        isFlashcardRow
+                          ? 'Swipe Right: Launch 5m Startup • Swipe Left: Toggle Early Clearance'
+                          : 'Swipe Right or Click: Launch 5m Startup Step'
+                      }
                       className={`p-3 rounded-2xl border transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${
                         step.isCurrentNext
                           ? 'bg-cyan-500/15 border-cyan-400/70 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.15)]'
@@ -1199,6 +1257,11 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                               BANKED (EARLY CLEARANCE)
                             </span>
                           )}
+                          {isFlashcardRow && (
+                            <span className="text-[9px] font-mono text-slate-400 hidden sm:inline">
+                              ← Swipe Left: Early Clearance
+                            </span>
+                          )}
                         </div>
 
                         <div className="text-xs sm:text-sm font-bold text-white truncate">
@@ -1227,7 +1290,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                           <span>Launch</span>
                         </span>
                       </div>
-                    </div>
+                    </motion.div>
                   );
                 })}
               </div>
@@ -1244,7 +1307,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
             <section
               id="bento-baseline-card"
               aria-labelledby="baseline-heading"
-              className="rounded-3xl bento-surface p-5 flex flex-col justify-between space-y-4"
+              className="rounded-3xl bento-surface p-5 flex flex-col justify-between space-y-4 overflow-hidden"
             >
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
@@ -1264,8 +1327,35 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                   </span>
                 </div>
 
-                {/* Group A: Flashcard / Recall Segments */}
-                <div className="p-3.5 rounded-2xl bg-black/25 border border-white/[0.07] space-y-2.5">
+                {/* Group A: Flashcard / Recall Segments (Swipe Left to Toggle Early Clearance) */}
+                <motion.div
+                  id="flashcard-swipe-row"
+                  drag="x"
+                  dragConstraints={{ left: 0, right: 0 }}
+                  dragElastic={0.2}
+                  onDragEnd={(_, info) => {
+                    if (metrics.isZeroWorkLeft) return;
+                    if (info.offset.x < -55 || info.velocity.x < -300) {
+                      triggerHaptic([15]);
+                      soundEngine.playTactileClick('MODE_TOGGLE');
+                      onToggleEarlyClearance();
+                    } else if (
+                      (info.offset.x > 55 || info.velocity.x > 300) &&
+                      flashcardBlocks[0]
+                    ) {
+                      triggerHaptic([15]);
+                      soundEngine.playTactileClick('MODE_TOGGLE');
+                      onLaunchBlockInTimer(
+                        flashcardBlocks[0].id,
+                        flashcardBlocks[0].title,
+                        'FLASHCARDS',
+                        flashcardBlocks[0].startupStep
+                      );
+                    }
+                  }}
+                  title="Swipe Left on Flashcard row to toggle Early Clearance • Swipe Right to launch 5m Startup"
+                  className="p-3.5 rounded-2xl bg-black/25 border border-white/[0.07] space-y-2.5 cursor-grab active:cursor-grabbing"
+                >
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[11px] font-mono font-bold text-slate-200">
                       {flashcardBlocks.length === 4 &&
@@ -1382,7 +1472,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       className="w-28 accent-cyan-400 cursor-pointer"
                     />
                   </div>
-                </div>
+                </motion.div>
 
                 {/* Group B: Half-Chapter / Deep Reading & Synthesis Segments */}
                 <div className="p-3.5 rounded-2xl bg-black/25 border border-white/[0.07] space-y-2.5">
