@@ -605,6 +605,12 @@ class SymmetrySoundEngine {
       // Ignore Web Audio errors
     }
   }
+
+  public playHarmonicChord() {
+    this.playEndOfShiftChord();
+  }
 }
 
 export const soundEngine = new SymmetrySoundEngine();
+export const playHarmonicChord = () => soundEngine.playHarmonicChord();
+

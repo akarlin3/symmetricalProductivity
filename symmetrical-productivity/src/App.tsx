@@ -84,8 +84,12 @@ import {
 import {
   buildStateForPreset,
   CustomArchitectureDraft,
+  getStoredArchitectModeUnlocked,
+  getVisibleProfilePresets,
+  isArchitectDomain,
   ONBOARDING_COMPLETED_KEY,
   PROFILE_PRESET_METADATA,
+  setStoredArchitectModeUnlocked,
 } from './state/profilePresets';
 import {
   cancelAllScheduledStageAlarms,
@@ -101,7 +105,7 @@ import {
   getStoredGeminiApiKey,
   setStoredGeminiApiKey,
 } from './utils/smartIntakePlanner';
-import { SOUNDSCAPE_METADATA, soundEngine } from './utils/soundEngine';
+import { playHarmonicChord, SOUNDSCAPE_METADATA, soundEngine } from './utils/soundEngine';
 import { DualRingTimerSvg } from './components/DualRingTimerSvg';
 import { HeaderBar } from './components/HeaderBar';
 import { InsightsModal } from './components/InsightsModal';
@@ -122,14 +126,85 @@ import { Tab4Roadmap } from './components/Tab4Roadmap';
 
 export const LIVE_SYNC_CHANNEL_NAME = 'symmetrical_live_state';
 
+function detectInitialArchitectUnlock(): {
+  unlocked: boolean;
+  triggeredViaUrl: boolean;
+} {
+  if (typeof window === 'undefined') {
+    return { unlocked: false, triggeredViaUrl: false };
+  }
+  try {
+    const url = new URL(window.location.href);
+    const modeParam = url.searchParams.get('mode')?.toLowerCase();
+    const hashValue = url.hash.replace(/^#/, '').toLowerCase();
+    const isUrlTrigger = modeParam === 'avery' || hashValue === 'avery';
+
+    if (isUrlTrigger) {
+      setStoredArchitectModeUnlocked(true);
+      try {
+        localStorage.setItem(ONBOARDING_COMPLETED_KEY, 'true');
+      } catch {
+        // Ignore storage errors
+      }
+      if (modeParam === 'avery') {
+        url.searchParams.delete('mode');
+      }
+      const nextSearch = url.searchParams.toString();
+      const nextHash = hashValue === 'avery' ? '' : url.hash;
+      const cleanUrl = `${url.pathname}${nextSearch ? `?${nextSearch}` : ''}${nextHash}`;
+      window.history.replaceState({}, document.title, cleanUrl);
+      return { unlocked: true, triggeredViaUrl: true };
+    }
+
+    if (isArchitectDomain(window.location.hostname)) {
+      setStoredArchitectModeUnlocked(true);
+      return { unlocked: true, triggeredViaUrl: false };
+    }
+
+    return {
+      unlocked: getStoredArchitectModeUnlocked(),
+      triggeredViaUrl: false,
+    };
+  } catch {
+    return { unlocked: false, triggeredViaUrl: false };
+  }
+}
+
 export function App() {
+  const [initialUnlockInfo] = useState(() => detectInitialArchitectUnlock());
+  const [architectModeUnlocked, setArchitectModeUnlocked] = useState<boolean>(
+    initialUnlockInfo.unlocked
+  );
+
   const [state, setState] = useState<SymmetryState>(() => {
     try {
       if (typeof window !== 'undefined') {
+        const externalBackups = loadExternalStateBackups();
+        if (initialUnlockInfo.triggeredViaUrl) {
+          const averyState = buildStateForPreset('AVERY_DEFAULT');
+          return {
+            ...averyState,
+            dailyHistory: syncTodayIntoDailyHistory(averyState),
+            stateBackups: externalBackups,
+          };
+        }
         const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) {
           const parsed = parseFromStateInput(saved);
-          const externalBackups = loadExternalStateBackups();
+          if (
+            !initialUnlockInfo.unlocked &&
+            parsed.profilePresetId === 'AVERY_DEFAULT'
+          ) {
+            const publicDefault = buildStateForPreset('ACADEMIC_RESEARCHER');
+            return {
+              ...publicDefault,
+              dailyHistory: syncTodayIntoDailyHistory(publicDefault),
+              stateBackups:
+                parsed.stateBackups && parsed.stateBackups.length > 0
+                  ? parsed.stateBackups
+                  : externalBackups,
+            };
+          }
           return {
             ...parsed,
             dailyHistory: syncTodayIntoDailyHistory(parsed),
@@ -143,7 +218,14 @@ export function App() {
     } catch {
       // Fallback to default deterministic state
     }
-    return DEFAULT_SYMMETRY_STATE;
+    if (initialUnlockInfo.unlocked) {
+      return DEFAULT_SYMMETRY_STATE;
+    }
+    const publicFallback = buildStateForPreset('ACADEMIC_RESEARCHER');
+    return {
+      ...publicFallback,
+      dailyHistory: syncTodayIntoDailyHistory(publicFallback),
+    };
   });
 
   const [activeTab, setActiveTab] = useState<TabId>('PIPELINE');
@@ -297,6 +379,10 @@ export function App() {
       } else if (shortcutAction === 'evening') {
         setActiveTab('RECHARGE');
         showNotice('App Shortcut: Opened Evening Recharge Menu.');
+      } else if (initialUnlockInfo.triggeredViaUrl) {
+        showNotice(
+          'Architect Mode Unlocked via Private URL — Loaded Avery Default configuration.'
+        );
       } else {
         try {
           const onboardingDone = localStorage.getItem(ONBOARDING_COMPLETED_KEY);
@@ -307,14 +393,85 @@ export function App() {
         } catch {
           // Ignore storage access errors
         }
-        const examCheck = getPreExamTaperSuggestion(new Date());
-        if (examCheck.isWithin3Days) {
-          showNotice(
-            `Within ${examCheck.daysUntil}d of ${examCheck.examLabel} — Pre-Exam Taper Auto-Mode suggested.`
-          );
+        if (initialUnlockInfo.unlocked) {
+          const examCheck = getPreExamTaperSuggestion(new Date());
+          if (examCheck.isWithin3Days) {
+            showNotice(
+              `Within ${examCheck.daysUntil}d of ${examCheck.examLabel} — Pre-Exam Taper Auto-Mode suggested.`
+            );
+          }
         }
       }
     }
+  }, [initialUnlockInfo.triggeredViaUrl, initialUnlockInfo.unlocked]);
+
+  const handleUnlockArchitectMode = useCallback(
+    (sourceLabel = 'Secret Trigger') => {
+      setStoredArchitectModeUnlocked(true);
+      setArchitectModeUnlocked(true);
+      try {
+        localStorage.setItem(ONBOARDING_COMPLETED_KEY, 'true');
+      } catch {
+        // Ignore storage errors
+      }
+      playHarmonicChord();
+      setState((prev) => {
+        const updatedBackups = pushStateBackup(
+          prev,
+          'PRESET_SWITCH',
+          `Before Architect Mode Unlock (${sourceLabel})`
+        );
+        const averyState = buildStateForPreset('AVERY_DEFAULT', {
+          logicalDayRolloverHour: prev.logicalDayRolloverHour ?? 4,
+          earlyEveningShutdownTime: prev.earlyEveningShutdownTime ?? '6:00 PM',
+        });
+        pushUndoSnapshot(
+          prev,
+          'Architect Mode Unlocked → Avery Default Rung 1'
+        );
+        return {
+          ...averyState,
+          dailyHistory: syncTodayIntoDailyHistory(averyState),
+          stateBackups: updatedBackups,
+          audioSettings: prev.audioSettings || DEFAULT_AUDIO_ENGINE_SETTINGS,
+        };
+      });
+      setIsFirstVisitOnboarding(false);
+      setOnboardingWizardOpen(false);
+      showNotice(
+        `Architect Mode Unlocked (${sourceLabel}) — Loaded Avery Default Rung 1 state.`
+      );
+    },
+    [pushUndoSnapshot]
+  );
+
+  const handleLockArchitectMode = useCallback(() => {
+    triggerHaptic([15]);
+    setStoredArchitectModeUnlocked(false);
+    setArchitectModeUnlocked(false);
+    setState((prev) => {
+      if (prev.profilePresetId === 'AVERY_DEFAULT') {
+        const updatedBackups = pushStateBackup(
+          prev,
+          'PRESET_SWITCH',
+          'Before Locking Architect Mode'
+        );
+        const publicDefault = buildStateForPreset('ACADEMIC_RESEARCHER', {
+          logicalDayRolloverHour: prev.logicalDayRolloverHour ?? 4,
+          earlyEveningShutdownTime: prev.earlyEveningShutdownTime ?? '6:00 PM',
+        });
+        return {
+          ...publicDefault,
+          dailyHistory: syncTodayIntoDailyHistory(publicDefault),
+          stateBackups: updatedBackups,
+          audioSettings: prev.audioSettings || DEFAULT_AUDIO_ENGINE_SETTINGS,
+        };
+      }
+      return prev;
+    });
+    showNotice(
+      'Architect Mode locked and hidden — restored clean public profile view.'
+    );
   }, []);
 
   const handleApplyProfilePreset = (
@@ -3526,8 +3683,12 @@ export function App() {
                 'RESET_DEFAULT',
                 `Before Default Reset (${prev.profileName || 'Active Profile'})`
               );
+              const resetBase = architectModeUnlocked
+                ? DEFAULT_SYMMETRY_STATE
+                : buildStateForPreset('ACADEMIC_RESEARCHER');
               return {
-                ...DEFAULT_SYMMETRY_STATE,
+                ...resetBase,
+                dailyHistory: syncTodayIntoDailyHistory(resetBase),
                 stateBackups: updatedBackups,
               };
             });
@@ -3540,6 +3701,8 @@ export function App() {
           onToggleCinemaFocusMode={() =>
             setCinemaFocusMode((prev) => !prev)
           }
+          architectModeUnlocked={architectModeUnlocked}
+          onUnlockArchitectMode={handleUnlockArchitectMode}
         />
 
         {/* Status Toast Notice */}
@@ -3585,6 +3748,8 @@ export function App() {
               onToggleCinemaFocusMode={() =>
                 setCinemaFocusMode((prev) => !prev)
               }
+              architectModeUnlocked={architectModeUnlocked}
+              onUnlockArchitectMode={handleUnlockArchitectMode}
               apiKeyVersion={apiKeyVersion}
               onSelectLoadMode={handleSelectLoadMode}
               onTogglePreExamTaper={handleTogglePreExamTaper}
@@ -4804,6 +4969,7 @@ export function App() {
           setStateIoText(serializeToStateMarkdown(state));
           setStateModalOpen(true);
         }}
+        onUnlockArchitectMode={handleUnlockArchitectMode}
         apiKeyVersion={apiKeyVersion}
         onUpdateDay={handleUpdatePipelineDay}
       />
@@ -5115,29 +5281,48 @@ export function App() {
                 <p className="text-[11px] text-slate-400 mt-0.5">
                   Active Profile:{' '}
                   <strong className="text-amber-300 font-mono">
-                    {state.profileName || 'Avery Default (Medical Physics, Writing & Maker)'}
+                    {state.profileName ||
+                      (architectModeUnlocked
+                        ? 'Avery Default (Medical Physics, Writing & Maker)'
+                        : 'Academic & Grad Researcher')}
                   </strong>{' '}
                   ({state.baselineBlocks.length}-Block Floor)
                 </p>
               </div>
 
-              <button
-                id="btn-switch-reset-profile-template"
-                type="button"
-                onClick={() => {
-                  setStateModalOpen(false);
-                  setIsFirstVisitOnboarding(false);
-                  setOnboardingWizardOpen(true);
-                }}
-                className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-mono font-extrabold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Switch / Reset Profile Template</span>
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                {architectModeUnlocked && (
+                  <button
+                    id="btn-lock-architect-mode"
+                    type="button"
+                    onClick={() => {
+                      handleLockArchitectMode();
+                      setStateModalOpen(false);
+                    }}
+                    className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-amber-500/40 text-amber-200 font-mono font-bold text-xs cursor-pointer transition"
+                  >
+                    Lock / Hide Architect Mode
+                  </button>
+                )}
+
+                <button
+                  id="btn-switch-reset-profile-template"
+                  type="button"
+                  onClick={() => {
+                    setStateModalOpen(false);
+                    setIsFirstVisitOnboarding(false);
+                    setOnboardingWizardOpen(true);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-mono font-extrabold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Switch / Reset Profile Template</span>
+                </button>
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-1.5 pt-1">
-              {PROFILE_PRESET_METADATA.map((preset) => {
+              {getVisibleProfilePresets(architectModeUnlocked).map((preset) => {
                 const isCurrent = state.profilePresetId === preset.id;
                 return (
                   <button
@@ -5767,7 +5952,7 @@ export function App() {
                     startupShrinkLevel: 1,
                     activeBlockSourceId: primaryProject?.id || 'fc_anat_1',
                     activeTaskTitle:
-                      primaryProject?.title || 'Anatomy Flashcards — Block 1/1',
+                      primaryProject?.title || 'Core Flashcards — Block 1/1',
                     activeTaskType: primaryProject ? 'PROJECT' : 'FLASHCARDS',
                     activeStartupPrompt:
                       primaryProject?.startupStep ||
@@ -5858,6 +6043,8 @@ export function App() {
         isOpen={onboardingWizardOpen}
         isFirstVisit={isFirstVisitOnboarding}
         state={state}
+        architectModeUnlocked={architectModeUnlocked}
+        onLockArchitectMode={handleLockArchitectMode}
         onClose={() => {
           try {
             localStorage.setItem(ONBOARDING_COMPLETED_KEY, 'true');
@@ -6048,7 +6235,7 @@ export function App() {
               targetEndTimeMs: now + 900 * 1000,
               isRunning: true,
             },
-          }));
+          }))
           showNotice(
             'Suspended heavy reading/writing → Started 15m 4-7-8 Stress / Fatigue Reset.'
           );
@@ -6059,6 +6246,7 @@ export function App() {
         onSetSmartIntakePreview={setSmartIntakePreview}
         onApplySmartIntakePlan={handleApplySmartIntakePlan}
         onOpenGeminiBridgeModal={() => setGeminiBridgeOpen(true)}
+        onUnlockArchitectMode={handleUnlockArchitectMode}
       />
 
       {/* Export to Gemini & Bidirectional Sync Hub (Cmd/Ctrl + G) */}

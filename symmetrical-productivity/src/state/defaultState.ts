@@ -519,11 +519,11 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
   },
   breakOptions: {
     l1Label: 'Window gaze / water / 3 dishes',
-    l2EspressoLabel: 'Espresso',
-    l2MusicLabel: '5m Cold Song (Bass/Guitar)',
-    l2PhysicalLabel: '15m TENS / Normatec',
+    l2EspressoLabel: 'Espresso Ritual',
+    l2MusicLabel: '1–2 Song Riff on Bass/Guitar Cold (5m)',
+    l2PhysicalLabel: '15m TENS / Normatec Compression Cycle',
     stressBreathingLabel: '4-7-8 Breathing Visual Pace',
-    stressEspressoLabel: 'Espresso Shot',
+    stressEspressoLabel: 'Espresso Ritual',
     stressBootsLabel: 'Compression Boots',
   },
   energyBandwidth: 'STEADY',
@@ -551,7 +551,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
   baselineBlocks: [
     {
       id: 'fc_anat_1',
-      title: 'Anatomy Flashcards — Block 1/1',
+      title: '1b Anatomy Cards — Block 1/1',
       category: 'FLASHCARDS_ANATOMY',
       completed: true,
       bankedViaEarlyClearance: false,
@@ -561,7 +561,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     },
     {
       id: 'fc_comp_1',
-      title: 'Comp Flashcards — Block 1/3',
+      title: '3b Comp Cards (250 cap) — Block 1/3',
       category: 'FLASHCARDS_COMP',
       completed: true,
       bankedViaEarlyClearance: false,
@@ -571,7 +571,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     },
     {
       id: 'fc_comp_2',
-      title: 'Comp Flashcards — Block 2/3',
+      title: '3b Comp Cards (250 cap) — Block 2/3',
       category: 'FLASHCARDS_COMP',
       completed: false,
       bankedViaEarlyClearance: false,
@@ -581,7 +581,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     },
     {
       id: 'fc_comp_3',
-      title: 'Comp Flashcards — Block 3/3',
+      title: '3b Comp Cards (250 cap) — Block 3/3',
       category: 'FLASHCARDS_COMP',
       completed: false,
       bankedViaEarlyClearance: false,
@@ -591,7 +591,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     },
     {
       id: 'hc_read_1',
-      title: 'Half-Chapter Reading / Equations — Block 1/2',
+      title: '2b Half-Chapter Reading — Block 1/2',
       category: 'READING',
       completed: true,
       startupStep: 'Open assigned section, read first 2 pages, and write down core equations.',
@@ -600,7 +600,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     },
     {
       id: 'hc_read_2',
-      title: 'Half-Chapter Reading / Equations — Block 2/2',
+      title: '2b Half-Chapter Reading — Block 2/2',
       category: 'READING',
       completed: false,
       startupStep: 'Work through 2 worked problem derivations from the current half-chapter.',
@@ -609,7 +609,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     },
     {
       id: 'hc_synth_1',
-      title: 'Half-Chapter Synthesis — Block 1/1',
+      title: '1b Synthesis — Block 1/1',
       category: 'SYNTHESIS',
       completed: false,
       startupStep: 'Condense today’s half-chapter into 5 bulleted mechanisms from memory.',
@@ -621,7 +621,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     {
       id: 'proj_1',
       slot: 1,
-      title: 'Anatomy & Comp Exam Prep Sprint',
+      title: '1. Anatomy & Comp Exam Prep Sprint',
       presetType: 'PAPER_8',
       completedBlocks: 2,
       totalBlocks: 8,
@@ -633,7 +633,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     {
       id: 'proj_2',
       slot: 2,
-      title: '12-Page AI/Coding Practicum Paper',
+      title: '2. 12-Page AI/Coding Practicum Paper (8b)',
       presetType: 'PAPER_8',
       completedBlocks: 0,
       totalBlocks: 8,
@@ -645,7 +645,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     {
       id: 'proj_3',
       slot: 3,
-      title: 'NMR / MRM / Green Journal Manuscript Revisions',
+      title: '3. NMR / MRM / Green Journal Manuscript Revisions (8b)',
       presetType: 'PAPER_8',
       completedBlocks: 0,
       totalBlocks: 8,
@@ -756,7 +756,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     targetEndTimeMs: null,
     isRunning: false,
     activeBlockSourceId: 'proj_1',
-    activeTaskTitle: 'Anatomy & Comp Exam Prep Sprint',
+    activeTaskTitle: '1. Anatomy & Comp Exam Prep Sprint',
     activeTaskType: 'PROJECT',
     activeStartupPrompt: 'Open deck + clear first 15 cards',
     elasticMultiplier: 1.0,
@@ -864,8 +864,8 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     },
     fluidCategories: {
       CAT1_MUSIC: {
-        label: '1. Acoustic & Instrument Play',
-        activeTitle: 'Acoustic & Instrument Play',
+        label: '1. Music (Bass/Guitar/Piano/Drums cold song)',
+        activeTitle: 'Music (Bass/Guitar/Piano/Drums cold song)',
         subtitle: 'Bass / Guitar / Piano / Drums — fluid musical expression.',
         startupStep: 'Play 1 familiar song cold — no DAW or drills',
       },
@@ -885,8 +885,8 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
   roadmapTracks: [
     {
       id: 'science',
-      name: 'Science / Clinical',
-      archetypeRole: 'Scientist',
+      name: 'Scientist & Lab Builder',
+      archetypeRole: 'Scientist & Lab Builder',
       categoryLabel: 'CORE TRACK',
       isSandbox: false,
       activeThisWeek: true,
@@ -931,8 +931,8 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     },
     {
       id: 'writing',
-      name: 'Writing / Literature',
-      archetypeRole: 'Author',
+      name: 'Philosopher & Author',
+      archetypeRole: 'Philosopher & Author',
       categoryLabel: 'CORE TRACK',
       isSandbox: false,
       activeThisWeek: true,
@@ -977,8 +977,8 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     },
     {
       id: 'personal',
-      name: 'Personal / Home',
-      archetypeRole: 'Partner',
+      name: 'Partner & Sanctuary',
+      archetypeRole: 'Partner & Sanctuary',
       categoryLabel: 'CORE TRACK',
       isSandbox: false,
       activeThisWeek: true,
@@ -1023,8 +1023,8 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     },
     {
       id: 'coding',
-      name: 'Coding / Hardware',
-      archetypeRole: 'Coder-Maker',
+      name: 'Coder/Maker & AveryCorp',
+      archetypeRole: 'Coder/Maker & AveryCorp',
       categoryLabel: 'ZERO-QUOTA SANDBOX',
       isSandbox: true,
       activeThisWeek: false,
@@ -1069,7 +1069,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     },
     {
       id: 'music',
-      name: 'Music',
+      name: 'Musician',
       archetypeRole: 'Musician',
       categoryLabel: 'ZERO-QUOTA SANDBOX',
       isSandbox: true,
@@ -1463,7 +1463,9 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
   const workSteps = seqSteps.filter((s) => s.kind === 'WORK_BLOCK');
   const milestones = state.upcomingMilestones?.length
     ? state.upcomingMilestones.join(' • ')
-    : 'Nov 12: Anatomy Exam • Dec 8–9: Comp Exam';
+    : state.profilePresetId === 'AVERY_DEFAULT'
+      ? 'Nov 12: Anatomy Exam • Dec 8–9: Comp Exam'
+      : 'None configured';
 
   const totalInputBlocks = state.roadmapTracks.reduce(
     (sum, t) => sum + t.inputBlocksCredited,

@@ -14,6 +14,55 @@ import {
 import { DEFAULT_SYMMETRY_STATE, getLogicalDayKey } from './defaultState';
 
 export const ONBOARDING_COMPLETED_KEY = 'symmetry_onboarding_completed_v1';
+export const ARCHITECT_MODE_KEY = 'architectModeUnlocked';
+
+export function isArchitectDomain(hostname?: string): boolean {
+  try {
+    const h = (
+      hostname ?? (typeof window !== 'undefined' ? window.location.hostname : '')
+    )
+      .trim()
+      .toLowerCase();
+    if (!h) return false;
+    return (
+      h === 'averykarlin.org' ||
+      h.endsWith('.averykarlin.org') ||
+      h === 'averycorp.org' ||
+      h.endsWith('.averycorp.org')
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function isArchitectPassphrase(rawInput: string): boolean {
+  const normalized = rawInput.trim().toLowerCase();
+  return (
+    normalized === '/avery' ||
+    normalized === '/architect' ||
+    normalized === '/triptych'
+  );
+}
+
+export function getStoredArchitectModeUnlocked(): boolean {
+  try {
+    if (isArchitectDomain()) {
+      localStorage.setItem(ARCHITECT_MODE_KEY, 'true');
+      return true;
+    }
+    return localStorage.getItem(ARCHITECT_MODE_KEY) === 'true';
+  } catch {
+    return isArchitectDomain();
+  }
+}
+
+export function setStoredArchitectModeUnlocked(unlocked: boolean): void {
+  try {
+    localStorage.setItem(ARCHITECT_MODE_KEY, unlocked ? 'true' : 'false');
+  } catch {
+    // Ignore storage errors
+  }
+}
 
 export interface ProfilePresetMetadata {
   id: ProfilePresetId;
@@ -27,31 +76,35 @@ export interface ProfilePresetMetadata {
   eveningSummary: string;
   tracksSummary: string;
   description: string;
+  isArchitectOnly?: boolean;
 }
 
-export const PROFILE_PRESET_METADATA: ProfilePresetMetadata[] = [
-  {
-    id: 'AVERY_DEFAULT',
-    number: 1,
-    title: 'Avery Default (Medical Physics, Writing & Maker)',
-    shortTitle: 'Avery Default',
-    badge: '7-BLOCK FLOOR • BASELINE DEFAULT',
-    floorBlockCount: 7,
-    floorSummary:
-      '1b Anatomy + 3b Comp Flashcards (250 cap) + 3b Half-Chapter Floor (2 Read/Eq + 1 Synthesis)',
-    weightsSummary: '2-Page Paper (8b) & Slide Deck (4b)',
-    eveningSummary:
-      "K1C 3D Printer • Soul Music / The American Way of Killing / Widow's Bay • It's Always Sunny • Baldur's Gate 3",
-    tracksSummary: 'Scientist / Author / Partner / Coder-Maker / Musician',
-    description:
-      "Restores the exact baseline configuration: Nov 12 Anatomy & Dec 8–9 Comp Exams, 1b Anatomy + 3b Comp Flashcards (250 cap) + 3b Half-Chapter Floor, K1C 3D Printer, Soul Music / The American Way of Killing / Widow's Bay Triple-Track, It's Always Sunny, Baldur's Gate 3, and the Scientist / Author / Partner / Coder-Maker / Musician 4-Rung Roadmap.",
-  },
+export const ARCHITECT_PRESET_METADATA: ProfilePresetMetadata = {
+  id: 'AVERY_DEFAULT',
+  number: 1,
+  title: 'Avery Default (Architect Mode)',
+  shortTitle: 'Avery Default',
+  badge: 'ARCHITECT MODE • 7-BLOCK FLOOR',
+  floorBlockCount: 7,
+  floorSummary:
+    '1b Anatomy Cards + 3b Comp Cards (250 cap, Early Clearance & Late-Night Blocker) + 2b Half-Chapter Reading + 1b Synthesis',
+  weightsSummary: '2-Page Paper (8b) & Slide Deck (4b)',
+  eveningSummary:
+    "Creality K1C 3D Printer • Soul Music / The American Way of Killing / Widow's Bay [0/3] • It's Always Sunny in Philadelphia • Baldur's Gate 3",
+  tracksSummary:
+    'Scientist & Lab Builder / Philosopher & Author / Partner & Sanctuary / Coder/Maker & AveryCorp / Musician',
+  description:
+    "Restores the complete Avery Rung 1 state: Nov 12 Anatomy & Dec 8–9 Comp Exams, 7-Block Daily Baseline Floor, Closed List (1. Anatomy & Comp Exam Prep Sprint, 2. 12-Page AI/Coding Practicum Paper, 3. NMR / MRM / Green Journal Manuscript Revisions), Level 2 Break Options, 5 Evening Recharge Categories, and 4-Rung Master Horizon.",
+  isArchitectOnly: true,
+};
+
+export const PUBLIC_PROFILE_PRESET_METADATA: ProfilePresetMetadata[] = [
   {
     id: 'ACADEMIC_RESEARCHER',
-    number: 2,
+    number: 1,
     title: 'Academic & Grad Researcher',
     shortTitle: 'Academic & Grad Researcher',
-    badge: '7-BLOCK FLOOR • RESEARCH & LAB',
+    badge: '7-BLOCK FLOOR • DEFAULT PUBLIC ARCHETYPE',
     floorBlockCount: 7,
     floorSummary:
       '7-Block Floor (Literature Review, Spaced Repetition, Data/Equations Synthesis)',
@@ -60,11 +113,11 @@ export const PROFILE_PRESET_METADATA: ProfilePresetMetadata[] = [
       'Acoustic Practice • Lab Bench Automation • Sci-Fi / Monograph / Docu Triple-Track • Classic Sitcom • Strategy Gaming',
     tracksSummary: 'Research / Teaching / Personal / Coding / Music',
     description:
-      '7-Block Floor (Literature Review, Spaced Repetition, Data/Equations Synthesis), Paper (8b) & Presentation (4b) weights, and Research / Teaching / Personal / Coding / Music tracks.',
+      'Default for new users: 7-Block Floor (Literature Review, Spaced Repetition, Data/Equations Synthesis), Paper (8b) & Presentation (4b) weights, and Research / Teaching / Personal / Coding / Music tracks.',
   },
   {
     id: 'SOFTWARE_ENGINEER',
-    number: 3,
+    number: 2,
     title: 'Software Engineer & Indie Builder',
     shortTitle: 'Software Engineer & Indie Builder',
     badge: '6-BLOCK FLOOR • SYSTEMS & BUILD',
@@ -73,14 +126,14 @@ export const PROFILE_PRESET_METADATA: ProfilePresetMetadata[] = [
       '6-Block Floor (Code Review/Triage, Core Architecture, Docs/Testing)',
     weightsSummary: 'Feature Spec (4b) & System Build (8b)',
     eveningSummary:
-      'Synth/Guitar Cold Play • ESP32 / Custom Keyboard Bench • Sci-Fi / Systems / Series • Off-Screen Sitcom • Factorio / BG3',
+      'Synth/Guitar Cold Play • ESP32 / Custom Keyboard Bench • Sci-Fi / Systems / Series • Off-Screen Sitcom • Strategy & Automation Gaming',
     tracksSummary: 'Engineering / Writing / Home / Hardware / Creative',
     description:
       '6-Block Floor (Code Review/Triage, Core Architecture, Docs/Testing), Feature Spec (4b) & System Build (8b) weights, and Engineering / Writing / Home / Hardware / Creative tracks.',
   },
   {
     id: 'WRITER_CREATIVE',
-    number: 4,
+    number: 3,
     title: 'Writer & Polymath Creative',
     shortTitle: 'Writer & Polymath Creative',
     badge: '6-BLOCK FLOOR • PROSE & SYNTHESIS',
@@ -96,7 +149,7 @@ export const PROFILE_PRESET_METADATA: ProfilePresetMetadata[] = [
   },
   {
     id: 'BLANK_CUSTOM',
-    number: 5,
+    number: 4,
     title: 'Blank Custom Architecture',
     shortTitle: 'Blank Custom Architecture',
     badge: 'CUSTOM STEP-BY-STEP BUILDER',
@@ -108,14 +161,32 @@ export const PROFILE_PRESET_METADATA: ProfilePresetMetadata[] = [
       'Name your own 5 Evening Recharge categories (Fluid & Sticky [X/3])',
     tracksSummary: 'Name your own 3 Core Tracks + 2 Zero-Quota Sandbox Tracks',
     description:
-      'Lets the user name their own Daily Baseline blocks, 5 Evening Recharge categories, and 5 Long-Term Tracks step-by-step while keeping all capacity ceilings, 5m startup timers, and 20m/60m pacing rules locked.',
+      'Lets you name your own Daily Baseline blocks, 5 Evening Recharge categories, and 5 Long-Term Tracks step-by-step while keeping all capacity ceilings, 5m startup timers, and 20m/60m pacing rules locked.',
   },
 ];
 
+export const PROFILE_PRESET_METADATA: ProfilePresetMetadata[] =
+  PUBLIC_PROFILE_PRESET_METADATA;
+
+export function getVisibleProfilePresets(
+  architectModeUnlocked: boolean
+): ProfilePresetMetadata[] {
+  if (!architectModeUnlocked) {
+    return PUBLIC_PROFILE_PRESET_METADATA;
+  }
+  return [
+    ARCHITECT_PRESET_METADATA,
+    ...PUBLIC_PROFILE_PRESET_METADATA.map((p, idx) => ({
+      ...p,
+      number: (idx + 2) as 1 | 2 | 3 | 4 | 5,
+    })),
+  ];
+}
+
 export const DEFAULT_FLUID_CATEGORIES: FluidCategoriesMap = {
   CAT1_MUSIC: {
-    label: '1. Acoustic & Instrument Play',
-    activeTitle: 'Acoustic & Instrument Play',
+    label: '1. Music (Bass/Guitar/Piano/Drums cold song)',
+    activeTitle: 'Music (Bass/Guitar/Piano/Drums cold song)',
     subtitle: 'Bass / Guitar / Piano / Drums — fluid musical expression.',
     startupStep: 'Play 1 familiar song cold — no DAW or drills',
   },
@@ -136,9 +207,9 @@ export const DEFAULT_TASK_WEIGHTS: TaskWeightsConfig = {
 
 export const DEFAULT_BREAK_OPTIONS: BreakOptionsConfig = {
   l1Label: 'Window gaze / water / 3 dishes',
-  l2EspressoLabel: 'Espresso',
-  l2MusicLabel: '5m Cold Song (Bass/Guitar)',
-  l2PhysicalLabel: '15m TENS / Normatec',
+  l2EspressoLabel: 'Espresso Ritual',
+  l2MusicLabel: '1–2 Song Riff on Bass/Guitar Cold (5m)',
+  l2PhysicalLabel: '15m TENS / Normatec Compression Cycle',
   stressBreathingLabel: '4-7-8 Breathing Visual Pace',
   stressEspressoLabel: 'Espresso Shot',
   stressBootsLabel: 'Compression Boots',
@@ -188,7 +259,15 @@ export function getDefaultCustomArchitectureDraft(): CustomArchitectureDraft {
       mediumLabel: 'Compact Deliverable',
       mediumBlocks: 4,
     },
-    breakOptions: { ...DEFAULT_BREAK_OPTIONS },
+    breakOptions: {
+      l1Label: 'Stand, 20-ft window gaze, hydrate',
+      l2EspressoLabel: 'Espresso / Pour-Over',
+      l2MusicLabel: '5m Cold Song (Instrument)',
+      l2PhysicalLabel: '15m Mobility / Physical Reset',
+      stressBreathingLabel: '4-7-8 Breathing Visual Pace',
+      stressEspressoLabel: 'Warm Beverage / Espresso',
+      stressBootsLabel: 'Physical Recovery / Walk',
+    },
     primaryProjectTitle: 'Primary Focus Deliverable #1',
     primaryProjectStartup: 'Open primary document and complete 5m startup step.',
     secondaryProjectTitle: 'Queued Deliverable #2',
@@ -246,36 +325,36 @@ export function getDefaultCustomArchitectureDraft(): CustomArchitectureDraft {
       },
       CAT4_COMFORT: {
         label: '4. Off-Monitor Comfort Show',
-        activeTitle: "It's Always Sunny in Philadelphia",
+        activeTitle: 'Off-Monitor Sitcom / Comedy',
         subtitle: 'Low-friction episode start away from the work monitor.',
         startupStep: 'Start first 5m of episode away from work desk',
       },
     },
     stickyCategories: {
       CAT2_MAKER: {
-        activeTitle: 'K1C 3D Printer / Hardware Bench',
+        activeTitle: 'Hardware & Maker Bench',
         startupStep: 'Complete 1 single 5m diagnostic or mechanical build step',
-        queuedNextTitle: 'Enclosure Bracket Print',
+        queuedNextTitle: 'Enclosure Bracket Build',
       },
       '3A_FICTION': {
-        activeTitle: 'Soul Music (Audiobook / Fiction)',
+        activeTitle: 'Active Fiction Audiobook',
         startupStep: 'Listen or read 5m with eyes closed',
         queuedNextTitle: 'Next Fiction Queue Item',
       },
       '3B_NONFICTION': {
-        activeTitle: 'The American Way of Killing (Nonfiction)',
+        activeTitle: 'Active Nonfiction Book',
         startupStep: 'Listen or read 5m away from desk',
         queuedNextTitle: 'Thinking in Systems',
       },
       '3C_VIDEO': {
-        activeTitle: "Widow's Bay (Series Queue)",
+        activeTitle: 'Active Narrative Series',
         startupStep: 'Watch first 5m away from work monitor',
         queuedNextTitle: 'Next Series Item',
       },
       CAT5_GAMING: {
-        activeTitle: "Baldur's Gate 3",
+        activeTitle: 'Strategy / RPG Campaign',
         startupStep: 'Boot save + complete 1 single 5m micro-objective',
-        queuedNextTitle: 'Factorio',
+        queuedNextTitle: 'Next Campaign Queue Item',
       },
     },
     tracks: [
@@ -376,16 +455,17 @@ export function buildStateForPreset(
   const shutdownTime = options?.earlyEveningShutdownTime ?? '6:00 PM';
   const logicalDay = getLogicalDayKey(new Date(), rolloverHour);
 
-  // PRESET 1: Avery Default (Medical Physics, Writing & Maker)
+  // ARCHITECT MODE PRESET: Avery Default (Medical Physics, Writing & Maker)
   if (presetId === 'AVERY_DEFAULT') {
     const base: SymmetryState = JSON.parse(JSON.stringify(DEFAULT_SYMMETRY_STATE));
     return {
       ...base,
       profilePresetId: 'AVERY_DEFAULT',
-      profileName: 'Avery Default (Medical Physics, Writing & Maker)',
+      profileName: 'Avery Default (Architect Mode)',
       logicalDayRolloverHour: rolloverHour,
       earlyEveningShutdownTime: shutdownTime,
       logicalDayKey: logicalDay,
+      upcomingMilestones: ['Nov 12: Anatomy Exam', 'Dec 8–9: Comp Exam'],
       taskWeights: { ...DEFAULT_TASK_WEIGHTS },
       breakOptions: { ...DEFAULT_BREAK_OPTIONS },
       pipelineDays: base.pipelineDays.map((d) =>
@@ -399,15 +479,25 @@ export function buildStateForPreset(
       },
       roadmapTracks: base.roadmapTracks.map((t) => ({
         ...t,
+        name:
+          t.id === 'science'
+            ? 'Scientist & Lab Builder'
+            : t.id === 'writing'
+            ? 'Philosopher & Author'
+            : t.id === 'personal'
+            ? 'Partner & Sanctuary'
+            : t.id === 'coding'
+            ? 'Coder/Maker & AveryCorp'
+            : 'Musician',
         archetypeRole:
           t.id === 'science'
-            ? 'Scientist'
+            ? 'Scientist & Lab Builder'
             : t.id === 'writing'
-            ? 'Author'
+            ? 'Philosopher & Author'
             : t.id === 'personal'
-            ? 'Partner'
+            ? 'Partner & Sanctuary'
             : t.id === 'coding'
-            ? 'Coder-Maker'
+            ? 'Coder/Maker & AveryCorp'
             : 'Musician',
       })),
     };
@@ -826,7 +916,7 @@ export function buildStateForPreset(
             '3A Fiction [Sticky]',
             'The Three-Body Problem',
             'Listen 5m at 1.75x–2.25x with eyes closed',
-            ['Project Hail Mary', 'Soul Music', ' Anathem']
+            ['Project Hail Mary', 'Anathem', 'Children of Time']
           ),
           '3B_NONFICTION': makeStickySlot(
             '3B_NONFICTION',
@@ -840,14 +930,14 @@ export function buildStateForPreset(
             '3C Video [Sticky]',
             'NOVA / Severance',
             'Watch first 5m away from work monitor',
-            ['Andor', ' Chernobyl']
+            ['Andor', 'Chernobyl']
           ),
           CAT5_GAMING: makeStickySlot(
             'CAT5_GAMING',
             'Gaming [Sticky]',
-            "Baldur's Gate 3 / Civilization VI",
+            'Civilization VI / Strategy Campaign',
             'Boot save + 1 single 5m tactical objective',
-            ['Factorio', 'Outer Wilds', 'Into the Breach']
+            ['Outer Wilds', 'Into the Breach', 'Slay the Spire']
           ),
         },
       },
@@ -1101,7 +1191,7 @@ export function buildStateForPreset(
           {
             rungNumber: 1,
             label: 'Rung 1 — Datasheets & CAD Reference',
-            description: 'ESP32, K1C 3D printer, and PCB schematic reading',
+            description: 'ESP32, CAD enclosure, and PCB schematic reading',
             ledgerType: 'INPUT',
             completedBlocks: 2,
             targetBlocks: 4,
@@ -1239,8 +1329,8 @@ export function buildStateForPreset(
             startupStep: 'Pick up bass/guitar and play 1 song cold',
           },
           CAT4_COMFORT: {
-            label: "4. Silicon Valley / It's Always Sunny",
-            activeTitle: "Silicon Valley / It's Always Sunny",
+            label: '4. Silicon Valley / Classic Sitcom',
+            activeTitle: 'Silicon Valley / Classic Sitcom',
             subtitle: 'Off-monitor comfort episode away from coding setup.',
             startupStep: 'First 5m of episode away from work monitor',
           },
@@ -1249,8 +1339,8 @@ export function buildStateForPreset(
           CAT2_MAKER: makeStickySlot(
             'CAT2_MAKER',
             'Maker / Hardware [Sticky]',
-            'ESP32 Sensor Node & K1C Printer',
-            '1 single 5m diagnostic, CAD, or print step',
+            'ESP32 Sensor Node & Custom Enclosure',
+            '1 single 5m diagnostic, CAD, or build step',
             ['Custom Split Keyboard Case', 'Home Server Rack Mount']
           ),
           '3A_FICTION': makeStickySlot(
@@ -1258,7 +1348,7 @@ export function buildStateForPreset(
             '3A Fiction [Sticky]',
             'Project Hail Mary / Neuromancer',
             'Listen 5m at 1.75x–2.25x away from screen',
-            ['Snow Crash', 'Exhalation', 'Soul Music']
+            ['Snow Crash', 'Exhalation', 'Permutation City']
           ),
           '3B_NONFICTION': makeStickySlot(
             '3B_NONFICTION',
@@ -1277,9 +1367,9 @@ export function buildStateForPreset(
           CAT5_GAMING: makeStickySlot(
             'CAT5_GAMING',
             'Gaming [Sticky]',
-            "Factorio / Baldur's Gate 3",
+            'Dyson Sphere Program / Automation Sim',
             'Boot save + 1 single 5m logistics or quest objective',
-            ['Dyson Sphere Program', 'Hades II', 'RimWorld']
+            ['Into the Breach', 'Subnautica', 'Outer Wilds']
           ),
         },
       },
@@ -1541,7 +1631,7 @@ export function buildStateForPreset(
           {
             rungNumber: 2,
             label: 'Rung 2 — 5m Tactile Bench Steps',
-            description: '5m paper folding, typesetting, or 3D print checks',
+            description: '5m paper folding, typesetting, or studio craft checks',
             ledgerType: 'OUTPUT',
             completedBlocks: 1,
             targetBlocks: 4,
@@ -1671,8 +1761,8 @@ export function buildStateForPreset(
             startupStep: 'Play 1 familiar song cold — zero DAW or drills',
           },
           CAT4_COMFORT: {
-            label: "4. Detectorists / It's Always Sunny",
-            activeTitle: "Detectorists / It's Always Sunny",
+            label: '4. Detectorists / Off-Monitor Comedy',
+            activeTitle: 'Detectorists / Off-Monitor Comedy',
             subtitle: 'Warm comfort episode away from the writing desk.',
             startupStep: 'First 5m of episode away from work monitor',
           },
@@ -1681,35 +1771,35 @@ export function buildStateForPreset(
           CAT2_MAKER: makeStickySlot(
             'CAT2_MAKER',
             'Maker / Craft [Sticky]',
-            'Bookbinding & Letterpress / K1C Bench',
+            'Bookbinding & Letterpress Bench',
             '1 single 5m folding, stitching, or print step',
-            ['Hand-Stitched Notebook Signature', 'Custom Desk Pen Tray Print']
+            ['Hand-Stitched Notebook Signature', 'Custom Desk Pen Tray']
           ),
           '3A_FICTION': makeStickySlot(
             '3A_FICTION',
             '3A Fiction [Sticky]',
-            'Soul Music by Terry Pratchett',
+            'Piranesi / Invisible Cities',
             'Listen 5m at 1.75x–2.25x or read in armchair',
-            ['Piranesi', 'Invisible Cities', 'Hogfather']
+            ['The Shadow of the Wind', 'If on a winter’s night a traveler']
           ),
           '3B_NONFICTION': makeStickySlot(
             '3B_NONFICTION',
             '3B Nonfiction [Sticky]',
             'Several Short Sentences About Writing',
             'Read or listen 5m away from desk',
-            ['The American Way of Killing', 'Draft No. 4']
+            ['Draft No. 4', 'The Art of Possibility']
           ),
           '3C_VIDEO': makeStickySlot(
             '3C_VIDEO',
             '3C Video [Sticky]',
-            "Widow's Bay / Criterion Queue",
+            'Criterion Essay Film Queue',
             'Watch first 5m away from work monitor',
             ['Paterson', 'Wings of Desire']
           ),
           CAT5_GAMING: makeStickySlot(
             'CAT5_GAMING',
             'Gaming [Sticky]',
-            "Disco Elysium / Baldur's Gate 3",
+            'Disco Elysium / Narrative RPG',
             'Boot save + 1 single 5m narrative micro-objective',
             ['Pentiment', 'Outer Wilds', 'Chants of Sennaar']
           ),

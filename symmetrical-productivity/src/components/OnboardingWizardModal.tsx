@@ -8,7 +8,7 @@ import {
 import {
   CustomArchitectureDraft,
   getDefaultCustomArchitectureDraft,
-  PROFILE_PRESET_METADATA,
+  getVisibleProfilePresets,
 } from '../state/profilePresets';
 import { formatRolloverHourLabel } from '../state/defaultState';
 import {
@@ -25,12 +25,13 @@ import {
   RotateCcw,
   X,
 } from 'lucide-react';
-import { MobileBottomSheet } from './MobileBottomSheet';
 
 interface OnboardingWizardModalProps {
   isOpen: boolean;
   isFirstVisit: boolean;
   state: SymmetryState;
+  architectModeUnlocked?: boolean;
+  onLockArchitectMode?: () => void;
   onClose: () => void;
   onApplyPreset: (
     presetId: ProfilePresetId,
@@ -61,12 +62,20 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
   isOpen,
   isFirstVisit,
   state,
+  architectModeUnlocked = false,
+  onLockArchitectMode,
   onClose,
   onApplyPreset,
   onUpdateDayBoundaryPreferences,
 }) => {
+  const defaultSelectedPreset: ProfilePresetId = architectModeUnlocked
+    ? state.profilePresetId || 'AVERY_DEFAULT'
+    : state.profilePresetId && state.profilePresetId !== 'AVERY_DEFAULT'
+    ? state.profilePresetId
+    : 'ACADEMIC_RESEARCHER';
+
   const [selectedPreset, setSelectedPreset] = useState<ProfilePresetId>(
-    state.profilePresetId || 'AVERY_DEFAULT'
+    defaultSelectedPreset
   );
   const [customStep, setCustomStep] = useState<1 | 2 | 3>(1);
   const [customDraft, setCustomDraft] = useState<CustomArchitectureDraft>(() =>
@@ -82,6 +91,12 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
   if (!isOpen) return null;
 
   const isEveningTheme = Boolean(state.recharge?.endOfShiftLocked);
+  const visiblePresets = getVisibleProfilePresets(architectModeUnlocked);
+  const activeProfileDisplayName =
+    !architectModeUnlocked && state.profilePresetId === 'AVERY_DEFAULT'
+      ? 'Academic & Grad Researcher'
+      : state.profileName ||
+        (architectModeUnlocked ? 'Avery Default' : 'Academic & Grad Researcher');
 
   const handleSelectPresetCard = (presetId: ProfilePresetId) => {
     setSelectedPreset(presetId);
@@ -157,20 +172,18 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
   };
 
   return (
-    <MobileBottomSheet
-      isOpen={isOpen}
-      onClose={onClose}
+    <div
       id="modal-onboarding-wizard"
-      ariaLabel="Profile Archetype & Onboarding Wizard"
-      desktopVariant="modal"
-      maxWidthClass="max-w-5xl"
-      isEvening={isEveningTheme}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Profile Archetype & Onboarding Wizard"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto"
     >
       <div
-        className={`w-full flex-1 flex flex-col overflow-hidden ${
+        className={`w-full max-w-5xl rounded-2xl border shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col ${
           isEveningTheme
-            ? 'bg-stone-950 text-stone-100'
-            : 'bg-white text-slate-900'
+            ? 'bg-stone-950 border-stone-800 text-stone-100'
+            : 'bg-white border-slate-200 text-slate-900'
         }`}
       >
         {/* Top Modal Header */}
@@ -207,7 +220,7 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
 
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-slate-800 text-slate-300 border border-slate-700">
-              Active: <strong className="text-amber-300">{state.profileName || 'Avery Default'}</strong>
+              Active: <strong className="text-amber-300">{activeProfileDisplayName}</strong>
             </span>
             <button
               id="btn-close-onboarding-wizard"
@@ -313,7 +326,7 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
             </div>
           </div>
 
-          {/* 4 One-Click Starter Templates + Preset 5 Blank Custom Architecture */}
+          {/* Starter Archetypes + Blank Custom Architecture */}
           <div>
             <div className="flex items-center justify-between gap-2 mb-2.5">
               <div className="text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5">
@@ -331,8 +344,8 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {PROFILE_PRESET_METADATA.map((preset) => {
+            <div className={`grid grid-cols-1 md:grid-cols-2 ${architectModeUnlocked ? 'lg:grid-cols-3' : 'lg:grid-cols-2'} gap-3`}>
+              {visiblePresets.map((preset) => {
                 const isSelected = selectedPreset === preset.id;
                 const isActiveInState = state.profilePresetId === preset.id;
                 const isCustom = preset.id === 'BLANK_CUSTOM';
@@ -350,7 +363,7 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
                         : isEveningTheme
                         ? 'bg-stone-900/60 border-stone-800 hover:border-stone-700'
                         : 'bg-white border-slate-200 hover:border-slate-300'
-                    } ${isCustom ? 'md:col-span-2 lg:col-span-1' : ''}`}
+                    }`}
                   >
                     <div>
                       <div className="flex items-center justify-between gap-2 mb-1.5">
@@ -428,7 +441,7 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
                           <span>
                             {preset.id === 'AVERY_DEFAULT'
                               ? '1-Click Restore Avery Default'
-                              : `1-Click Apply Preset ${preset.number}`}
+                              : `1-Click Apply ${preset.title}`}
                           </span>
                         </button>
                       ) : (
@@ -463,7 +476,7 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
             </div>
           </div>
 
-          {/* Preset 5: Blank Custom Architecture Step-by-Step Builder */}
+          {/* Blank Custom Architecture Step-by-Step Builder */}
           {selectedPreset === 'BLANK_CUSTOM' && (
             <div
               id="custom-architecture-builder"
@@ -477,7 +490,7 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded bg-indigo-600 text-white font-bold">
-                      Preset 5 • Blank Custom Architecture
+                      Preset {architectModeUnlocked ? '5' : '4'} • Blank Custom Architecture
                     </span>
                     <span className="text-xs font-mono text-emerald-600 dark:text-emerald-400 flex items-center gap-1 font-bold">
                       <Lock className="w-3.5 h-3.5" /> Capacity Ceilings, 5m Ignition &amp; 20m/60m Pacing Locked
@@ -1246,19 +1259,38 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              id="btn-footer-restore-avery-default"
-              type="button"
-              onClick={() => handleOneClickApply('AVERY_DEFAULT')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 border ${
-                isEveningTheme
-                  ? 'bg-stone-800 hover:bg-stone-700 text-amber-300 border-stone-700'
-                  : 'bg-white hover:bg-slate-100 text-slate-800 border-slate-300'
-              }`}
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Restore Avery Default</span>
-            </button>
+            {architectModeUnlocked && (
+              <>
+                <button
+                  id="btn-footer-restore-avery-default"
+                  type="button"
+                  onClick={() => handleOneClickApply('AVERY_DEFAULT')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 border ${
+                    isEveningTheme
+                      ? 'bg-stone-800 hover:bg-stone-700 text-amber-300 border-stone-700'
+                      : 'bg-white hover:bg-slate-100 text-slate-800 border-slate-300'
+                  }`}
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Restore Avery Default</span>
+                </button>
+                {onLockArchitectMode && (
+                  <button
+                    id="btn-wizard-lock-architect-mode"
+                    type="button"
+                    onClick={onLockArchitectMode}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 border ${
+                      isEveningTheme
+                        ? 'bg-stone-900 hover:bg-stone-800 text-stone-300 border-stone-700'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
+                    }`}
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>Lock Architect Mode</span>
+                  </button>
+                )}
+              </>
+            )}
             <button
               id="btn-dismiss-onboarding-wizard"
               type="button"
@@ -1270,6 +1302,6 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
           </div>
         </div>
       </div>
-    </MobileBottomSheet>
+    </div>
   );
 };

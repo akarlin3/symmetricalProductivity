@@ -559,7 +559,9 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
               className="flex-1 py-2.5 px-2.5 rounded-xl bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-bold text-xs flex items-center justify-center gap-1 cursor-pointer"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
-              <span>5m K1C Step</span>
+              <span>
+                {makerSlot.activeTitle.includes('K1C') ? '5m K1C Step' : '5m Maker Step'}
+              </span>
             </button>
 
             {onIncrementStickyStart && (
@@ -622,7 +624,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
             <div>
               <h3 className="font-serif text-2xl text-amber-50">
                 {recharge.fluidCategories?.CAT4_COMFORT.label ||
-                  "4. It's Always Sunny in Philadelphia"}
+                  '4. Off-Monitor Comfort Series'}
               </h3>
               <p className="text-xs text-amber-100/80 mt-0.5">
                 {recharge.fluidCategories?.CAT4_COMFORT.subtitle ||
@@ -689,19 +691,19 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                   {
                     id: '3A_FICTION' as MediaSubTrackId,
                     short: '3A Fiction',
-                    sub: 'Soul Music',
+                    sub: recharge.stickySlots['3A_FICTION'].activeTitle,
                     icon: BookOpen,
                   },
                   {
                     id: '3B_NONFICTION' as MediaSubTrackId,
                     short: '3B Nonfiction',
-                    sub: 'American Way',
+                    sub: recharge.stickySlots['3B_NONFICTION'].activeTitle,
                     icon: Headphones,
                   },
                   {
                     id: '3C_VIDEO' as MediaSubTrackId,
                     short: '3C Video',
-                    sub: "Widow's Bay",
+                    sub: recharge.stickySlots['3C_VIDEO'].activeTitle,
                     icon: Film,
                   },
                 ] as const

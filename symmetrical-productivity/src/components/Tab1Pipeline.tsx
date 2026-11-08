@@ -90,6 +90,8 @@ interface Tab1PipelineProps {
   onOpenCommandDock?: () => void;
   cinemaFocusMode?: boolean;
   onToggleCinemaFocusMode?: () => void;
+  architectModeUnlocked?: boolean;
+  onUnlockArchitectMode?: (source: string) => void;
   apiKeyVersion: number;
   onSelectLoadMode: (mode: LoadMode, targetBlocks: number, cruisePlus?: boolean) => void;
   onTogglePreExamTaper: (forceValue?: boolean) => void;
@@ -172,6 +174,8 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   onOpenCommandDock,
   cinemaFocusMode = false,
   onToggleCinemaFocusMode,
+  architectModeUnlocked = false,
+  onUnlockArchitectMode,
   apiKeyVersion,
   onSelectLoadMode,
   onTogglePreExamTaper,
@@ -255,13 +259,16 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
 
   const sequentialSteps = generateSequentialChecklist(state);
 
-  // Optional date override to preview Nov 12 / Dec 8 exam proximity suggestion
+  // Optional date override to preview exam proximity suggestion
   const [simulateExamProximityDate, setSimulateExamProximityDate] = useState<boolean>(false);
 
   const examCheckDate = simulateExamProximityDate
-    ? new Date(new Date().getFullYear(), 10, 10, 12, 0, 0) // Nov 10 (2 days before Nov 12)
+    ? new Date(new Date().getFullYear(), 10, 10, 12, 0, 0)
     : new Date();
   const examSuggestion = getPreExamTaperSuggestion(examCheckDate);
+  const isAveryPresetActive = Boolean(
+    architectModeUnlocked && state.profilePresetId === 'AVERY_DEFAULT'
+  );
 
   // Rule 3: Block flashcards from being scheduled/executed as the final block of the night
   const isFinalBlockOfNight = metrics.remainingBlocks <= 1 && metrics.remainingBlocks > 0;
@@ -578,6 +585,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
         onApplyPlan={onApplySmartIntakePlan}
         onOpenSettingsModal={onOpenStateModal}
         onOpenCommandDock={onOpenCommandDock}
+        onUnlockArchitectMode={onUnlockArchitectMode}
         apiKeyVersion={apiKeyVersion}
         className={
           isCinemaReceding
@@ -586,8 +594,10 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
         }
       />
 
-      {/* Auto-Suggest Banner when within 3 days of Nov 12 or Dec 8 */}
-      {(examSuggestion.isWithin3Days || state.preExamTaperActive) && (
+      {/* Auto-Suggest Banner when Pre-Exam Taper is active or simulated */}
+      {((isAveryPresetActive && examSuggestion.isWithin3Days) ||
+        simulateExamProximityDate ||
+        state.preExamTaperActive) && (
         <div
           id="pre-exam-taper-banner"
           className={`p-3.5 rounded-2xl bg-indigo-950/60 border border-indigo-400/50 text-indigo-100 flex flex-wrap items-center justify-between gap-3 transition-all duration-500 ${
@@ -602,7 +612,9 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               <div className="text-xs font-mono font-bold uppercase tracking-wider text-indigo-200">
                 {state.preExamTaperActive
                   ? 'Pre-Exam Taper Active • Ceiling Capped at 7–9 Blocks • Synthesis Canceled'
-                  : `Pre-Exam Taper Auto-Suggested (${examSuggestion.daysUntil}d to ${examSuggestion.examLabel})`}
+                  : isAveryPresetActive
+                  ? `Pre-Exam Taper Auto-Suggested (${examSuggestion.daysUntil}d to ${examSuggestion.examLabel})`
+                  : 'Pre-Exam Taper Auto-Suggested (≤3d to Milestone Exam)'}
               </div>
               <p className="text-[11px] text-indigo-200/80 font-mono">
                 Cancels heavy prose/half-chapter synthesis blocks, caps workload at Taper ceiling (7–9 blocks), and routes strictly to Exam Review &amp; Active Recall.
@@ -1654,14 +1666,17 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       setSimulateExamProximityDate(!simulateExamProximityDate)
                     }
                     className={`w-full py-0.5 px-2 rounded border text-[10px] cursor-pointer ${
-                      simulateExamProximityDate || examSuggestion.isWithin3Days
+                      simulateExamProximityDate ||
+                      (isAveryPresetActive && examSuggestion.isWithin3Days)
                         ? 'bg-indigo-500/20 border-indigo-400/60 text-indigo-200'
                         : 'bg-white/[0.03] border-white/[0.08] text-slate-400'
                     }`}
                   >
-                    {examSuggestion.isWithin3Days
-                      ? `≤3d to ${examSuggestion.examLabel} (Auto-Suggest Active)`
-                      : 'Simulate ≤3d to Nov 12 / Dec 8 Exam'}
+                    {isAveryPresetActive
+                      ? examSuggestion.isWithin3Days
+                        ? `≤3d to ${examSuggestion.examLabel} (Auto-Suggest Active)`
+                        : 'Simulate ≤3d to Nov 12 / Dec 8 Exam'
+                      : 'Simulate ≤3d to Milestone Exam'}
                   </button>
                 </div>
 
