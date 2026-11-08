@@ -1808,7 +1808,17 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
     '',
     '## Machine-Readable State Payload',
     '```json',
-    JSON.stringify(state, null, 2),
+    JSON.stringify(
+      (() => {
+        const clean = { ...(state as unknown as Record<string, unknown>) };
+        delete clean.proModeUnlocked;
+        delete clean.proPasswordToken;
+        delete clean.geminiApiKey;
+        return clean;
+      })(),
+      null,
+      2
+    ),
     '```',
     '',
   ];

@@ -68,6 +68,7 @@ import { SmartIntakeBar } from './SmartIntakeBar';
 import { InlineEditableText } from './InlineEditableText';
 import { InlineBreakOptionsEditor, InlineSlotEditor } from './InlineSlotEditor';
 import { triggerHaptic } from '../utils/haptics';
+import { splitDeliverableWithGemini } from '../utils/geminiClient';
 import { soundEngine } from '../utils/soundEngine';
 import { Pencil, X } from 'lucide-react';
 
@@ -525,7 +526,28 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
     shrinkLevel
   );
 
-  const handleAddProjectSubmit = (e: React.FormEvent) => {
+  const [isSplittingDeliverable, setIsSplittingDeliverable] = useState(false);
+
+  const handleSplitPrimaryDeliverable = async () => {
+    if (!primaryProject || isSplittingDeliverable) return;
+    triggerHaptic([12]);
+    setIsSplittingDeliverable(true);
+    try {
+      const splitResult = await splitDeliverableWithGemini(
+        primaryProject.title,
+        primaryProject.totalBlocks,
+        primaryProject.trackId
+      );
+      onUpdateProjectItem?.(primaryProject.id, {
+        startupStep: splitResult.startupStep5m,
+        nextStepNote: splitResult.subStepsSummary,
+      });
+    } finally {
+      setIsSplittingDeliverable(false);
+    }
+  };
+
+  const handleAddProjectSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanTitle = newProjTitle.trim();
     if (!cleanTitle) return;
@@ -534,9 +556,19 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
         ? 8
         : newProjPreset === 'SLIDES_4'
         ? 4
+        : newProjPreset === 'QUICK_2'
+        ? 2
         : newProjCustomBlocks;
+
+    const splitResult = await splitDeliverableWithGemini(
+      cleanTitle,
+      blocks,
+      newProjTrack
+    );
     const cleanStartup =
-      newProjStartup.trim() || 'Open file and complete initial 5m startup step.';
+      splitResult.startupStep5m ||
+      newProjStartup.trim() ||
+      'Open file and complete initial 5m startup step.';
 
     const floorLen = state.baselineBlocks.length || 7;
     const exceedsClosedListCap = state.projectQueue.length >= 3;
@@ -1864,6 +1896,17 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                           className="py-2 px-3 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.05] text-slate-200 font-mono text-xs cursor-pointer"
                         >
                           +1 Block
+                        </button>
+                        <button
+                          id="btn-split-deliverable-1"
+                          type="button"
+                          disabled={isSplittingDeliverable}
+                          onClick={() => void handleSplitPrimaryDeliverable()}
+                          title="8-Block Deliverable Splitter (Generates 5m Startup & Block Milestones)"
+                          className="py-2 px-3 rounded-full bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/35 text-sky-200 font-mono text-xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        >
+                          <Sparkles className="w-3.5 h-3.5 text-sky-300" />
+                          <span>{isSplittingDeliverable ? 'Splitting...' : 'Split Blocks'}</span>
                         </button>
                         <button
                           id="btn-complete-project-1"

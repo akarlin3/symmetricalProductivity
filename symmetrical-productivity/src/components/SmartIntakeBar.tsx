@@ -20,6 +20,13 @@ import {
   generateSmartIntakePlan,
   getEffectiveGeminiApiKey,
 } from '../utils/smartIntakePlanner';
+import {
+  isProModeUnlocked,
+  parseProCommandFromInput,
+  PRO_MODE_CHANGE_EVENT,
+  verifyProModePassword,
+} from '../utils/geminiClient';
+import { playHarmonicChord } from '../utils/soundEngine';
 import { isArchitectPassphrase } from '../state/profilePresets';
 import { triggerHaptic } from '../utils/haptics';
 
@@ -55,13 +62,20 @@ export const SmartIntakeBar: React.FC<SmartIntakeBarProps> = ({
   const [isParsing, setIsParsing] = useState(false);
   const [isListeningVoice, setIsListeningVoice] = useState(false);
   const [voiceStatusMsg, setVoiceStatusMsg] = useState<string | null>(null);
+  const [proActive, setProActive] = useState<boolean>(() => isProModeUnlocked());
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const recognitionRef = useRef<any>(null);
   const [showFull7DayDiff, setShowFull7DayDiff] = useState(
     contextVariant === 'DRAWER_7DAY'
   );
 
-  const hasApiKey = Boolean(getEffectiveGeminiApiKey());
+  useEffect(() => {
+    const syncPro = () => setProActive(isProModeUnlocked());
+    window.addEventListener(PRO_MODE_CHANGE_EVENT, syncPro);
+    return () => window.removeEventListener(PRO_MODE_CHANGE_EVENT, syncPro);
+  }, []);
+
+  const hasApiKey = proActive || Boolean(getEffectiveGeminiApiKey());
 
   // Global Cmd/Ctrl + J shortcut to focus the active Smart Intake input bar
   useEffect(() => {
@@ -102,6 +116,26 @@ export const SmartIntakeBar: React.FC<SmartIntakeBarProps> = ({
       onChangeInputText('');
       onSetPreviewPlan(null);
       onUnlockArchitectMode?.(`Command Bar Passphrase (${trimmed.toLowerCase()})`);
+      return;
+    }
+
+    const proPasswordCandidate = parseProCommandFromInput(trimmed);
+    if (proPasswordCandidate !== null) {
+      triggerHaptic([12]);
+      setIsParsing(true);
+      try {
+        const verifyRes = await verifyProModePassword(proPasswordCandidate);
+        if (verifyRes.ok) {
+          playHarmonicChord();
+          onChangeInputText('');
+          onSetPreviewPlan(null);
+          setVoiceStatusMsg('Pro Mode unlocked via /pro command.');
+        } else {
+          setVoiceStatusMsg(verifyRes.error || 'Invalid Pro Mode password');
+        }
+      } finally {
+        setIsParsing(false);
+      }
       return;
     }
 

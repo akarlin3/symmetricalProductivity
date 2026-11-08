@@ -20,6 +20,14 @@ import {
   generateSequentialChecklist,
 } from '../state/defaultState';
 import { triggerHaptic } from '../utils/haptics';
+import {
+  callGemini,
+  getPersonalByokKey,
+  hasActiveGeminiAccess,
+  isProModeUnlocked,
+  PRO_MODE_CHANGE_EVENT,
+  setPersonalByokKey,
+} from '../utils/geminiClient';
 import { MobileBottomSheet } from './MobileBottomSheet';
 
 export const GEMINI_API_KEY_STORAGE = 'symmetry_gemini_api_key_v1';
@@ -300,14 +308,8 @@ export const PlanningAssistantDrawer: React.FC<PlanningAssistantDrawerProps> = (
   onSelectTab,
   isEveningTheme,
 }) => {
-  const [apiKey, setApiKey] = useState<string>(() => {
-    if (typeof window === 'undefined') return '';
-    try {
-      return localStorage.getItem(GEMINI_API_KEY_STORAGE) || '';
-    } catch {
-      return '';
-    }
-  });
+  const [apiKey, setApiKey] = useState<string>(() => getPersonalByokKey());
+  const [proActive, setProActive] = useState<boolean>(() => isProModeUnlocked());
   const [showKeyConfig, setShowKeyConfig] = useState(false);
   const [inputPrompt, setInputPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -328,6 +330,15 @@ export const PlanningAssistantDrawer: React.FC<PlanningAssistantDrawerProps> = (
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    const syncProAndKey = () => {
+      setProActive(isProModeUnlocked());
+      setApiKey(getPersonalByokKey());
+    };
+    window.addEventListener(PRO_MODE_CHANGE_EVENT, syncProAndKey);
+    return () => window.removeEventListener(PRO_MODE_CHANGE_EVENT, syncProAndKey);
+  }, []);
+
+  useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
@@ -335,15 +346,7 @@ export const PlanningAssistantDrawer: React.FC<PlanningAssistantDrawerProps> = (
 
   const handleSaveApiKey = (val: string) => {
     setApiKey(val);
-    try {
-      if (val.trim()) {
-        localStorage.setItem(GEMINI_API_KEY_STORAGE, val.trim());
-      } else {
-        localStorage.removeItem(GEMINI_API_KEY_STORAGE);
-      }
-    } catch {
-      // Ignore storage errors
-    }
+    setPersonalByokKey(val);
   };
 
   const describeStatePatch = (patch?: Partial<SymmetryState>): string | undefined => {
@@ -393,11 +396,11 @@ export const PlanningAssistantDrawer: React.FC<PlanningAssistantDrawerProps> = (
     setIsLoading(true);
 
     let structuredResult: AssistantStructuredResponse | null = null;
+    let resolvedSource: 'PRO_CLOUDFLARE' | 'BYOK_DIRECT' | 'LOCAL_FALLBACK' = 'LOCAL_FALLBACK';
 
-    // If user configured a Gemini API key, call gemini-2.5-flash with structured JSON schema
-    if (apiKey.trim()) {
-      try {
-        const systemInstruction = `You are the Symmetrical Productivity (wl-balancer) Planning Assistant.
+    // Route through unified callGemini(payload) helper (Priority 1: Pro Mode, Priority 2: BYOK, Priority 3: Local Engine)
+    if (hasActiveGeminiAccess()) {
+      const systemInstruction = `You are the Symmetrical Productivity (wl-balancer) Planning Assistant.
 Tone rules:
 1. ZERO philosophical, religious, or preachy text. Never use terms like Halakha, Aggadah, Teshuvah, Chavruta, Hora'at Sha'ah, or family lore.
 2. Keep all replies strictly concise, candid, zero-fluff, mechanical, and partner-oriented.
@@ -414,51 +417,43 @@ Return ONLY valid JSON matching:
   "statePatch": { ...optional partial SymmetryState... }
 }`;
 
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(
-            apiKey.trim()
-          )}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              systemInstruction: { parts: [{ text: systemInstruction }] },
-              contents: [{ role: 'user', parts: [{ text: trimmed }] }],
-              generationConfig: {
-                responseMimeType: 'application/json',
-                temperature: 0.2,
-              },
-            }),
-          }
-        );
+      const geminiRes = await callGemini(
+        {
+          model: 'gemini-2.5-flash',
+          systemInstruction: { parts: [{ text: systemInstruction }] },
+          contents: [{ role: 'user', parts: [{ text: trimmed }] }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.2,
+          },
+        },
+        () => evaluateLocalPartnerCommand(trimmed, state)
+      );
 
-        if (response.ok) {
-          const data = await response.json();
-          const rawCandidate =
-            data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          if (rawCandidate) {
-            const parsed = JSON.parse(rawCandidate) as AssistantStructuredResponse;
-            if (parsed && typeof parsed.reply === 'string') {
-              // Merge with local deterministic patch if Gemini omitted statePatch on a known command
-              const localFallback = evaluateLocalPartnerCommand(trimmed, state);
-              structuredResult = {
-                reply: parsed.reply,
-                quickOptions:
-                  Array.isArray(parsed.quickOptions) && parsed.quickOptions.length > 0
-                    ? parsed.quickOptions
-                    : localFallback.quickOptions,
-                statePatch: parsed.statePatch || localFallback.statePatch,
-              };
-            }
+      resolvedSource = geminiRes.source;
+      if (geminiRes.ok && geminiRes.text) {
+        try {
+          const parsed = JSON.parse(geminiRes.text) as AssistantStructuredResponse;
+          if (parsed && typeof parsed.reply === 'string') {
+            const localFallback = evaluateLocalPartnerCommand(trimmed, state);
+            structuredResult = {
+              reply: parsed.reply,
+              quickOptions:
+                Array.isArray(parsed.quickOptions) && parsed.quickOptions.length > 0
+                  ? parsed.quickOptions
+                  : localFallback.quickOptions,
+              statePatch: parsed.statePatch || localFallback.statePatch,
+            };
           }
+        } catch {
+          // Fallback to local state-aware engine below
         }
-      } catch {
-        // Fallback to local state-aware engine below
       }
     }
 
     if (!structuredResult) {
       structuredResult = evaluateLocalPartnerCommand(trimmed, state);
+      resolvedSource = 'LOCAL_FALLBACK';
     }
 
     let appliedSummary: string | undefined;
@@ -480,7 +475,12 @@ Return ONLY valid JSON matching:
       text: structuredResult.reply,
       quickOptions: structuredResult.quickOptions,
       appliedPatchSummary: appliedSummary,
-      timestamp: apiKey.trim() ? 'gemini-2.5-flash' : 'Local State Engine',
+      timestamp:
+        resolvedSource === 'PRO_CLOUDFLARE'
+          ? 'gemini-2.5-flash (PRO)'
+          : resolvedSource === 'BYOK_DIRECT'
+          ? 'gemini-2.5-flash (BYOK)'
+          : 'Local State Engine',
     };
 
     setMessages((prev) => [...prev, assistantMsg]);
@@ -534,14 +534,20 @@ Return ONLY valid JSON matching:
                 type="button"
                 onClick={() => setShowKeyConfig(!showKeyConfig)}
                 className={`px-2 py-1 rounded-lg border font-mono text-[10px] flex items-center gap-1 cursor-pointer ${
-                  apiKey.trim()
+                  proActive || apiKey.trim()
                     ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-200'
                     : 'bg-white/[0.04] border-white/[0.1] text-slate-300'
                 }`}
                 title="Configure Gemini API Key (gemini-2.5-flash)"
               >
                 <Key className="w-3 h-3" />
-                <span>{apiKey.trim() ? 'API Key Set' : 'API Key'}</span>
+                <span>
+                  {proActive
+                    ? 'Pro Mode Active'
+                    : apiKey.trim()
+                    ? 'API Key Set'
+                    : 'API Key'}
+                </span>
               </button>
 
               <button

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   BarChart3,
@@ -40,6 +40,10 @@ import {
   getLogicalDayKey,
 } from '../state/defaultState';
 import { triggerHaptic } from '../utils/haptics';
+import {
+  isProModeUnlocked,
+  PRO_MODE_CHANGE_EVENT,
+} from '../utils/geminiClient';
 import { playHarmonicChord, SOUNDSCAPE_METADATA, soundEngine } from '../utils/soundEngine';
 import { AveryCorpEmblem } from './AveryCorpEmblem';
 
@@ -68,6 +72,7 @@ interface HeaderBarProps {
   onToggleCinemaFocusMode?: () => void;
   architectModeUnlocked?: boolean;
   onUnlockArchitectMode?: (source: string) => void;
+  proModeUnlocked?: boolean;
 }
 
 const SPRING_TRANSITION = {
@@ -101,9 +106,22 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   onToggleCinemaFocusMode,
   architectModeUnlocked = false,
   onUnlockArchitectMode,
+  proModeUnlocked,
 }) => {
   const tapTimestampsRef = useRef<number[]>([]);
   const [menuDrawerOpen, setMenuDrawerOpen] = useState(false);
+  const [localProUnlocked, setLocalProUnlocked] = useState<boolean>(() =>
+    isProModeUnlocked()
+  );
+
+  useEffect(() => {
+    const syncPro = () => setLocalProUnlocked(isProModeUnlocked());
+    window.addEventListener(PRO_MODE_CHANGE_EVENT, syncPro);
+    return () => window.removeEventListener(PRO_MODE_CHANGE_EVENT, syncPro);
+  }, []);
+
+  const isProUnlocked =
+    proModeUnlocked !== undefined ? proModeUnlocked : localProUnlocked;
 
   // Trigger B: 5 taps within 3 seconds on the geometric emblem or app title
   const handleBrandPrismTap = () => {
@@ -181,7 +199,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               : 'bg-[#06080d]/85 border-white/[0.05] text-slate-100 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.07),0_12px_28px_-14px_rgba(0,0,0,0.85)]'
           }`}
         >
-          {/* 1. LEFT: 26px Small Square Emblem + Full Title + Compact [Xh YYm left] Pill */}
+          {/* 1. LEFT: 26px Small Square Emblem + Full Title + Subtle PRO Pill + Compact [Xh YYm left] Pill */}
           <div className="flex items-center gap-1.5 shrink-0">
             <AveryCorpEmblem
               id="header-brand-prism-trigger"
@@ -204,6 +222,26 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             >
               Symmetry Productivity
             </h1>
+
+            {isProUnlocked && (
+              <span
+                id="header-pro-mode-badge"
+                onClick={() => {
+                  triggerHaptic([8]);
+                  onOpenStateModal();
+                }}
+                title="Pro Mode Active (Cloudflare Secret Proxy)"
+                className={`px-1.5 py-0.5 rounded-full border font-mono text-[9px] font-bold uppercase tracking-wider shrink-0 cursor-pointer select-none transition-opacity duration-500 ${
+                  isCinemaReceding ? 'opacity-20 hover:opacity-100' : ''
+                } ${
+                  isEveningTheme
+                    ? 'bg-amber-500/15 border-amber-400/35 text-amber-200'
+                    : 'bg-sky-500/15 border-sky-400/35 text-sky-200'
+                }`}
+              >
+                PRO
+              </span>
+            )}
 
             {/* Compact Duration-Only Pill (Remains sharp during Cinema Focus) */}
             <div

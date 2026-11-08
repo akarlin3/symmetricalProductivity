@@ -10,6 +10,8 @@ import {
   KeyRound,
   Layers,
   ListChecks,
+  Loader2,
+  Lock,
   Maximize2,
   Minimize2,
   Moon,
@@ -112,6 +114,13 @@ import {
   getStoredGeminiApiKey,
   setStoredGeminiApiKey,
 } from './utils/smartIntakePlanner';
+import {
+  isProModeUnlocked,
+  lockProMode,
+  PRO_MODE_CHANGE_EVENT,
+  stripProSecretsFromStateObject,
+  verifyProModePassword,
+} from './utils/geminiClient';
 import { playHarmonicChord, SOUNDSCAPE_METADATA, soundEngine } from './utils/soundEngine';
 import { DualRingTimerSvg } from './components/DualRingTimerSvg';
 import {
@@ -300,14 +309,31 @@ export function App() {
   const [notificationsGranted, setNotificationsGranted] = useState(false);
   const [swOfflineReady, setSwOfflineReady] = useState(false);
 
-  // Smart Intake & Week Planner state + Gemini API Key storage
+  // Smart Intake & Week Planner state + Pro Mode & Gemini API Key storage
   const [smartIntakeText, setSmartIntakeText] = useState('');
   const [smartIntakePreview, setSmartIntakePreview] =
     useState<SmartIntakePlanResult | null>(null);
   const [geminiApiKeyInput, setGeminiApiKeyInput] = useState<string>(() =>
     getStoredGeminiApiKey()
   );
+  const [proModeUnlocked, setProModeUnlocked] = useState<boolean>(() =>
+    isProModeUnlocked()
+  );
+  const [proPasswordInput, setProPasswordInput] = useState<string>('');
+  const [proVerifyLoading, setProVerifyLoading] = useState<boolean>(false);
+  const [proVerifyError, setProVerifyError] = useState<string | null>(null);
   const [apiKeyVersion, setApiKeyVersion] = useState(0);
+
+  useEffect(() => {
+    const handleProModeChange = () => {
+      setProModeUnlocked(isProModeUnlocked());
+      setGeminiApiKeyInput(getStoredGeminiApiKey());
+      setApiKeyVersion((v) => v + 1);
+    };
+    window.addEventListener(PRO_MODE_CHANGE_EVENT, handleProModeChange);
+    return () =>
+      window.removeEventListener(PRO_MODE_CHANGE_EVENT, handleProModeChange);
+  }, []);
 
   // Cross-Tab Live Sync (BroadcastChannel) refs
   const tabIdRef = useRef<string>(
@@ -4204,6 +4230,7 @@ export function App() {
           }
           architectModeUnlocked={architectModeUnlocked}
           onUnlockArchitectMode={handleUnlockArchitectMode}
+          proModeUnlocked={proModeUnlocked}
         />
 
         {/* Status Toast Notice */}
@@ -5993,79 +6020,214 @@ export function App() {
             </div>
           </div>
 
-          {/* Gemini API Key Storage & Fallback Section */}
+          {/* Pro Mode & AI Access Section */}
           <div
             id="settings-gemini-api-key-section"
-            className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2"
+            className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-3"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <label
-                htmlFor="input-gemini-api-key"
-                className="text-xs font-mono font-bold text-cyan-300 flex items-center gap-1.5"
-              >
+              <div className="text-xs font-mono font-bold text-cyan-300 flex items-center gap-1.5">
                 <KeyRound className="w-3.5 h-3.5 text-cyan-400" />
-                <span>Gemini 2.5 Flash API Key (localStorage: geminiApiKey)</span>
-              </label>
+                <span>Pro Mode &amp; AI Access</span>
+              </div>
               <span className="text-[11px] font-mono text-slate-400">
-                {getStoredGeminiApiKey()
-                  ? '✓ Saved in localStorage'
+                {proModeUnlocked
+                  ? '✓ Priority 1: Pro Mode Active (/api/gemini-pro)'
+                  : getStoredGeminiApiKey()
+                  ? '✓ Priority 2: Personal BYOK Key saved'
                   : getEnvGeminiApiKey()
-                  ? '✓ Using VITE_GEMINI_API_KEY env fallback'
-                  : 'No API key set (Offline Regex Parser active)'}
+                  ? '✓ Priority 2: VITE_GEMINI_API_KEY env fallback'
+                  : 'Priority 3: Offline Deterministic Parser'}
               </span>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-2">
-              <input
-                id="input-gemini-api-key"
-                type="password"
-                value={geminiApiKeyInput}
-                onChange={(e) => setGeminiApiKeyInput(e.target.value)}
-                placeholder={
-                  getEnvGeminiApiKey()
-                    ? 'Fallback active (import.meta.env.VITE_GEMINI_API_KEY) — enter key to override...'
-                    : 'Enter Gemini API key (AIza...) or leave blank for offline regex parser...'
-                }
-                className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-cyan-400"
-              />
-              <div className="flex items-center gap-1.5">
-                <button
-                  id="btn-save-gemini-api-key"
-                  type="button"
-                  onClick={() => {
-                    setStoredGeminiApiKey(geminiApiKeyInput);
-                    setApiKeyVersion((v) => v + 1);
-                    showNotice(
-                      geminiApiKeyInput.trim()
-                        ? 'Saved geminiApiKey to localStorage for Smart Intake (gemini-2.5-flash).'
-                        : 'Cleared geminiApiKey from localStorage (using env fallback or offline regex parser).'
-                    );
-                  }}
-                  className="px-3.5 py-2 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-mono font-bold text-xs flex items-center gap-1 cursor-pointer shrink-0"
+            {/* Card 1: Unlock Pro Mode (Cloudflare Secret) */}
+            <div
+              id="settings-pro-mode-card"
+              className={`p-3 rounded-xl border space-y-2 ${
+                proModeUnlocked
+                  ? 'bg-emerald-950/30 border-emerald-500/40'
+                  : 'bg-slate-900/70 border-slate-800'
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label
+                  htmlFor="input-pro-mode-password"
+                  className="text-xs font-mono font-bold text-emerald-300 flex items-center gap-1.5"
                 >
-                  <Check className="w-3.5 h-3.5" />
-                  <span>Save Key</span>
-                </button>
-                {geminiApiKeyInput && (
-                  <button
-                    id="btn-clear-gemini-api-key"
-                    type="button"
-                    onClick={() => {
-                      setGeminiApiKeyInput('');
-                      setStoredGeminiApiKey('');
-                      setApiKeyVersion((v) => v + 1);
-                      showNotice('Cleared geminiApiKey from localStorage.');
-                    }}
-                    className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-mono text-xs cursor-pointer"
-                  >
-                    Clear
-                  </button>
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Unlock Pro Mode (Cloudflare Secret)</span>
+                </label>
+                {proModeUnlocked ? (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-200 text-[10px] font-mono font-bold">
+                    PRO UNLOCKED
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-mono text-slate-400">
+                    Server-verified via /api/gemini-pro
+                  </span>
                 )}
               </div>
+
+              {proModeUnlocked ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                  <p className="text-[11px] font-mono text-emerald-200/90">
+                    Pro Mode is active. Requests route through Cloudflare Pages Function <code className="text-emerald-300">/api/gemini-pro</code> using server-side <code className="text-emerald-300">GEMINI_API_KEY</code>.
+                  </p>
+                  <button
+                    id="btn-lock-pro-mode"
+                    type="button"
+                    onClick={() => {
+                      lockProMode();
+                      setProModeUnlocked(false);
+                      setProPasswordInput('');
+                      setProVerifyError(null);
+                      setApiKeyVersion((v) => v + 1);
+                      showNotice('Locked Pro Mode and cleared local token.');
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-rose-950/80 hover:bg-rose-900 border border-rose-500/40 text-rose-200 font-mono font-bold text-xs flex items-center gap-1.5 cursor-pointer shrink-0"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>Lock Pro Mode</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      id="input-pro-mode-password"
+                      type="password"
+                      value={proPasswordInput}
+                      onChange={(e) => {
+                        setProPasswordInput(e.target.value);
+                        if (proVerifyError) setProVerifyError(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && proPasswordInput.trim() && !proVerifyLoading) {
+                          e.preventDefault();
+                          document.getElementById('btn-unlock-pro-mode')?.click();
+                        }
+                      }}
+                      placeholder="Enter Pro Mode password (or type /pro <password> in Cmd+K)..."
+                      className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-emerald-400"
+                    />
+                    <button
+                      id="btn-unlock-pro-mode"
+                      type="button"
+                      disabled={proVerifyLoading || !proPasswordInput.trim()}
+                      onClick={async () => {
+                        setProVerifyLoading(true);
+                        setProVerifyError(null);
+                        const res = await verifyProModePassword(proPasswordInput);
+                        setProVerifyLoading(false);
+                        if (res.ok) {
+                          setProModeUnlocked(true);
+                          setProPasswordInput('');
+                          setApiKeyVersion((v) => v + 1);
+                          playHarmonicChord();
+                          showNotice('Pro Mode unlocked via Cloudflare Secret (/api/gemini-pro).');
+                        } else {
+                          setProVerifyError(res.error || 'Invalid Pro Mode password');
+                        }
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 disabled:opacity-50 text-slate-950 font-mono font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                    >
+                      {proVerifyLoading ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Verifying...</span>
+                        </>
+                      ) : (
+                        <>
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>Unlock Pro</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  {proVerifyError && (
+                    <div
+                      id="pro-mode-error-banner"
+                      className="text-[11px] font-mono text-rose-300 bg-rose-950/60 border border-rose-500/40 rounded-lg px-2.5 py-1.5"
+                    >
+                      {proVerifyError}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            <p className="text-[11px] text-slate-400 font-mono">
-              Fallback chain: <code className="text-cyan-300">localStorage.getItem(&apos;geminiApiKey&apos;)</code> → <code className="text-cyan-300">import.meta.env.VITE_GEMINI_API_KEY</code> → Local Offline Regex Parser (<code className="text-amber-300">+paper Draft 8b</code>, <code className="text-amber-300">+lab Tue 2h</code>).
-            </p>
+
+            {/* Card 2: Use Own API Key (BYOK) */}
+            <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-800 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label
+                  htmlFor="input-gemini-api-key"
+                  className="text-xs font-mono font-bold text-cyan-300 flex items-center gap-1.5"
+                >
+                  <KeyRound className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Use Own API Key (BYOK)</span>
+                </label>
+                <span className="text-[11px] font-mono text-slate-400">
+                  {getStoredGeminiApiKey()
+                    ? '✓ Saved in localStorage'
+                    : getEnvGeminiApiKey()
+                    ? '✓ Using VITE_GEMINI_API_KEY env fallback'
+                    : 'No personal key saved'}
+                </span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  id="input-gemini-api-key"
+                  type="password"
+                  value={geminiApiKeyInput}
+                  onChange={(e) => setGeminiApiKeyInput(e.target.value)}
+                  placeholder={
+                    getEnvGeminiApiKey()
+                      ? 'Fallback active (import.meta.env.VITE_GEMINI_API_KEY) — enter key to override...'
+                      : 'Enter personal Gemini API key (AIza...) or leave blank for offline parser...'
+                  }
+                  className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs font-mono text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-cyan-400"
+                />
+                <div className="flex items-center gap-1.5">
+                  <button
+                    id="btn-save-gemini-api-key"
+                    type="button"
+                    onClick={() => {
+                      setStoredGeminiApiKey(geminiApiKeyInput);
+                      setApiKeyVersion((v) => v + 1);
+                      showNotice(
+                        geminiApiKeyInput.trim()
+                          ? 'Saved personal BYOK Gemini API key to localStorage.'
+                          : 'Cleared personal BYOK Gemini API key from localStorage.'
+                      );
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-mono font-bold text-xs flex items-center gap-1 cursor-pointer shrink-0"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Save Key</span>
+                  </button>
+                  {geminiApiKeyInput && (
+                    <button
+                      id="btn-clear-gemini-api-key"
+                      type="button"
+                      onClick={() => {
+                        setGeminiApiKeyInput('');
+                        setStoredGeminiApiKey('');
+                        setApiKeyVersion((v) => v + 1);
+                        showNotice('Cleared personal BYOK Gemini API key from localStorage.');
+                      }}
+                      className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 font-mono text-xs cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+              <p className="text-[11px] text-slate-400 font-mono">
+                Router Priority: <code className="text-emerald-300">1. Pro Mode (/api/gemini-pro)</code> → <code className="text-cyan-300">2. Personal BYOK Key</code> → <code className="text-amber-300">3. Offline Local Parser</code>. Pro credentials are never exported in <code className="text-sky-300">state.md</code> / <code className="text-sky-300">state.json</code>.
+              </p>
+            </div>
           </div>
 
           <p className="text-xs text-slate-400">
@@ -6303,7 +6465,11 @@ export function App() {
               </button>
               <button
                 type="button"
-                onClick={() => setStateIoText(JSON.stringify(state, null, 2))}
+                onClick={() =>
+                  setStateIoText(
+                    JSON.stringify(stripProSecretsFromStateObject(state), null, 2)
+                  )
+                }
                 className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs cursor-pointer"
               >
                 Format as JSON
@@ -6528,6 +6694,11 @@ export function App() {
         onApplySmartIntakePlan={handleApplySmartIntakePlan}
         onOpenGeminiBridgeModal={() => setGeminiBridgeOpen(true)}
         onUnlockArchitectMode={handleUnlockArchitectMode}
+        onProModeStatusChange={(unlocked, msg) => {
+          setProModeUnlocked(unlocked);
+          setApiKeyVersion((v) => v + 1);
+          if (msg) showNotice(msg);
+        }}
       />
 
       {/* Global Window Drag-and-Drop state.md / .json Overlay */}

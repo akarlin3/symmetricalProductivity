@@ -29,6 +29,11 @@ import {
 import { computeShiftMetrics } from '../state/defaultState';
 import { isArchitectPassphrase } from '../state/profilePresets';
 import { generateSmartIntakePlan } from '../utils/smartIntakePlanner';
+import {
+  parseProCommandFromInput,
+  verifyProModePassword,
+} from '../utils/geminiClient';
+import { playHarmonicChord } from '../utils/soundEngine';
 import { triggerHaptic } from '../utils/haptics';
 
 interface CommandPaletteModalProps {
@@ -55,6 +60,7 @@ interface CommandPaletteModalProps {
   architectModeUnlocked?: boolean;
   onUnlockArchitectMode?: (source: string) => void;
   onLockArchitectMode?: () => void;
+  onProModeStatusChange?: (unlocked: boolean, message?: string) => void;
 }
 
 export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
@@ -78,13 +84,16 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onApplySmartIntakePlan,
   onOpenGeminiBridgeModal,
   onUnlockArchitectMode,
+  onProModeStatusChange,
 }) => {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [isParsing, setIsParsing] = useState(false);
+  const [proCommandError, setProCommandError] = useState<string | null>(null);
   const metrics = computeShiftMetrics(state);
 
   useEffect(() => {
     if (isOpen) {
+      setProCommandError(null);
       const id = window.setTimeout(() => {
         inputRef.current?.focus();
       }, 40);
@@ -93,6 +102,9 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   }, [isOpen]);
 
   const handleInputChange = (val: string) => {
+    if (proCommandError) {
+      setProCommandError(null);
+    }
     if (isArchitectPassphrase(val) && onUnlockArchitectMode) {
       onChangeSmartIntakeText('');
       onSetSmartIntakePreview(null);
@@ -114,6 +126,32 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       onClose();
       return;
     }
+
+    const proPasswordCandidate = parseProCommandFromInput(trimmed);
+    if (proPasswordCandidate !== null) {
+      triggerHaptic([12]);
+      setIsParsing(true);
+      setProCommandError(null);
+      try {
+        const verifyRes = await verifyProModePassword(proPasswordCandidate);
+        if (verifyRes.ok) {
+          playHarmonicChord();
+          onChangeSmartIntakeText('');
+          onSetSmartIntakePreview(null);
+          onProModeStatusChange?.(
+            true,
+            'Pro Mode Unlocked via Command Bar (/pro) — Cloudflare Secret verified.'
+          );
+          onClose();
+        } else {
+          setProCommandError(verifyRes.error || 'Invalid Pro Mode password');
+        }
+      } finally {
+        setIsParsing(false);
+      }
+      return;
+    }
+
     triggerHaptic([12]);
     setIsParsing(true);
     try {
@@ -279,7 +317,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                 type="text"
                 value={smartIntakeText}
                 onChange={(e) => handleInputChange(e.target.value)}
-                placeholder="Type a command or brain-dump week plan (+paper Draft 8b, +lab Tue 2h)..."
+                placeholder="Type a command (/pro <password>) or brain-dump week plan (+paper Draft 8b, +lab Tue 2h)..."
                 className="flex-1 bg-transparent text-sm text-white placeholder:text-slate-500 font-mono focus:outline-none"
               />
               {smartIntakeText.trim() && (
@@ -291,12 +329,12 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                   {isParsing ? (
                     <>
                       <Loader2 className="w-3 h-3 animate-spin" />
-                      <span>Parsing</span>
+                      <span>{parseProCommandFromInput(smartIntakeText) ? 'Verifying' : 'Parsing'}</span>
                     </>
                   ) : (
                     <>
                       <Sparkles className="w-3 h-3" />
-                      <span>Parse Intake</span>
+                      <span>{parseProCommandFromInput(smartIntakeText) ? 'Unlock Pro' : 'Parse Intake'}</span>
                     </>
                   )}
                 </button>
@@ -309,6 +347,22 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
                 Esc
               </button>
             </form>
+
+            {proCommandError && (
+              <div
+                id="command-palette-pro-error"
+                className="px-4 py-2 bg-rose-950/50 border-b border-rose-500/40 text-xs font-mono text-rose-200 flex items-center justify-between"
+              >
+                <span>{proCommandError}</span>
+                <button
+                  type="button"
+                  onClick={() => setProCommandError(null)}
+                  className="text-[10px] text-rose-300 underline cursor-pointer"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
 
             {/* Inline Smart Intake Diff Preview when parsed */}
             {smartIntakePreview && (

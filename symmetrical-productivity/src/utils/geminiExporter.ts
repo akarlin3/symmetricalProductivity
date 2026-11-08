@@ -21,6 +21,7 @@ import {
   applySmartIntakePlanToState,
   normalizeSmartIntakePlan,
 } from './smartIntakePlanner';
+import { stripProSecretsFromStateObject } from './geminiClient';
 
 export type GeminiExportMode =
   | 'MODE_A_SKILL_SYNC'
@@ -466,7 +467,7 @@ export function compileFullGeminiPayload(
     '<summary>Click to expand lossless SymmetryState JSON payload</summary>',
     '',
     '```json',
-    JSON.stringify(stateWithBandwidth, null, 2),
+    JSON.stringify(stripProSecretsFromStateObject(stateWithBandwidth), null, 2),
     '```',
     '',
     '</details>',

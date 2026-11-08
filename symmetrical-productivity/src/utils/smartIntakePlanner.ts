@@ -14,6 +14,12 @@ import {
   SymmetryState,
   TrackId,
 } from '../types/symmetry';
+import {
+  callGemini,
+  hasActiveGeminiAccess,
+  isProModeUnlocked,
+  setPersonalByokKey,
+} from './geminiClient';
 
 export const GEMINI_API_KEY_STORAGE_KEY = 'geminiApiKey';
 
@@ -32,18 +38,7 @@ export function getStoredGeminiApiKey(): string {
 }
 
 export function setStoredGeminiApiKey(key: string): void {
-  try {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      const trimmed = key.trim();
-      if (trimmed) {
-        window.localStorage.setItem(GEMINI_API_KEY_STORAGE_KEY, trimmed);
-      } else {
-        window.localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY);
-      }
-    }
-  } catch {
-    // Ignore storage write errors
-  }
+  setPersonalByokKey(key);
 }
 
 export function getEnvGeminiApiKey(): string {
@@ -56,6 +51,9 @@ export function getEnvGeminiApiKey(): string {
 }
 
 export function getEffectiveGeminiApiKey(): string {
+  if (isProModeUnlocked()) {
+    return 'PRO_MODE_CLOUDFLARE_SECRET';
+  }
   return getStoredGeminiApiKey() || getEnvGeminiApiKey();
 }
 
@@ -838,18 +836,16 @@ export function normalizeSmartIntakePlan(
 }
 
 /**
- * Calls Gemini 2.5 Flash structured output endpoint if an API key is configured;
- * otherwise (or on network/API failure) uses the fast local regex/keyword fallback parser.
+ * Calls Gemini 2.5 Flash via unified `callGemini(payload)` router
+ * (Priority 1: Pro Mode `/api/gemini-pro`, Priority 2: BYOK Key, Priority 3: Local Regex Parser).
  */
 export async function generateSmartIntakePlan(
   userPrompt: string,
   state: SymmetryState
 ): Promise<SmartIntakePlanResult> {
   const trimmed = userPrompt.trim();
-  const apiKey = getEffectiveGeminiApiKey();
 
-  // If no API key is configured or user typed a quick `+command` offline shorthand without key, use local parser
-  if (!apiKey) {
+  if (!hasActiveGeminiAccess()) {
     return parseSmartIntakeLocal(trimmed, state);
   }
 
@@ -873,50 +869,37 @@ export async function generateSmartIntakePlan(
     )}`,
   ].join('\n');
 
-  try {
-    const response = await fetch(
-      `${GEMINI_ENDPOINT}?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+  const geminiResult = await callGemini(
+    {
+      model: 'gemini-2.5-flash',
+      systemInstruction: {
+        parts: [{ text: systemPrompt }],
+      },
+      contents: [
+        {
+          role: 'user',
+          parts: [{ text: trimmed }],
         },
-        body: JSON.stringify({
-          systemInstruction: {
-            parts: [{ text: systemPrompt }],
-          },
-          contents: [
-            {
-              role: 'user',
-              parts: [{ text: trimmed }],
-            },
-          ],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            responseSchema: SMART_INTAKE_RESPONSE_SCHEMA,
-            temperature: 0.2,
-          },
-        }),
-      }
-    );
+      ],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: SMART_INTAKE_RESPONSE_SCHEMA,
+        temperature: 0.2,
+      },
+    },
+    () => parseSmartIntakeLocal(trimmed, state)
+  );
 
-    if (!response.ok) {
-      throw new Error(`Gemini HTTP ${response.status}`);
+  if (geminiResult.ok && geminiResult.text) {
+    try {
+      const parsed = JSON.parse(geminiResult.text) as Partial<SmartIntakePlanResult>;
+      return normalizeSmartIntakePlan(parsed, state, 'GEMINI_2_5_FLASH');
+    } catch {
+      return parseSmartIntakeLocal(trimmed, state);
     }
-
-    const data = await response.json();
-    const rawJsonText =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    if (!rawJsonText) {
-      throw new Error('Empty structured response from Gemini');
-    }
-
-    const parsed = JSON.parse(rawJsonText) as Partial<SmartIntakePlanResult>;
-    return normalizeSmartIntakePlan(parsed, state, 'GEMINI_2_5_FLASH');
-  } catch {
-    // Graceful fallback to local deterministic regex/keyword parser
-    return parseSmartIntakeLocal(trimmed, state);
   }
+
+  return geminiResult.fallbackData || parseSmartIntakeLocal(trimmed, state);
 }
 
 /**
