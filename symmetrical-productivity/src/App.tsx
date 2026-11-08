@@ -1,5 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { Copy, Download, FileText, RotateCcw, Upload, X } from 'lucide-react';
+import {
+  Copy,
+  Download,
+  FileText,
+  Layers,
+  ListChecks,
+  Moon,
+  RotateCcw,
+  Timer,
+  Upload,
+  X,
+} from 'lucide-react';
+import { triggerHaptic } from './utils/haptics';
 import {
   FixedEventType,
   Level2BreakProtocol,

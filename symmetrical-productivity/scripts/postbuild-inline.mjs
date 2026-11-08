@@ -28,10 +28,11 @@ let ssrHtml = '';
 try {
   ssrHtml = execSync(
     `npx tsx -e "import React from 'react'; import { renderToString } from 'react-dom/server'; import App from './src/App.tsx'; process.stdout.write(renderToString(React.createElement(App)));"`,
-    { cwd: appRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
+    { cwd: appRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
   );
-} catch {
-  ssrHtml = '';
+} catch (err) {
+  console.error('SSR pre-render failed:', err);
+  process.exit(1);
 }
 
 const safeSwScript = `<script>
