@@ -384,12 +384,12 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
         {/* Center Readout Overlay */}
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center px-6 text-center pointer-events-none">
           <span
-            className={`px-2.5 py-0.5 rounded-full border font-mono text-[10px] uppercase tracking-widest font-bold shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] ${
+            className={`px-2.5 py-0.5 rounded-full border font-mono text-[10px] uppercase tracking-widest font-medium ${
               timer.mode === 'WORK_20M' && timer.workStage === 'IGNITION_5M'
-                ? 'bg-amber-500/15 border-amber-400/50 text-amber-200'
+                ? 'bg-amber-500/10 border-amber-400/30 text-amber-200'
                 : isWarmGlow
-                ? 'bg-orange-500/15 border-amber-500/50 text-amber-200'
-                : 'bg-cyan-500/15 border-cyan-400/50 text-cyan-200'
+                ? 'bg-orange-500/10 border-amber-500/30 text-amber-200'
+                : 'bg-cyan-500/10 border-cyan-400/30 text-cyan-200'
             }`}
           >
             {compactPhaseLabel}
@@ -397,7 +397,7 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
 
           <div
             id="main-timer-digits"
-            className={`text-5xl font-mono font-extrabold tracking-tight tabular-nums my-2 leading-none drop-shadow-sm ${
+            className={`text-5xl font-mono font-light tracking-tight tabular-nums my-2.5 leading-none ${
               isWarmGlow ? 'text-amber-50' : 'text-white'
             }`}
           >
@@ -414,108 +414,56 @@ export const DualRingTimerSvg: React.FC<DualRingTimerSvgProps> = ({
                   : 'bg-slate-500'
               }`}
             />
-            <span className={isWarmGlow ? 'text-amber-200/80' : 'text-slate-300'}>
+            <span className={isWarmGlow ? 'text-amber-200/75' : 'text-slate-400'}>
               {timer.isRunning
-                ? 'CHRONOGRAPH LIVE'
-                : `CHAIN ${timer.chainedBlocksCount}/2 • READY`}
+                ? 'LIVE'
+                : `CHAIN ${timer.chainedBlocksCount}/2`}
             </span>
           </div>
-
-          {durationPrefix && (
-            <span className="mt-1.5 px-2 py-0.5 rounded-md bg-black/55 border border-white/[0.09] font-mono text-[10px] tracking-tight tabular-nums text-cyan-200 font-semibold">
-              {durationPrefix}
-            </span>
-          )}
         </div>
       </div>
 
-      {/* Ring Legend Pills + Mini HUD (PiP) + Cinema Focus Mode Pill */}
-      <div className="flex flex-wrap items-center justify-center gap-1.5 text-[10px] font-mono">
-        <span
-          className={`px-2.5 py-1 rounded-full border flex items-center gap-1.5 ${
-            timer.mode === 'WORK_20M' && timer.workStage === 'IGNITION_5M'
-              ? 'bg-amber-500/15 border-amber-400/50 text-amber-200 font-bold shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]'
-              : 'bg-white/[0.03] border-white/[0.08] text-slate-400'
-          }`}
-        >
-          <span className="w-2 h-2 rounded-full bg-amber-400 inline-block shadow-[0_0_6px_#f59e0b]" />
-          <span>
-            Inner: {startupMinsLabel}m Startup{' '}
-            {timer.mode === 'WORK_20M' && timer.workStage === 'MOMENTUM_15M'
-              ? '(Done)'
-              : '(IGNITION_5M)'}
-          </span>
+      {/* Subtle Ring Legend + Mini HUD (PiP) */}
+      <div className="flex flex-wrap items-center justify-center gap-3 text-[11px] font-mono text-slate-400">
+        <span className="flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+          <span>{startupMinsLabel}m Startup</span>
         </span>
 
-        <span
-          className={`px-2.5 py-1 rounded-full border flex items-center gap-1.5 ${
-            timer.mode === 'WORK_20M' && timer.workStage === 'MOMENTUM_15M'
-              ? 'bg-cyan-500/15 border-cyan-400/50 text-cyan-200 font-bold shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]'
-              : 'bg-white/[0.03] border-white/[0.08] text-slate-400'
-          }`}
-        >
+        <span className="text-slate-600">•</span>
+
+        <span className="flex items-center gap-1.5">
           <span
-            className={`w-2 h-2 rounded-full inline-block ${
-              isWarmGlow
-                ? 'bg-orange-400 shadow-[0_0_6px_#fb923c]'
-                : 'bg-cyan-400 shadow-[0_0_6px_#22d3ee]'
+            className={`w-1.5 h-1.5 rounded-full inline-block ${
+              isWarmGlow ? 'bg-orange-400' : 'bg-cyan-400'
             }`}
           />
-          <span>Outer: {momentumMinsLabel}m Momentum ({mult}x)</span>
+          <span>{momentumMinsLabel}m Momentum</span>
         </span>
 
         {onOpenMiniHudPip && (
-          <button
-            id="btn-mini-hud-pip"
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenMiniHudPip();
-            }}
-            className={`px-2.5 py-1 rounded-full border flex items-center gap-1.5 cursor-pointer transition ${
-              isMiniHudOpen
-                ? 'bg-cyan-400 text-slate-950 border-cyan-300 font-bold shadow-[0_0_12px_rgba(34,211,238,0.35)]'
-                : 'bg-cyan-500/15 hover:bg-cyan-500/25 border-cyan-400/50 text-cyan-200 font-bold'
-            }`}
-            title="Pop out OS-level Always-on-Top Mini HUD (300x135 Document Picture-in-Picture or 480x220 Canvas Stream Video PiP) [Hotkey: P]"
-          >
-            <PictureInPicture2 className="w-3 h-3 shrink-0" />
-            <span>{isMiniHudOpen ? 'Close Mini HUD' : 'Pop Out Mini HUD'}</span>
-            <kbd
-              className={`px-1 py-0.2 rounded text-[9px] font-mono ${
+          <>
+            <span className="text-slate-600">•</span>
+            <button
+              id="btn-mini-hud-pip"
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenMiniHudPip();
+              }}
+              className={`px-2 py-0.5 rounded-full border text-[10px] flex items-center gap-1 cursor-pointer transition ${
                 isMiniHudOpen
-                  ? 'bg-slate-950/20 text-slate-950'
-                  : 'bg-black/40 text-cyan-300'
+                  ? 'bg-cyan-400/20 text-cyan-200 border-cyan-400/40'
+                  : 'bg-white/[0.02] hover:bg-white/[0.06] border-white/[0.05] text-slate-300'
               }`}
+              title="Pop out Always-on-Top Mini HUD [Hotkey: P]"
             >
-              P
-            </kbd>
-          </button>
+              <PictureInPicture2 className="w-3 h-3 shrink-0" />
+              <span>{isMiniHudOpen ? 'Mini HUD Open' : 'Mini HUD'}</span>
+            </button>
+          </>
         )}
       </div>
-
-      {/* Mini HUD Auto-Pop-Out Convenience Toggle */}
-      {onToggleAutoFloatOnTabSwitch && (
-        <div
-          id="mini-hud-auto-float-menu"
-          className="flex items-center justify-center"
-        >
-          <label
-            onClick={(e) => e.stopPropagation()}
-            className="px-2.5 py-1 rounded-xl bg-white/[0.025] hover:bg-white/[0.05] border border-white/[0.08] text-[10px] font-mono text-slate-300 flex items-center gap-2 cursor-pointer select-none transition"
-            title="Automatically pop out the OS-level Mini HUD (or show a 1-click float bar) when switching away from this tab"
-          >
-            <input
-              id="toggle-auto-float-mini-hud"
-              type="checkbox"
-              checked={autoFloatOnTabSwitch}
-              onChange={() => onToggleAutoFloatOnTabSwitch()}
-              className="rounded border-slate-600 bg-slate-900 text-cyan-400 focus:ring-cyan-400 cursor-pointer"
-            />
-            <span>Auto-float Mini HUD when switching tabs</span>
-          </label>
-        </div>
-      )}
     </div>
   );
 };

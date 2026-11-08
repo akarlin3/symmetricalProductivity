@@ -126,19 +126,19 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
   );
 
   return (
-    <div className="space-y-5 animate-tab-enter">
+    <div className="max-w-5xl mx-auto space-y-6 sm:space-y-8 animate-tab-enter">
       {/* Queued 5m Flashcard Block Banner (Triggered after Stress / Fatigue Reset completes) */}
       {timer.queuedRecoveryFlashcard5m && (
         <div
           id="queued-5m-flashcard-banner"
-          className="p-4 sm:p-5 rounded-3xl backdrop-blur-xl bg-emerald-500/15 border border-emerald-400/50 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] text-emerald-100 flex flex-wrap items-center justify-between gap-4"
+          className="p-5 sm:p-6 rounded-3xl backdrop-blur-xl bg-emerald-500/12 border border-white/[0.05] text-emerald-100 flex flex-wrap items-center justify-between gap-4"
         >
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <span className="px-2.5 py-0.5 rounded-full bg-emerald-400 text-slate-950 font-mono text-[10px] font-bold uppercase">
                 Post-Reset Queue Active
               </span>
-              <h2 className="text-sm sm:text-base font-bold text-white">
+              <h2 className="font-serif text-xl sm:text-2xl font-medium tracking-tight text-white">
                 5m Flashcard Recovery Block Queued
               </h2>
             </div>
@@ -148,7 +148,7 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
           </div>
 
           <div className="flex items-center gap-2.5">
-            <div className="px-3.5 py-2 rounded-xl bg-black/50 border border-emerald-400/50 font-mono tabular-nums text-lg font-bold text-emerald-300">
+            <div className="px-3.5 py-2 rounded-xl bg-black/50 border border-white/[0.05] font-mono font-light tabular-nums text-lg text-emerald-300">
               {formatMMSS(timer.recoveryFlashcardSecondsLeft)}
             </div>
             <button
@@ -173,7 +173,7 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
               id="btn-complete-recovery-flashcard"
               type="button"
               onClick={onCompleteRecoveryFlashcard5m}
-              className="px-3.5 py-2 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] border border-emerald-400/40 text-emerald-100 font-semibold text-xs cursor-pointer"
+              className="px-3.5 py-2 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/[0.05] text-emerald-100 font-semibold text-xs cursor-pointer"
             >
               Complete 5m Block
             </button>
@@ -182,30 +182,30 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
       )}
 
       {/* SPLIT-SCREEN 12-COLUMN BENTO HUD */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-8 items-start">
         {/* LEFT COLUMN (5 COLS, STICKY): 280x280 DUAL-RING TIMER HUD */}
         <section
           aria-labelledby="timer-engine-heading"
-          className="lg:col-span-5 lg:sticky lg:top-24 rounded-3xl bento-surface p-5 sm:p-6 flex flex-col justify-between space-y-5"
+          className="lg:col-span-5 lg:sticky lg:top-24 rounded-3xl bento-surface border border-white/[0.05] p-6 sm:p-8 flex flex-col justify-between space-y-5"
         >
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span
                 id="timer-stage-badge"
-                className={`px-2.5 py-1 rounded-full font-mono text-[11px] font-bold uppercase tracking-wider border ${
+                className={`px-2.5 py-1 rounded-full font-mono text-[11px] uppercase tracking-wider border ${
                   timer.mode === 'WORK_20M' && timer.workStage === 'IGNITION_5M'
-                    ? 'bg-amber-500/15 border-amber-400/50 text-amber-200'
+                    ? 'bg-amber-500/15 border-amber-400/35 text-amber-200'
                     : timer.mode === 'WORK_20M' && timer.workStage === 'MOMENTUM_15M'
-                    ? 'bg-cyan-500/15 border-cyan-400/50 text-cyan-200'
+                    ? 'bg-cyan-500/15 border-cyan-400/35 text-cyan-200'
                     : timer.mode === 'STRESS_RESET'
-                    ? 'bg-amber-500/20 border-amber-400/60 text-amber-200'
-                    : 'bg-indigo-500/15 border-indigo-400/50 text-indigo-200'
+                    ? 'bg-amber-500/20 border-amber-400/40 text-amber-200'
+                    : 'bg-indigo-500/15 border-indigo-400/35 text-indigo-200'
                 }`}
               >
                 {stageBadgeText}
               </span>
 
-              <span className="text-xs font-mono tabular-nums text-slate-400">
+              <span className="text-xs font-mono font-light tabular-nums text-slate-400">
                 Chain: {timer.chainedBlocksCount} / 2
               </span>
             </div>
@@ -213,11 +213,11 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
             <div>
               <h2
                 id="timer-engine-heading"
-                className="text-base sm:text-lg font-bold text-white tracking-tight"
+                className="font-serif text-2xl sm:text-3xl font-medium text-white tracking-tight"
               >
                 {timer.activeTaskTitle}
               </h2>
-              <p className="text-xs font-mono text-slate-400 mt-0.5">
+              <p className="text-xs font-mono text-slate-400 mt-1">
                 {metrics.durationPrefix} • Two-Stage {activeDurations.totalMinutes}m Block ({activeDurations.startupMinutes}m Startup → {activeDurations.momentumMinutes}m Momentum)
               </p>
             </div>

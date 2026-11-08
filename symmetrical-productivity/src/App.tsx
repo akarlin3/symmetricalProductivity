@@ -3699,13 +3699,13 @@ export function App() {
 
         {/* Status Toast Notice */}
         {statusNotice && (
-          <div className="max-w-7xl mx-auto px-3 sm:px-6 pt-3">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 pt-3">
             <div
               id="status-toast-banner"
-              className={`px-3.5 py-2 rounded-2xl border backdrop-blur-xl text-xs font-mono flex items-center justify-between ${
+              className={`px-4 py-2.5 rounded-2xl border backdrop-blur-xl text-xs font-mono flex items-center justify-between ${
                 isEveningTheme
-                  ? 'bg-amber-950/80 border-amber-500/50 text-amber-200'
-                  : 'bg-cyan-950/80 border-cyan-500/50 text-cyan-200'
+                  ? 'bg-amber-950/80 border-amber-500/40 text-amber-200'
+                  : 'bg-cyan-950/80 border-cyan-500/40 text-cyan-200'
               }`}
             >
               <span>{statusNotice}</span>
@@ -3721,7 +3721,7 @@ export function App() {
         )}
 
         {/* Active Tab Viewport */}
-        <main className="max-w-7xl mx-auto px-3 sm:px-6 py-5">
+        <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
           {activeTab === 'PIPELINE' && (
             <Tab1Pipeline
               state={state}
@@ -4845,10 +4845,8 @@ export function App() {
 
       {/* Footer */}
       <footer
-        className={`max-w-6xl w-full mx-auto px-3 sm:px-6 py-4 border-t text-[11px] font-mono tabular-nums flex flex-wrap items-center justify-between gap-2 transition-colors duration-500 ${
-          isEveningTheme
-            ? 'border-amber-900/40 text-stone-400'
-            : 'border-slate-800/70 text-slate-400'
+        className={`max-w-5xl w-full mx-auto px-4 sm:px-6 py-5 border-t border-white/[0.05] text-[11px] font-mono tabular-nums flex flex-wrap items-center justify-between gap-2 transition-colors duration-500 ${
+          isEveningTheme ? 'text-stone-400' : 'text-slate-400'
         }`}
       >
         <span>SymmetryManager PWA • Web &amp; Capacitor Android Ready</span>
@@ -4861,32 +4859,24 @@ export function App() {
       <nav
         id="mobile-sticky-bottom-nav"
         aria-label="Mobile Thumb Navigation"
-        className={`sm:hidden fixed bottom-0 inset-x-0 z-40 border-t backdrop-blur-xl transition-colors duration-500 ${
+        className={`sm:hidden fixed bottom-0 inset-x-0 z-40 border-t border-white/[0.05] backdrop-blur-xl transition-colors duration-500 ${
           isEveningTheme
-            ? 'bg-[#0c0a09]/85 border-amber-900/50 text-amber-100'
-            : 'bg-[#090d16]/85 border-slate-800/90 text-slate-100'
+            ? 'bg-[#0c0a09]/85 text-amber-100'
+            : 'bg-[#090d16]/85 text-slate-100'
         }`}
       >
-        <div className="grid grid-cols-4 gap-1 px-2 py-1.5">
+        <div className="grid grid-cols-3 gap-1.5 px-3 py-2">
           {(
             [
               {
                 id: 'PIPELINE' as TabId,
-                label: 'Pipeline',
+                label: 'Focus',
                 icon: ListChecks,
                 badge: `${metrics.totalCompletedBlocks}/${metrics.totalTargetBlocks}`,
               },
               {
-                id: 'TIMER' as TabId,
-                label: 'Timer',
-                icon: Timer,
-                badge: `${String(Math.floor(state.timer.secondsLeft / 60)).padStart(2, '0')}:${String(
-                  state.timer.secondsLeft % 60
-                ).padStart(2, '0')}`,
-              },
-              {
                 id: 'RECHARGE' as TabId,
-                label: 'Recharge',
+                label: 'Evening',
                 icon: Moon,
                 badge: metrics.isZeroWorkLeft ? 'OPEN' : '0m',
               },
@@ -4899,7 +4889,9 @@ export function App() {
             ] as const
           ).map((item) => {
             const Icon = item.icon;
-            const active = activeTab === item.id;
+            const active =
+              activeTab === item.id ||
+              (item.id === 'PIPELINE' && activeTab === 'TIMER');
             return (
               <button
                 key={item.id}
@@ -4908,24 +4900,20 @@ export function App() {
                   triggerHaptic([15]);
                   setActiveTab(item.id);
                 }}
-                className={`py-1.5 px-1 rounded-xl flex flex-col items-center justify-center gap-0.5 transition cursor-pointer ${
+                className={`py-1.5 px-2 rounded-full flex items-center justify-center gap-1.5 transition cursor-pointer ${
                   active
                     ? isEveningTheme
-                      ? 'bg-amber-500/20 text-amber-200 border border-amber-500/50'
-                      : 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/50'
+                      ? 'bg-amber-500/20 text-amber-200 border border-amber-500/35'
+                      : 'bg-cyan-500/15 text-cyan-200 border border-cyan-500/35'
                     : isEveningTheme
                     ? 'text-stone-400 hover:text-amber-200'
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                <div className="flex items-center gap-1">
-                  <Icon className="w-3.5 h-3.5 shrink-0" />
-                  <span className="text-[10px] font-mono tabular-nums font-bold">
-                    {item.badge}
-                  </span>
-                </div>
-                <span className="text-[11px] font-semibold leading-tight">
-                  {item.label}
+                <Icon className="w-3.5 h-3.5 shrink-0" />
+                <span className="text-xs font-medium">{item.label}</span>
+                <span className="text-[10px] font-mono font-light tabular-nums opacity-75">
+                  {item.badge}
                 </span>
               </button>
             );
