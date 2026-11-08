@@ -37,6 +37,7 @@ import {
 } from '../state/defaultState';
 import { triggerHaptic } from '../utils/haptics';
 import { playHarmonicChord, SOUNDSCAPE_METADATA, soundEngine } from '../utils/soundEngine';
+import { AveryCorpEmblem } from './AveryCorpEmblem';
 
 interface HeaderBarProps {
   state: SymmetryState;
@@ -195,30 +196,17 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                 : ''
             }`}
           >
-            <button
+            <AveryCorpEmblem
               id="header-brand-prism-trigger"
-              type="button"
+              size={36}
+              variant="image"
+              cropMode="mark-only"
+              isTimerActive={isWorkTimerRunning}
+              architectUnlocked={architectModeUnlocked}
+              showPreviewPopover
               onClick={handleBrandPrismTap}
-              aria-label="SymmetryManager Geometric Prism Logo"
-              className={`w-9 h-9 rounded-xl flex items-center justify-center border font-mono font-bold text-xs tracking-tighter transition-all duration-500 cursor-pointer select-none ${
-                isEveningTheme
-                  ? 'bg-amber-500/15 border-amber-400/35 text-amber-200 shadow-[inset_0_1px_0_0_rgba(255,251,235,0.18)]'
-                  : 'bg-sky-500/15 border-sky-400/40 text-sky-300 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18)]'
-              }`}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <polygon points="12 2 22 19 2 19" />
-                <line x1="12" y1="2" x2="12" y2="19" />
-              </svg>
-            </button>
+              ariaLabel="AveryCorp Institute Header Emblem (5-Tap Architect Trigger)"
+            />
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h1
@@ -278,6 +266,14 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                   </span>
                 </span>
               </div>
+              {architectModeUnlocked && (
+                <div
+                  id="header-averycorp-micro-subtitle"
+                  className="text-[9px] font-mono uppercase tracking-[0.18em] text-amber-300/80 mt-0.5 select-none"
+                >
+                  AVERYCORP INSTITUTE • EST. 2026
+                </div>
+              )}
             </div>
           </div>
 

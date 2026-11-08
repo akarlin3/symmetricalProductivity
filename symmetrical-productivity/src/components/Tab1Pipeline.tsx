@@ -653,8 +653,12 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
           className="p-4 rounded-2xl bento-hero-border-evening text-amber-100 flex flex-wrap items-center justify-between gap-3"
         >
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/50 flex items-center justify-center">
-              <Lock className="w-5 h-5 text-amber-300 shrink-0" />
+            <div className="w-10 h-10 rounded-full overflow-hidden bg-[#121b2d] border border-amber-400/50 flex items-center justify-center shrink-0">
+              <img
+                src="/averycorp-emblem.jpeg"
+                alt="AveryCorp End-of-Shift Seal"
+                className="w-full h-full object-cover scale-[1.65] -translate-y-[8%]"
+              />
             </div>
             <div>
               <h2 className="text-sm font-bold uppercase tracking-wider font-mono text-amber-200">

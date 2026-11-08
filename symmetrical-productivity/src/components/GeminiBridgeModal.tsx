@@ -32,6 +32,7 @@ import {
   resolveCurrentBandwidth,
 } from '../utils/geminiExporter';
 import { triggerHaptic } from '../utils/haptics';
+import { AveryCorpEmblem } from './AveryCorpEmblem';
 
 interface GeminiBridgeModalProps {
   isOpen: boolean;
@@ -347,15 +348,12 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
               }`}
             >
               <div className="flex items-center gap-3">
-                <div
-                  className={`w-10 h-10 rounded-2xl flex items-center justify-center border ${
-                    isEveningTheme
-                      ? 'bg-amber-500/20 border-amber-400/40 text-amber-300'
-                      : 'bg-sky-500/20 border-sky-400/40 text-sky-300'
-                  }`}
-                >
-                  <Sparkles className="w-5 h-5" />
-                </div>
+                <AveryCorpEmblem
+                  size={40}
+                  variant="image"
+                  cropMode="mark-only"
+                  ariaLabel="AveryCorp Institute Sync with Gemini Seal"
+                />
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <h2 className="text-base sm:text-lg font-bold tracking-tight">

@@ -26,6 +26,7 @@ import {
 import { computeShiftMetrics } from '../state/defaultState';
 import { BreathingVisualizer478 } from './BreathingVisualizer478';
 import { triggerHaptic } from '../utils/haptics';
+import { AveryCorpEmblem } from './AveryCorpEmblem';
 
 interface Tab3RechargeProps {
   state: SymmetryState;
@@ -143,14 +144,22 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
 
       {/* Header Banner */}
       <div className="flex flex-wrap items-end justify-between gap-4 border-b border-amber-500/20 pb-4">
-        <div>
-          <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-widest text-amber-300/90">
-            <Moon className="w-3.5 h-3.5 text-amber-400" />
-            <span>LOW-BLUE-LIGHT MODE • ZERO GAMIFICATION</span>
+        <div className="flex items-center gap-3.5">
+          <AveryCorpEmblem
+            size={44}
+            variant="image"
+            cropMode="mark-only"
+            ariaLabel="AveryCorp End-of-Shift Seal"
+          />
+          <div>
+            <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-widest text-amber-300/90">
+              <Moon className="w-3.5 h-3.5 text-amber-400" />
+              <span>LOW-BLUE-LIGHT MODE • ZERO GAMIFICATION</span>
+            </div>
+            <h2 className="font-serif text-3xl sm:text-4xl text-amber-50 tracking-normal mt-1">
+              Evening Recharge Menu
+            </h2>
           </div>
-          <h2 className="font-serif text-3xl sm:text-4xl text-amber-50 tracking-normal mt-1">
-            Evening Recharge Menu
-          </h2>
         </div>
 
         {/* Gate Pill or Shift Lock Status */}
