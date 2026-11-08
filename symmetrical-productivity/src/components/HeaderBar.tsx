@@ -9,12 +9,14 @@ import {
   Moon,
   RotateCcw,
   Sliders,
+  Sparkles,
   Sun,
   Zap,
 } from 'lucide-react';
 import { FixedEventType, SymmetryState, TabId } from '../types/symmetry';
 import {
   computeShiftMetrics,
+  formatRolloverHourLabel,
   getLogicalDayKey,
   isPre4amRolloverWindow,
 } from '../state/defaultState';
@@ -27,18 +29,12 @@ interface HeaderBarProps {
   onOpenTodayLogDrawer: () => void;
   onOpenPipelineDrawer: () => void;
   onOpenStateModal: () => void;
+  onOpenOnboardingWizard?: () => void;
   onToggleAssistantDrawer: () => void;
   onToggleZeroWorkSimulation: () => void;
   onResetDefault: () => void;
   isEveningTheme: boolean;
 }
-
-const FIXED_EVENT_LABELS: Record<FixedEventType, string | null> = {
-  NONE: null,
-  LAB_2H: 'Fixed Event: 09:00 AM – 11:00 AM Lab (~2h)',
-  VOLUNTEER: 'Fixed Event: 01:00 PM – 03:00 PM Volunteer Shift',
-  EVENING_OUTING_6PM: 'Fixed Event: 6:00 PM Evening Outing',
-};
 
 export const HeaderBar: React.FC<HeaderBarProps> = ({
   state,
@@ -47,15 +43,25 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   onOpenTodayLogDrawer,
   onOpenPipelineDrawer,
   onOpenStateModal,
+  onOpenOnboardingWizard,
   onToggleAssistantDrawer,
   onToggleZeroWorkSimulation,
   onResetDefault,
   isEveningTheme,
 }) => {
   const metrics = computeShiftMetrics(state);
-  const fixedEventDisplay = FIXED_EVENT_LABELS[state.fixedEvent];
-  const logicalDay = state.logicalDayKey || getLogicalDayKey();
-  const isLateShiftPre4am = isPre4amRolloverWindow();
+  const rolloverHour = state.logicalDayRolloverHour ?? 4;
+  const rolloverLabel = formatRolloverHourLabel(rolloverHour);
+  const shutdownTime = state.earlyEveningShutdownTime || '6:00 PM';
+  const fixedEventLabels: Record<FixedEventType, string | null> = {
+    NONE: null,
+    LAB_2H: 'Fixed Event: 09:00 AM – 11:00 AM Lab (~2h)',
+    VOLUNTEER: 'Fixed Event: 01:00 PM – 03:00 PM Volunteer Shift',
+    EVENING_OUTING_6PM: `Fixed Event: ${shutdownTime} Evening Outing`,
+  };
+  const fixedEventDisplay = fixedEventLabels[state.fixedEvent];
+  const logicalDay = state.logicalDayKey || getLogicalDayKey(new Date(), rolloverHour);
+  const isLateShiftPreRollover = isPre4amRolloverWindow(new Date(), rolloverHour);
   const todayLoggedCount = (state.todayBlockLog || []).filter(
     (entry) => entry.logicalDate === logicalDay
   ).length;
@@ -140,11 +146,14 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                       ? 'bg-stone-900/70 border-amber-900/50 text-amber-200/80'
                       : 'bg-white/[0.03] border-white/[0.08] text-slate-400'
                   }`}
-                  title="4:00 AM Day-Rollover Boundary (hours < 4 count as previous shift day)"
+                  title={`${rolloverLabel} Day-Rollover Boundary`}
                 >
                   <Clock className="w-3 h-3" />
                   <span>
-                    Shift {logicalDay} {isLateShiftPre4am ? '(Pre-4AM Window)' : '(4AM Rollover)'}
+                    Shift {logicalDay}{' '}
+                    {isLateShiftPreRollover
+                      ? `(Pre-${rolloverHour === 0 ? '12AM' : `${rolloverHour}AM`} Window)`
+                      : `(${rolloverHour === 0 ? '12AM' : `${rolloverHour}AM`} Rollover)`}
                   </span>
                 </span>
               </div>
@@ -207,7 +216,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             </div>
           </div>
 
-          {/* Utility Buttons: Planning Assistant, Today's Log, 7-Day Pipeline Drawer, Simulate 0m Work Left, State.md Import/Export */}
+          {/* Utility Buttons: Planning Assistant, Today's Log, 7-Day Pipeline Drawer, Simulate 0m Work Left, Profile Wizard, State.md Import/Export */}
           <div className="flex items-center gap-1.5">
             <button
               id="btn-open-planning-assistant"
@@ -242,7 +251,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                   ? 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/45 text-amber-100'
                   : 'bg-cyan-500/10 hover:bg-cyan-500/20 border-cyan-400/40 text-cyan-200'
               }`}
-              title="Open Editable Today's Block Log drawer (since 4:00 AM logical day)"
+              title={`Open Editable Today's Block Log drawer (since ${rolloverLabel} logical day)`}
             >
               <ListChecks className="w-3.5 h-3.5 shrink-0" />
               <span>Today&apos;s Log ({todayLoggedCount} blocks)</span>
@@ -289,6 +298,23 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               )}
             </button>
 
+            {onOpenOnboardingWizard && (
+              <button
+                id="btn-header-open-onboarding-wizard"
+                type="button"
+                onClick={onOpenOnboardingWizard}
+                className={`px-2.5 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1.5 cursor-pointer ${
+                  isEveningTheme
+                    ? 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/45 text-amber-100'
+                    : 'bg-indigo-500/15 hover:bg-indigo-500/25 border-indigo-400/45 text-indigo-100'
+                }`}
+                title="Switch / Reset Profile Archetype Template & Onboarding Wizard"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Profile Archetype</span>
+              </button>
+            )}
+
             <button
               id="btn-open-state-io"
               type="button"
@@ -298,10 +324,10 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                   ? 'bg-white/[0.04] hover:bg-white/[0.08] border-amber-500/25 text-amber-100'
                   : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.09] text-slate-200'
               }`}
-              title="Open State Sync modal (Copy State JSON / Markdown, Import State JSON, New Day Reset)"
+              title="Open Settings & State Sync modal (Switch / Reset Profile Template, Day-Boundary Preferences, State Sync)"
             >
               <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">State Sync</span>
+              <span className="hidden sm:inline">Settings &amp; Sync</span>
             </button>
 
             <button

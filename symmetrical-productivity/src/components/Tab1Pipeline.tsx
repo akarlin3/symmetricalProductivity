@@ -316,10 +316,11 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
     const cleanStartup =
       newProjStartup.trim() || 'Open file and complete initial 5m startup step.';
 
+    const floorLen = state.baselineBlocks.length || 7;
     const exceedsClosedListCap = state.projectQueue.length >= 3;
     const forcesSurgeDay =
       state.loadMode !== 'SURGE' &&
-      7 + blocks > state.customModeBlockAdjustment;
+      floorLen + blocks > state.customModeBlockAdjustment;
 
     if (exceedsClosedListCap || forcesSurgeDay) {
       triggerHaptic([15]);
@@ -334,7 +335,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
             ? `Closed List is full (${state.projectQueue.length}/3 items) and adding a ${blocks}-block deliverable exceeds today's ${state.loadMode} ceiling.`
             : exceedsClosedListCap
             ? `Closed List is at its 3-item hard cap (${state.projectQueue.length}/3 items locked).`
-            : `Adding a ${blocks}-block deliverable alongside the 7-block Baseline Floor would force a Surge day.`,
+            : `Adding a ${blocks}-block deliverable alongside the ${floorLen}-block Baseline Floor would force a Surge day.`,
       });
       return;
     }
@@ -1040,7 +1041,9 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     <option value="NONE">None (Duration-Only)</option>
                     <option value="LAB_2H">Lab (~2h: 09:00–11:00 AM)</option>
                     <option value="VOLUNTEER">Volunteer (01:00–03:00 PM)</option>
-                    <option value="EVENING_OUTING_6PM">6:00 PM Evening Outing</option>
+                    <option value="EVENING_OUTING_6PM">
+                      {state.earlyEveningShutdownTime || '6:00 PM'} Evening Outing
+                    </option>
                   </select>
                   <button
                     id="btn-simulate-exam-proximity"
@@ -1115,7 +1118,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     Full Daily Runway (Block 1 → [0m work left — Hard Shutdown])
                   </h3>
                   <p className="text-[11px] font-mono text-slate-400">
-                    4 Flashcards spaced early/mid-shift (never final block) • 3 Half-Chapter blocks • 100% Discretionary locked to Closed List #1 • Click any row to launch timer.
+                    {flashcardBlocks.length} Flashcard/Recall blocks spaced early/mid-shift (never final block) • {halfChapterBlocks.length} Core Reading/Synthesis blocks • 100% Discretionary locked to Closed List #1 • Click any row to launch timer.
                   </p>
                 </div>
 
@@ -1233,11 +1236,11 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
 
           {/* -------------------------------------------------------------------
               MIDDLE BENTO ROW (2 COLUMNS):
-              LEFT = 7-BLOCK DAILY CORE BASELINE (SEGMENTED PROGRESS PILLS)
+              LEFT = DAILY CORE BASELINE (SEGMENTED PROGRESS PILLS)
               RIGHT = LOCKED FOCUS #1 DELIVERABLE (8/4-BLOCK SEGMENTED BAR)
              ------------------------------------------------------------------- */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* LEFT MIDDLE BENTO CARD: 7-BLOCK DAILY CORE BASELINE */}
+            {/* LEFT MIDDLE BENTO CARD: DAILY CORE BASELINE */}
             <section
               id="bento-baseline-card"
               aria-labelledby="baseline-heading"
@@ -1247,7 +1250,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <span className="text-[10px] font-mono uppercase tracking-widest text-cyan-300 font-bold">
-                      DAILY CORE FLOOR • 7 BLOCKS
+                      DAILY CORE FLOOR • {state.baselineBlocks.length} BLOCKS
                     </span>
                     <h3
                       id="baseline-heading"
@@ -1257,15 +1260,18 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     </h3>
                   </div>
                   <span className="px-2.5 py-1 rounded-xl bg-white/[0.05] border border-white/[0.1] font-mono text-xs font-bold tabular-nums text-cyan-200">
-                    {metrics.completedBaselineCount} / 7
+                    {metrics.completedBaselineCount} / {state.baselineBlocks.length}
                   </span>
                 </div>
 
-                {/* Group A: 4 Flashcard Segments (1 Anatomy + 3 Comp, 250-card cap) */}
+                {/* Group A: Flashcard / Recall Segments */}
                 <div className="p-3.5 rounded-2xl bg-black/25 border border-white/[0.07] space-y-2.5">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-[11px] font-mono font-bold text-slate-200">
-                      4 Flashcard Blocks (1 Anat + 3 Comp)
+                      {flashcardBlocks.length === 4 &&
+                      (!state.profilePresetId || state.profilePresetId === 'AVERY_DEFAULT')
+                        ? '4 Flashcard Blocks (1 Anat + 3 Comp)'
+                        : `${flashcardBlocks.length} Recall / Triage Blocks`}
                     </span>
                     <button
                       id="btn-toggle-early-clearance"
@@ -1287,13 +1293,27 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     </button>
                   </div>
 
-                  {/* 4 Tactile Flashcard Progress Pill Segments */}
-                  <div className="grid grid-cols-4 gap-1.5">
+                  {/* Tactile Flashcard Progress Pill Segments */}
+                  <div
+                    className="grid gap-1.5"
+                    style={{
+                      gridTemplateColumns: `repeat(${Math.max(
+                        1,
+                        flashcardBlocks.length
+                      )}, minmax(0, 1fr))`,
+                    }}
+                  >
                     {flashcardBlocks.map((b, idx) => {
                       const blockedAsFinal =
                         isFinalBlockOfNight && !b.completed && !b.bankedViaEarlyClearance;
                       const isSelected = selectedBaseline?.id === b.id;
-                      const shortTag = idx === 0 ? 'ANAT 1' : `COMP ${idx}`;
+                      const shortTag =
+                        (!state.profilePresetId || state.profilePresetId === 'AVERY_DEFAULT') &&
+                        flashcardBlocks.length === 4
+                          ? idx === 0
+                            ? 'ANAT 1'
+                            : `COMP ${idx}`
+                          : `REC ${idx + 1}`;
                       return (
                         <button
                           key={b.id}
@@ -1364,18 +1384,29 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                   </div>
                 </div>
 
-                {/* Group B: 3 Half-Chapter Segments (2 Reading/Equations + 1 Synthesis) */}
+                {/* Group B: Half-Chapter / Deep Reading & Synthesis Segments */}
                 <div className="p-3.5 rounded-2xl bg-black/25 border border-white/[0.07] space-y-2.5">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-mono font-bold text-slate-200">
-                      3 Half-Chapter Blocks (2 Read/Eq + 1 Synth)
+                      {halfChapterBlocks.length === 3 &&
+                      (!state.profilePresetId || state.profilePresetId === 'AVERY_DEFAULT')
+                        ? '3 Half-Chapter Blocks (2 Read/Eq + 1 Synth)'
+                        : `${halfChapterBlocks.length} Core Reading & Synthesis Blocks`}
                     </span>
                     <span className="text-[10px] font-mono text-slate-400">
                       {state.preExamTaperActive ? 'Synth Canceled' : 'In + Out'}
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-1.5">
+                  <div
+                    className="grid gap-1.5"
+                    style={{
+                      gridTemplateColumns: `repeat(${Math.max(
+                        1,
+                        halfChapterBlocks.length
+                      )}, minmax(0, 1fr))`,
+                    }}
+                  >
                     {halfChapterBlocks.map((b, idx) => {
                       const isSelected = selectedBaseline?.id === b.id;
                       const isCanceledByTaper =
@@ -1384,7 +1415,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                         b.category === 'SYNTHESIS'
                           ? isCanceledByTaper
                             ? 'CANCELED'
-                            : 'SYNTH 1'
+                            : `SYNTH ${idx + 1}`
                           : `READ ${idx + 1}`;
                       return (
                         <button
@@ -1517,9 +1548,9 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     <div className="flex items-center justify-between text-[11px] font-mono text-slate-300">
                       <span>
                         {primaryProject.presetType === 'PAPER_8'
-                          ? '8-Block Paper Sprint'
+                          ? `8-Block ${state.taskWeights?.heavyLabel || '2-Page Paper'}`
                           : primaryProject.presetType === 'SLIDES_4'
-                          ? '4-Block Slide Deck'
+                          ? `4-Block ${state.taskWeights?.mediumLabel || 'Slide Deck'}`
                           : `${primaryProject.totalBlocks}-Block Deliverable`}
                       </span>
                       <span className="text-emerald-300 font-bold">
@@ -1679,8 +1710,12 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       }
                       className="bg-slate-950 border border-white/[0.1] rounded-lg px-2 py-1 text-[11px] font-mono text-slate-200"
                     >
-                      <option value="PAPER_8">2-Page Paper (8 blks)</option>
-                      <option value="SLIDES_4">Slide Deck (4 blks)</option>
+                      <option value="PAPER_8">
+                        {state.taskWeights?.heavyLabel || '2-Page Paper'} (8 blks)
+                      </option>
+                      <option value="SLIDES_4">
+                        {state.taskWeights?.mediumLabel || 'Slide Deck'} (4 blks)
+                      </option>
                       <option value="CUSTOM">Custom</option>
                     </select>
                     {newProjPreset === 'CUSTOM' && (
@@ -1905,7 +1940,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     Micro-Reset
                   </div>
                   <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
-                    Stand, water, eyes off screen (max 2 chained blocks).
+                    {state.breakOptions?.l1Label || 'Stand, water, eyes off screen'} (max 2 chained blocks).
                   </p>
                 </div>
 
@@ -1954,9 +1989,21 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                   <div className="flex flex-wrap gap-1 mt-1.5">
                     {(
                       [
-                        { id: 'ESPRESSO' as Level2BreakProtocol, label: 'Espresso', icon: Coffee },
-                        { id: 'BASS_GUITAR_5M' as Level2BreakProtocol, label: '5m Bass', icon: Music },
-                        { id: 'TENS_NORMATEC_15M' as Level2BreakProtocol, label: 'Normatec', icon: Activity },
+                        {
+                          id: 'ESPRESSO' as Level2BreakProtocol,
+                          label: state.breakOptions?.l2EspressoLabel || 'Espresso',
+                          icon: Coffee,
+                        },
+                        {
+                          id: 'BASS_GUITAR_5M' as Level2BreakProtocol,
+                          label: state.breakOptions?.l2MusicLabel || '5m Bass',
+                          icon: Music,
+                        },
+                        {
+                          id: 'TENS_NORMATEC_15M' as Level2BreakProtocol,
+                          label: state.breakOptions?.l2PhysicalLabel || 'Normatec',
+                          icon: Activity,
+                        },
                       ] as const
                     ).map((p) => (
                       <button

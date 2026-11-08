@@ -175,6 +175,42 @@ export type RechargePacingStage =
   | 'WINDOW_40M'
   | 'MANDATORY_BREAK_60M';
 
+export interface FluidCategoryConfig {
+  label: string;
+  activeTitle: string;
+  subtitle: string;
+  startupStep: string;
+}
+
+export interface FluidCategoriesMap {
+  CAT1_MUSIC: FluidCategoryConfig;
+  CAT4_COMFORT: FluidCategoryConfig;
+}
+
+export type ProfilePresetId =
+  | 'AVERY_DEFAULT'
+  | 'ACADEMIC_RESEARCHER'
+  | 'SOFTWARE_ENGINEER'
+  | 'WRITER_CREATIVE'
+  | 'BLANK_CUSTOM';
+
+export interface TaskWeightsConfig {
+  heavyLabel: string; // e.g. "2-Page Paper", "Paper", "System Build", "Chapter/Book"
+  heavyBlocks: number; // Locked at 8 blocks
+  mediumLabel: string; // e.g. "Slide Deck", "Presentation", "Feature Spec", "Essay"
+  mediumBlocks: number; // Locked at 4 blocks
+}
+
+export interface BreakOptionsConfig {
+  l1Label: string; // 3-5m Same-Task Micro-Reset description
+  l2EspressoLabel: string;
+  l2MusicLabel: string;
+  l2PhysicalLabel: string;
+  stressBreathingLabel: string;
+  stressEspressoLabel: string;
+  stressBootsLabel: string;
+}
+
 export interface RechargeState {
   endOfShiftLocked: boolean;
   manualEveningPreview: boolean;
@@ -205,6 +241,7 @@ export interface RechargeState {
   checkInModalOpen: boolean;
   checkInMilestone: 20 | 40;
   stickySlots: Record<StickyKey, StickySlotState>;
+  fluidCategories?: FluidCategoriesMap;
   completedLog?: string[];
 }
 
@@ -239,6 +276,7 @@ export interface RoadmapRung {
 export interface RoadmapTrack {
   id: TrackId;
   name: string;
+  archetypeRole?: string;
   categoryLabel: 'CORE TRACK' | 'ZERO-QUOTA SANDBOX';
   isSandbox: boolean;
   activeThisWeek: boolean;
@@ -274,7 +312,13 @@ export interface TodayBlockLogEntry {
 
 export interface SymmetryState {
   version: string;
-  logicalDayKey?: string; // 4:00 AM boundary day key (hours < 4 counts as previous day)
+  profilePresetId?: ProfilePresetId;
+  profileName?: string;
+  logicalDayRolloverHour?: number; // Default: 4 (4:00 AM), adjustable 0..6 (12:00 AM to 6:00 AM)
+  earlyEveningShutdownTime?: string; // Default: '6:00 PM'
+  taskWeights?: TaskWeightsConfig;
+  breakOptions?: BreakOptionsConfig;
+  logicalDayKey?: string; // Logical day boundary key (hours < logicalDayRolloverHour counts as previous day)
   todayBlockLog: TodayBlockLogEntry[];
   upcomingMilestones: string[];
   loadMode: LoadMode;
@@ -299,4 +343,5 @@ export interface SymmetryState {
   recharge: RechargeState;
   roadmapTracks: RoadmapTrack[];
 }
+
 

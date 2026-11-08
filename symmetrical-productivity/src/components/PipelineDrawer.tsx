@@ -55,7 +55,7 @@ export const InteractivePipelineTable: React.FC<InteractivePipelineTableProps> =
         defaultEvent === 'LAB_2H'
           ? '09:00 AM – 11:00 AM Lab Shift (~2h)'
           : defaultEvent === 'EVENING_OUTING_6PM'
-          ? '6:00 PM Early Shutdown'
+          ? `${state.earlyEveningShutdownTime || '6:00 PM'} Early Shutdown`
           : day.fixedEventTimeLabel,
     });
   };
@@ -97,7 +97,7 @@ export const InteractivePipelineTable: React.FC<InteractivePipelineTableProps> =
         nextEvent === 'LAB_2H'
           ? '09:00 AM – 11:00 AM Lab Shift (~2h)'
           : nextEvent === 'EVENING_OUTING_6PM'
-          ? '6:00 PM Early Shutdown'
+          ? `${state.earlyEveningShutdownTime || '6:00 PM'} Early Shutdown`
           : undefined,
       earlyMorningAnchor:
         nextEvent === 'LAB_2H' ? true : day.earlyMorningAnchor,
@@ -135,7 +135,9 @@ export const InteractivePipelineTable: React.FC<InteractivePipelineTableProps> =
               <th className="py-2.5 px-3">Day (Click to Cycle Mode)</th>
               <th className="py-2.5 px-3">Load Mode</th>
               <th className="py-2.5 px-3">Net Target &amp; Project Blocks</th>
-              <th className="py-2.5 px-3">Anchor Chips (2h Lab / 6:00 PM Shutdown)</th>
+              <th className="py-2.5 px-3">
+                Anchor Chips (2h Lab / {state.earlyEveningShutdownTime || '6:00 PM'} Shutdown)
+              </th>
               <th className="py-2.5 px-3">Morning Anchor / Bridge</th>
             </tr>
           </thead>
@@ -270,7 +272,7 @@ export const InteractivePipelineTable: React.FC<InteractivePipelineTableProps> =
                             : 'bg-slate-950 hover:bg-slate-900 border-slate-700 text-slate-300'
                         }`}
                       >
-                        6:00 PM Early Shutdown
+                        {state.earlyEveningShutdownTime || '6:00 PM'} Early Shutdown
                       </button>
                     </div>
                     {day.fixedEventTimeLabel && (

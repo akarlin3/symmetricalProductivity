@@ -3,12 +3,22 @@ import { SymmetryState, TodayBlockLogEntry } from '../types/symmetry';
 export const STORAGE_KEY = 'symmetry_manager_state_v1';
 
 /**
- * 4:00 AM Day-Rollover Boundary:
- * Any local hour < 4 (00:00 – 03:59 AM) counts as part of the previous logical day.
+ * Logical Day-Rollover Boundary (Default 4:00 AM, adjustable 12:00 AM – 6:00 AM):
+ * Any local hour < rolloverHour counts as part of the previous logical day.
  */
-export function getLogicalDayKey(date: Date = new Date()): string {
+export function formatRolloverHourLabel(rolloverHour: number = 4): string {
+  const clamped = Math.max(0, Math.min(6, Math.round(rolloverHour)));
+  if (clamped === 0) return '12:00 AM';
+  return `${clamped}:00 AM`;
+}
+
+export function getLogicalDayKey(
+  date: Date = new Date(),
+  rolloverHour: number = 4
+): string {
+  const clampedHour = Math.max(0, Math.min(6, Math.round(rolloverHour)));
   const shifted = new Date(date.getTime());
-  if (shifted.getHours() < 4) {
+  if (shifted.getHours() < clampedHour) {
     shifted.setDate(shifted.getDate() - 1);
   }
   const y = shifted.getFullYear();
@@ -17,8 +27,12 @@ export function getLogicalDayKey(date: Date = new Date()): string {
   return `${y}-${m}-${d}`;
 }
 
-export function isPre4amRolloverWindow(date: Date = new Date()): boolean {
-  return date.getHours() < 4;
+export function isPre4amRolloverWindow(
+  date: Date = new Date(),
+  rolloverHour: number = 4
+): boolean {
+  const clampedHour = Math.max(0, Math.min(6, Math.round(rolloverHour)));
+  return date.getHours() < clampedHour;
 }
 
 export interface ExamProximityInfo {
@@ -180,6 +194,25 @@ export const DEFAULT_TODAY_BLOCK_LOG: TodayBlockLogEntry[] = [
 
 export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
   version: '1.0.0',
+  profilePresetId: 'AVERY_DEFAULT',
+  profileName: 'Avery Default (Medical Physics, Writing & Maker)',
+  logicalDayRolloverHour: 4,
+  earlyEveningShutdownTime: '6:00 PM',
+  taskWeights: {
+    heavyLabel: '2-Page Paper',
+    heavyBlocks: 8,
+    mediumLabel: 'Slide Deck',
+    mediumBlocks: 4,
+  },
+  breakOptions: {
+    l1Label: 'Window gaze / water / 3 dishes',
+    l2EspressoLabel: 'Espresso',
+    l2MusicLabel: '5m Cold Song (Bass/Guitar)',
+    l2PhysicalLabel: '15m TENS / Normatec',
+    stressBreathingLabel: '4-7-8 Breathing Visual Pace',
+    stressEspressoLabel: 'Espresso Shot',
+    stressBootsLabel: 'Compression Boots',
+  },
   logicalDayKey: initialLogicalDay,
   todayBlockLog: DEFAULT_TODAY_BLOCK_LOG,
   upcomingMilestones: ['Nov 12: Anatomy Exam', 'Dec 8–9: Comp Exam'],
@@ -495,6 +528,20 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
         archivedTitles: [],
       },
     },
+    fluidCategories: {
+      CAT1_MUSIC: {
+        label: '1. Acoustic & Instrument Play',
+        activeTitle: 'Acoustic & Instrument Play',
+        subtitle: 'Bass / Guitar / Piano / Drums — fluid musical expression.',
+        startupStep: 'Play 1 familiar song cold — no DAW or drills',
+      },
+      CAT4_COMFORT: {
+        label: "4. It's Always Sunny in Philadelphia",
+        activeTitle: "It's Always Sunny in Philadelphia",
+        subtitle: 'Low-friction comfort show recharge away from the desk setup.',
+        startupStep: 'First 5m of episode away from work monitor',
+      },
+    },
     completedLog: [
       'Option 0: 20m Silent Stillness Window (1/2)',
       'Category 3A Fiction: Soul Music (20m Check-In cleared)',
@@ -505,6 +552,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     {
       id: 'science',
       name: 'Science / Clinical',
+      archetypeRole: 'Scientist',
       categoryLabel: 'CORE TRACK',
       isSandbox: false,
       activeThisWeek: true,
@@ -550,6 +598,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     {
       id: 'writing',
       name: 'Writing / Literature',
+      archetypeRole: 'Author',
       categoryLabel: 'CORE TRACK',
       isSandbox: false,
       activeThisWeek: true,
@@ -595,6 +644,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     {
       id: 'personal',
       name: 'Personal / Home',
+      archetypeRole: 'Partner',
       categoryLabel: 'CORE TRACK',
       isSandbox: false,
       activeThisWeek: true,
@@ -640,6 +690,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     {
       id: 'coding',
       name: 'Coding / Hardware',
+      archetypeRole: 'Coder-Maker',
       categoryLabel: 'ZERO-QUOTA SANDBOX',
       isSandbox: true,
       activeThisWeek: false,
@@ -685,6 +736,7 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     {
       id: 'music',
       name: 'Music',
+      archetypeRole: 'Musician',
       categoryLabel: 'ZERO-QUOTA SANDBOX',
       isSandbox: true,
       activeThisWeek: false,
@@ -741,8 +793,9 @@ export function formatMinutesAsWorkLeft(minutes: number): string {
 }
 
 export function computeShiftMetrics(state: SymmetryState) {
+  const floorLen = state.baselineBlocks?.length || 7;
   const totalTargetBlocks = state.preExamTaperActive
-    ? Math.min(9, Math.max(7, state.customModeBlockAdjustment))
+    ? Math.min(9, Math.max(floorLen, state.customModeBlockAdjustment))
     : state.customModeBlockAdjustment;
   const completedBaselineCount = state.baselineBlocks.filter(
     (b) => b.completed || b.bankedViaEarlyClearance
@@ -776,10 +829,9 @@ export function computeShiftMetrics(state: SymmetryState) {
  * from Block 1 down to `[0m work left — Hard Shutdown]`.
  *
  * Rules enforced:
- * 1. Spaces the 4 Flashcard blocks (1 Anatomy + 3 Comp) across early (Blocks 1-2) and mid-shift (Blocks 5-6)
- *    so flashcards are NEVER scheduled as the final blocks of the night.
- * 2. Groups Half-Chapter Reading (Blocks 3-4) and Half-Chapter Synthesis (Block 7), and locks 100% of
- *    remaining discretionary blocks (Blocks 8..N) to Closed List Focus #1.
+ * 1. Spaces Flashcard blocks across early and mid-shift so flashcards are NEVER scheduled as the final blocks of the night.
+ * 2. Groups Reading and Synthesis blocks in the baseline floor, and locks 100% of
+ *    remaining discretionary blocks to Closed List Focus #1.
  * 3. Interleaves Break rows automatically:
  *    - `Level 1 Micro-Reset (3–5m: Window gaze / water / 3 dishes)` between two blocks of the same task.
  *    - `Level 2 Task-Switch Buffer (10–15m: Espresso / 1-Song Riff / 15m TENS)` after any 2 chained blocks (40m)
@@ -790,19 +842,10 @@ export function computeShiftMetrics(state: SymmetryState) {
 export function generateSequentialChecklist(
   state: SymmetryState
 ): import('../types/symmetry').SequentialChecklistStep[] {
-  const totalTargetBlocks = Math.max(7, state.customModeBlockAdjustment);
-  const byId = new Map(state.baselineBlocks.map((b) => [b.id, b]));
-
-  const fcAnat1 = byId.get('fc_anat_1') || state.baselineBlocks[0];
-  const fcComp1 = byId.get('fc_comp_1') || state.baselineBlocks[1];
-  const fcComp2 = byId.get('fc_comp_2') || state.baselineBlocks[2];
-  const fcComp3 = byId.get('fc_comp_3') || state.baselineBlocks[3];
-  const hcRead1 = byId.get('hc_read_1') || state.baselineBlocks[4];
-  const hcRead2 = byId.get('hc_read_2') || state.baselineBlocks[5];
-  const hcSynth1 = byId.get('hc_synth_1') || state.baselineBlocks[6];
-
+  const baselineCount = state.baselineBlocks?.length || 7;
+  const totalTargetBlocks = Math.max(baselineCount, state.customModeBlockAdjustment);
   const primaryProject = state.projectQueue[0];
-  const discretionaryCount = Math.max(0, totalTargetBlocks - 7);
+  const discretionaryCount = Math.max(0, totalTargetBlocks - baselineCount);
 
   interface RawWorkSpec {
     blockNumber: number;
@@ -815,73 +858,53 @@ export function generateSequentialChecklist(
     banked: boolean;
   }
 
-  // Sequenced baseline blocks:
-  // Early-Shift Flashcards (1-2) -> Half-Chapter Reading (3-4) -> Mid-Shift Flashcards (5-6) -> Half-Chapter Synthesis (7)
-  // Followed by 100% Locked Focus #1 Discretionary Blocks (8..totalTargetBlocks)
+  const fcBlocks = state.baselineBlocks.filter(
+    (b) => b.category === 'FLASHCARDS_ANATOMY' || b.category === 'FLASHCARDS_COMP'
+  );
+  const readBlocks = state.baselineBlocks.filter((b) => b.category === 'READING');
+  const synthBlocks = state.baselineBlocks.filter((b) => b.category === 'SYNTHESIS');
+
+  const earlyFcCount = Math.ceil(fcBlocks.length / 2);
+  const earlyFc = fcBlocks.slice(0, earlyFcCount);
+  const midFc = fcBlocks.slice(earlyFcCount);
+
   const orderedBaselineSpecs: Omit<RawWorkSpec, 'blockNumber'>[] = [
-    {
-      sourceId: fcAnat1.id,
-      title: fcAnat1.title,
-      categoryBadge: 'EARLY SHIFT • FLASHCARDS (1/4)',
-      taskType: 'FLASHCARDS',
-      startupStep: fcAnat1.startupStep,
-      completed: fcAnat1.completed,
-      banked: Boolean(fcAnat1.bankedViaEarlyClearance),
-    },
-    {
-      sourceId: fcComp1.id,
-      title: fcComp1.title,
-      categoryBadge: 'EARLY SHIFT • FLASHCARDS (2/4)',
-      taskType: 'FLASHCARDS',
-      startupStep: fcComp1.startupStep,
-      completed: fcComp1.completed,
-      banked: Boolean(fcComp1.bankedViaEarlyClearance),
-    },
-    {
-      sourceId: hcRead1.id,
-      title: hcRead1.title,
-      categoryBadge: 'BASELINE FLOOR • HALF-CHAPTER READ (1/2)',
-      taskType: 'READING',
-      startupStep: hcRead1.startupStep,
-      completed: hcRead1.completed,
+    ...earlyFc.map((b, idx) => ({
+      sourceId: b.id,
+      title: b.title,
+      categoryBadge: `EARLY SHIFT • FLASHCARDS (${idx + 1}/${fcBlocks.length})`,
+      taskType: 'FLASHCARDS' as const,
+      startupStep: b.startupStep,
+      completed: b.completed,
+      banked: Boolean(b.bankedViaEarlyClearance),
+    })),
+    ...readBlocks.map((b, idx) => ({
+      sourceId: b.id,
+      title: b.title,
+      categoryBadge: `BASELINE FLOOR • HALF-CHAPTER READ (${idx + 1}/${readBlocks.length})`,
+      taskType: 'READING' as const,
+      startupStep: b.startupStep,
+      completed: b.completed,
       banked: false,
-    },
-    {
-      sourceId: hcRead2.id,
-      title: hcRead2.title,
-      categoryBadge: 'BASELINE FLOOR • HALF-CHAPTER READ (2/2)',
-      taskType: 'READING',
-      startupStep: hcRead2.startupStep,
-      completed: hcRead2.completed,
-      banked: false,
-    },
-    {
-      sourceId: fcComp2.id,
-      title: fcComp2.title,
-      categoryBadge: 'MID-SHIFT • FLASHCARDS (3/4)',
-      taskType: 'FLASHCARDS',
-      startupStep: fcComp2.startupStep,
-      completed: fcComp2.completed,
-      banked: Boolean(fcComp2.bankedViaEarlyClearance),
-    },
-    {
-      sourceId: fcComp3.id,
-      title: fcComp3.title,
-      categoryBadge: 'MID-SHIFT • FLASHCARDS (4/4)',
-      taskType: 'FLASHCARDS',
-      startupStep: fcComp3.startupStep,
-      completed: fcComp3.completed,
-      banked: Boolean(fcComp3.bankedViaEarlyClearance),
-    },
-    {
-      sourceId: hcSynth1.id,
-      title: hcSynth1.title,
+    })),
+    ...midFc.map((b, idx) => ({
+      sourceId: b.id,
+      title: b.title,
+      categoryBadge: `MID-SHIFT • FLASHCARDS (${earlyFcCount + idx + 1}/${fcBlocks.length})`,
+      taskType: 'FLASHCARDS' as const,
+      startupStep: b.startupStep,
+      completed: b.completed,
+      banked: Boolean(b.bankedViaEarlyClearance),
+    })),
+    ...synthBlocks.map((b) => ({
+      sourceId: b.id,
+      title: b.title,
       categoryBadge: 'BASELINE FLOOR • HALF-CHAPTER SYNTHESIS',
-      taskType: 'SYNTHESIS',
-      startupStep: hcSynth1.startupStep,
-      completed: hcSynth1.completed,
+      taskType: 'SYNTHESIS' as const,
+      startupStep: b.startupStep,
+      completed: b.completed,
       banked: false,
-    },
+    })),
   ];
 
   const workSpecs: RawWorkSpec[] = orderedBaselineSpecs.map((spec, idx) => ({
@@ -890,7 +913,7 @@ export function generateSequentialChecklist(
   }));
 
   for (let d = 1; d <= discretionaryCount; d++) {
-    const blockNumber = 7 + d;
+    const blockNumber = baselineCount + d;
     const isCompleted = d <= state.discretionaryBlocksCompletedToday;
     const projTitle = primaryProject?.title || 'Closed List Focus #1';
     const projStartup =
@@ -1065,12 +1088,25 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
       ? state.recharge.completedLog
       : DEFAULT_SYMMETRY_STATE.recharge.completedLog || [];
 
+  const rolloverHour = state.logicalDayRolloverHour ?? 4;
+  const rolloverLabel = formatRolloverHourLabel(rolloverHour);
+  const shutdownTime = state.earlyEveningShutdownTime || '6:00 PM';
+  const cat1Fluid =
+    state.recharge.fluidCategories?.CAT1_MUSIC ||
+    DEFAULT_SYMMETRY_STATE.recharge.fluidCategories!.CAT1_MUSIC;
+  const cat4Fluid =
+    state.recharge.fluidCategories?.CAT4_COMFORT ||
+    DEFAULT_SYMMETRY_STATE.recharge.fluidCategories!.CAT4_COMFORT;
+
   const lines: string[] = [
     '# SymmetryManager (`wl-balancer`) — Master `state.md`',
     '',
     '# Part I: On-Duty Capacity Governor State',
     '',
-    `- **Logical Shift Date (4:00 AM Boundary)**: ${state.logicalDayKey || getLogicalDayKey()}`,
+    `- **Profile Archetype**: ${state.profileName || DEFAULT_SYMMETRY_STATE.profileName} (\`${state.profilePresetId || 'AVERY_DEFAULT'}\`)`,
+    `- **Logical Shift Date (${rolloverLabel} Boundary)**: ${state.logicalDayKey || getLogicalDayKey(new Date(), rolloverHour)}`,
+    `- **Early Evening Shutdown Time (Outing Days)**: ${shutdownTime}`,
+    `- **Deliverable Task Weights**: ${state.taskWeights?.heavyLabel || '2-Page Paper'} (${state.taskWeights?.heavyBlocks || 8}b) • ${state.taskWeights?.mediumLabel || 'Slide Deck'} (${state.taskWeights?.mediumBlocks || 4}b)`,
     `- **Upcoming Milestones**: ${milestones}`,
     `- **Active Load Mode**: ${state.loadMode}${state.cruisePlus ? ' (Cruise+)' : ''}${
       state.preExamTaperActive ? ' [Pre-Exam Taper Active]' : ''
@@ -1082,7 +1118,7 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
     `- **Flashcard Review Queue**: ${state.flashcardsReviewedCount} / ${state.flashcardsDailyCap} cards (${state.earlyClearanceEnabled ? 'Early Clearance Active — Unused Blocks Banked' : 'Standard Pacing'})`,
     `- **Completed Deliverables Logged**: ${state.completedDeliverablesLog?.length || 0}`,
     '',
-    '## Today’s 7-Block Daily Core Baseline',
+    `## Today’s ${state.baselineBlocks.length}-Block Daily Core Baseline`,
     ...state.baselineBlocks.map(
       (b) =>
         `- [${b.completed ? 'x' : b.bankedViaEarlyClearance ? 'B' : ' '}] **${b.title}** (\`${b.category}\`) — 5m Startup: *${b.startupStep}*`
@@ -1114,7 +1150,7 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
     '| Day | Load Mode | Target Blocks | Extension Deduction | Fixed Event | Early Anchor |',
     '| :--- | :--- | :--- | :--- | :--- | :--- |',
     ...state.pipelineDays.map((d) => {
-      const effective = Math.max(7, d.baseTargetBlocks - d.deductedBlocksFromExtension);
+      const effective = Math.max(state.baselineBlocks.length || 7, d.baseTargetBlocks - d.deductedBlocksFromExtension);
       return `| ${d.dayLabel} | ${d.loadMode}${d.cruisePlus ? '+' : ''} | ${effective} (${d.baseTargetBlocks} base) | -${d.deductedBlocksFromExtension} blks | ${d.fixedEvent}${d.fixedEventTimeLabel ? ` (${d.fixedEventTimeLabel})` : ''} | ${d.earlyMorningAnchor ? 'Yes' : 'No'} |`;
     }),
     '',
@@ -1127,12 +1163,12 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
     `- **Option 0 (Rest / Stillness — 20m Silent Timer)**: ${state.recharge.option0Running ? 'Running' : 'Idle'} — Consecutive Windows: \`[${state.recharge.option0ConsecutiveWindows} / 2]\` (40m Cap -> Fork Check: "Go to Sleep" vs. "Start One 5m Activity")`,
     '',
     '## Categories 1–5 (Current Titles, `[X / 3]` Sticky Counters & 5m Startup Prompts)',
-    `- **Category 1 — Music [Fluid]**: Bass / Guitar / Piano / Drums — Counter: \`[Fluid]\` — 5m Startup: *Play 1 familiar song cold (zero DAW or drills)*`,
+    `- **Category 1 — Music [Fluid]**: ${cat1Fluid.activeTitle} — Counter: \`[Fluid]\` — 5m Startup: *${cat1Fluid.startupStep}*`,
     `- **Category 2 — Maker / Hardware [Sticky]**: ${state.recharge.stickySlots.CAT2_MAKER.activeTitle} — Counter: \`[${state.recharge.stickySlots.CAT2_MAKER.fiveMinStarts} / 3]\` — 5m Startup: *${state.recharge.stickySlots.CAT2_MAKER.startupStep}* — Backlog: ${state.recharge.stickySlots.CAT2_MAKER.backlogQueue.join(', ') || 'None'}`,
     `- **Category 3A — Media: Fiction [Sticky]**: ${state.recharge.stickySlots['3A_FICTION'].activeTitle} (${state.recharge.fictionSpeed}) — Counter: \`[${state.recharge.stickySlots['3A_FICTION'].fiveMinStarts} / 3]\` — 5m Startup: *${state.recharge.stickySlots['3A_FICTION'].startupStep}* — Backlog: ${state.recharge.stickySlots['3A_FICTION'].backlogQueue.join(', ') || 'None'}`,
     `- **Category 3B — Media: Nonfiction [Sticky]**: ${state.recharge.stickySlots['3B_NONFICTION'].activeTitle} — Counter: \`[${state.recharge.stickySlots['3B_NONFICTION'].fiveMinStarts} / 3]\` — 5m Startup: *${state.recharge.stickySlots['3B_NONFICTION'].startupStep}* — Backlog: ${state.recharge.stickySlots['3B_NONFICTION'].backlogQueue.join(', ') || 'None'}`,
     `- **Category 3C — Media: Video [Sticky]**: ${state.recharge.stickySlots['3C_VIDEO'].activeTitle} — Counter: \`[${state.recharge.stickySlots['3C_VIDEO'].fiveMinStarts} / 3]\` — 5m Startup: *${state.recharge.stickySlots['3C_VIDEO'].startupStep}* — Backlog: ${state.recharge.stickySlots['3C_VIDEO'].backlogQueue.join(', ') || 'None'}`,
-    `- **Category 4 — Comfort Show [Fluid]**: It's Always Sunny in Philadelphia — Counter: \`[Fluid]\` — 5m Startup: *Watch first 5m of episode away from work monitor*`,
+    `- **Category 4 — Comfort Show [Fluid]**: ${cat4Fluid.activeTitle} — Counter: \`[Fluid]\` — 5m Startup: *${cat4Fluid.startupStep}*`,
     `- **Category 5 — Gaming [Sticky]**: ${state.recharge.stickySlots.CAT5_GAMING.activeTitle} — Counter: \`[${state.recharge.stickySlots.CAT5_GAMING.fiveMinStarts} / 3]\` — 5m Startup: *${state.recharge.stickySlots.CAT5_GAMING.startupStep}* — Backlog: ${state.recharge.stickySlots.CAT5_GAMING.backlogQueue.join(', ') || 'None'}`,
     '',
     '## Off-Duty Completed Recharge Log',
@@ -1247,6 +1283,25 @@ export function parseFromStateInput(rawText: string): SymmetryState {
     baseState = {
       ...DEFAULT_SYMMETRY_STATE,
       ...parsed,
+      profilePresetId: parsed.profilePresetId || DEFAULT_SYMMETRY_STATE.profilePresetId,
+      profileName: parsed.profileName || DEFAULT_SYMMETRY_STATE.profileName,
+      logicalDayRolloverHour:
+        typeof parsed.logicalDayRolloverHour === 'number'
+          ? Math.max(0, Math.min(6, Math.round(parsed.logicalDayRolloverHour)))
+          : DEFAULT_SYMMETRY_STATE.logicalDayRolloverHour,
+      earlyEveningShutdownTime:
+        typeof parsed.earlyEveningShutdownTime === 'string' &&
+        parsed.earlyEveningShutdownTime.trim()
+          ? parsed.earlyEveningShutdownTime.trim()
+          : DEFAULT_SYMMETRY_STATE.earlyEveningShutdownTime,
+      taskWeights: {
+        ...DEFAULT_SYMMETRY_STATE.taskWeights!,
+        ...(parsed.taskWeights || {}),
+      },
+      breakOptions: {
+        ...DEFAULT_SYMMETRY_STATE.breakOptions!,
+        ...(parsed.breakOptions || {}),
+      },
       preExamTaperActive: Boolean(parsed.preExamTaperActive),
       todayBlockLog: Array.isArray(parsed.todayBlockLog)
         ? parsed.todayBlockLog
@@ -1282,6 +1337,16 @@ export function parseFromStateInput(rawText: string): SymmetryState {
       recharge: {
         ...DEFAULT_SYMMETRY_STATE.recharge,
         ...(parsed.recharge || {}),
+        fluidCategories: {
+          CAT1_MUSIC: {
+            ...DEFAULT_SYMMETRY_STATE.recharge.fluidCategories!.CAT1_MUSIC,
+            ...(parsed.recharge?.fluidCategories?.CAT1_MUSIC || {}),
+          },
+          CAT4_COMFORT: {
+            ...DEFAULT_SYMMETRY_STATE.recharge.fluidCategories!.CAT4_COMFORT,
+            ...(parsed.recharge?.fluidCategories?.CAT4_COMFORT || {}),
+          },
+        },
         completedLog: Array.isArray(parsed.recharge?.completedLog)
           ? parsed.recharge.completedLog
           : DEFAULT_SYMMETRY_STATE.recharge.completedLog,

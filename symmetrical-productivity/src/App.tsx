@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Check,
+  Clock,
   Copy,
   Download,
   FastForward,
@@ -14,6 +15,8 @@ import {
   PictureInPicture2,
   Play,
   RotateCcw,
+  Sliders,
+  Sparkles,
   Timer,
   Upload,
   X,
@@ -27,6 +30,7 @@ import {
   LoadMode,
   MediaSubTrackId,
   PipelineDay,
+  ProfilePresetId,
   ProjectPresetType,
   RechargeCategoryId,
   SmartIntakePlanResult,
@@ -43,6 +47,7 @@ import {
   computeShiftMetrics,
   createLogTimestamp,
   DEFAULT_SYMMETRY_STATE,
+  formatRolloverHourLabel,
   generateSequentialChecklist,
   getLogicalDayKey,
   getPreExamTaperSuggestion,
@@ -50,6 +55,12 @@ import {
   serializeToStateMarkdown,
   STORAGE_KEY,
 } from './state/defaultState';
+import {
+  buildStateForPreset,
+  CustomArchitectureDraft,
+  ONBOARDING_COMPLETED_KEY,
+  PROFILE_PRESET_METADATA,
+} from './state/profilePresets';
 import {
   cancelAllScheduledStageAlarms,
   fireSymmetryNotification,
@@ -65,6 +76,7 @@ import {
   setStoredGeminiApiKey,
 } from './utils/smartIntakePlanner';
 import { HeaderBar } from './components/HeaderBar';
+import { OnboardingWizardModal } from './components/OnboardingWizardModal';
 import { PipelineDrawer } from './components/PipelineDrawer';
 import { PlanningAssistantDrawer } from './components/PlanningAssistantDrawer';
 import { TodayLogDrawer } from './components/TodayLogDrawer';
@@ -92,6 +104,8 @@ export function App() {
   const [pipelineDrawerOpen, setPipelineDrawerOpen] = useState(false);
   const [assistantDrawerOpen, setAssistantDrawerOpen] = useState(false);
   const [stateModalOpen, setStateModalOpen] = useState(false);
+  const [onboardingWizardOpen, setOnboardingWizardOpen] = useState(false);
+  const [isFirstVisitOnboarding, setIsFirstVisitOnboarding] = useState(false);
   const [stateIoText, setStateIoText] = useState('');
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
   const [notificationLog, setNotificationLog] = useState<NotificationLogEntry[]>([]);
@@ -204,6 +218,15 @@ export function App() {
         setActiveTab('RECHARGE');
         showNotice('App Shortcut: Opened Evening Recharge Menu.');
       } else {
+        try {
+          const onboardingDone = localStorage.getItem(ONBOARDING_COMPLETED_KEY);
+          if (!onboardingDone) {
+            setIsFirstVisitOnboarding(true);
+            setOnboardingWizardOpen(true);
+          }
+        } catch {
+          // Ignore storage access errors
+        }
         const examCheck = getPreExamTaperSuggestion(new Date());
         if (examCheck.isWithin3Days) {
           showNotice(
@@ -213,6 +236,70 @@ export function App() {
       }
     }
   }, []);
+
+  const handleApplyProfilePreset = (
+    presetId: ProfilePresetId,
+    options?: {
+      logicalDayRolloverHour?: number;
+      earlyEveningShutdownTime?: string;
+      customDraft?: CustomArchitectureDraft;
+    }
+  ) => {
+    triggerHaptic([15]);
+    setState((prev) => {
+      const nextState = buildStateForPreset(presetId, {
+        logicalDayRolloverHour:
+          options?.logicalDayRolloverHour ?? prev.logicalDayRolloverHour ?? 4,
+        earlyEveningShutdownTime:
+          options?.earlyEveningShutdownTime ??
+          prev.earlyEveningShutdownTime ??
+          '6:00 PM',
+        customDraft: options?.customDraft,
+      });
+      pushUndoSnapshot(
+        prev,
+        `Switched Profile Archetype → ${nextState.profileName || presetId}`
+      );
+      return nextState;
+    });
+    try {
+      localStorage.setItem(ONBOARDING_COMPLETED_KEY, 'true');
+    } catch {
+      // Ignore storage errors
+    }
+    setIsFirstVisitOnboarding(false);
+    setOnboardingWizardOpen(false);
+    const meta = PROFILE_PRESET_METADATA.find((p) => p.id === presetId);
+    showNotice(
+      `Applied Profile Template: ${
+        options?.customDraft?.profileName || meta?.title || presetId
+      }.`
+    );
+  };
+
+  const handleUpdateDayBoundaryPreferences = (
+    rolloverHour: number,
+    shutdownTime: string
+  ) => {
+    const safeHour = Math.max(0, Math.min(6, Math.round(rolloverHour)));
+    const cleanShutdown = shutdownTime.trim() || '6:00 PM';
+    setState((prev) => ({
+      ...prev,
+      logicalDayRolloverHour: safeHour,
+      earlyEveningShutdownTime: cleanShutdown,
+      logicalDayKey: getLogicalDayKey(new Date(), safeHour),
+      pipelineDays: prev.pipelineDays.map((d) =>
+        d.fixedEvent === 'EVENING_OUTING_6PM'
+          ? { ...d, fixedEventTimeLabel: `${cleanShutdown} Early Shutdown` }
+          : d
+      ),
+    }));
+    showNotice(
+      `Updated Day-Boundary Preferences: Rollover → ${formatRolloverHourLabel(
+        safeHour
+      )}, Evening Outing Shutdown → ${cleanShutdown}.`
+    );
+  };
 
   useEffect(() => {
     if (!statusNotice) return;
@@ -357,18 +444,19 @@ export function App() {
     }
   }, [isEveningTheme]);
 
-  // 4:00 AM Day-Rollover Boundary Check (hours < 4 counts as the previous logical shift day)
+  // Logical Day-Rollover Boundary Check (configurable between 12:00 AM and 6:00 AM, default 4:00 AM)
   useEffect(() => {
     const checkFourAmRollover = () => {
-      const currentLogicalDay = getLogicalDayKey(new Date());
       setState((prev) => {
+        const rolloverHr = prev.logicalDayRolloverHour ?? 4;
+        const currentLogicalDay = getLogicalDayKey(new Date(), rolloverHr);
         if (!prev.logicalDayKey) {
           return { ...prev, logicalDayKey: currentLogicalDay };
         }
         if (prev.logicalDayKey === currentLogicalDay) {
           return prev;
         }
-        // Crossed 4:00 AM boundary into a new logical day
+        // Crossed rollover boundary into a new logical day
         const tomorrowDay = prev.pipelineDays[1];
         const appliedDeduction =
           prev.recharge.flowExtensionBlocksLoggedToday >= 3
@@ -730,7 +818,9 @@ export function App() {
     return {
       id: `log_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       timestamp: createLogTimestamp(now),
-      logicalDate: prev.logicalDayKey || getLogicalDayKey(now),
+      logicalDate:
+        prev.logicalDayKey ||
+        getLogicalDayKey(now, prev.logicalDayRolloverHour ?? 4),
       category: params.category,
       title: params.title,
       durationMinutes: params.durationMinutes,
@@ -2491,6 +2581,10 @@ export function App() {
             setStateIoText(serializeToStateMarkdown(state));
             setStateModalOpen(true);
           }}
+          onOpenOnboardingWizard={() => {
+            setIsFirstVisitOnboarding(false);
+            setOnboardingWizardOpen(true);
+          }}
           onToggleAssistantDrawer={() =>
             setAssistantDrawerOpen((prev) => !prev)
           }
@@ -3412,7 +3506,10 @@ export function App() {
                       trackCredited = 'music';
                       strokeCredited = 'OUTPUT';
                       rungCredited = 2;
-                      rechargeTitle = 'Acoustic / Instrument Cold Song (5m)';
+                      rechargeTitle = `${
+                        r.fluidCategories?.CAT1_MUSIC.activeTitle ||
+                        'Acoustic / Instrument Cold Song'
+                      } (5m)`;
                       updatedTracks = creditRoadmapTrack(
                         updatedTracks,
                         trackCredited,
@@ -3428,7 +3525,10 @@ export function App() {
                       trackCredited = 'personal';
                       strokeCredited = 'INPUT';
                       rungCredited = 1;
-                      rechargeTitle = "It's Always Sunny in Philadelphia (5m Start)";
+                      rechargeTitle = `${
+                        r.fluidCategories?.CAT4_COMFORT.activeTitle ||
+                        "It's Always Sunny in Philadelphia"
+                      } (5m Start)`;
                     }
 
                     const newEntry = createTodayLogEntry(prev, {
@@ -4003,17 +4103,17 @@ export function App() {
         </aside>
       )}
 
-      {/* State Sync Modal (Settings / Gemini API Key / 3-Part state.md Compiler & Parser, Copy for Gemini, Download state.md, New Day Reset) */}
+      {/* State Sync Modal (Settings / Profile Archetype / Day-Boundary Preferences / Gemini API Key / 3-Part state.md Compiler & Parser) */}
       {stateModalOpen && (
         <div
           id="modal-state-io"
           className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
         >
-          <div className="max-w-2xl w-full p-5 sm:p-6 rounded-2xl bg-slate-900 border border-slate-700 space-y-4 shadow-2xl my-auto">
+          <div className="max-w-3xl w-full p-5 sm:p-6 rounded-2xl bg-slate-900 border border-slate-700 space-y-4 shadow-2xl my-auto">
             <div className="flex items-center justify-between">
               <h2 className="text-base font-bold text-slate-100 flex items-center gap-2 font-mono">
-                <FileText className="w-4 h-4 text-sky-400" />
-                <span>Settings &amp; State Sync — 3-Part `state.md` Compiler &amp; Parser</span>
+                <Sliders className="w-4 h-4 text-sky-400" />
+                <span>Settings, Profile Archetypes &amp; 3-Part `state.md` Sync</span>
               </h2>
               <button
                 id="btn-close-state-modal"
@@ -4023,6 +4123,158 @@ export function App() {
               >
                 <X className="w-4 h-4" />
               </button>
+            </div>
+
+            {/* Profile Archetype & Onboarding Wizard Launcher + 1-Click Starter Templates */}
+            <div
+              id="settings-profile-archetype-section"
+              className="p-3.5 rounded-xl bg-slate-950 border border-indigo-500/40 space-y-2.5"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-mono font-bold text-indigo-300 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Profile Archetype &amp; Starter Templates</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Active Profile:{' '}
+                    <strong className="text-amber-300 font-mono">
+                      {state.profileName || 'Avery Default (Medical Physics, Writing & Maker)'}
+                    </strong>{' '}
+                    ({state.baselineBlocks.length}-Block Floor)
+                  </p>
+                </div>
+
+                <button
+                  id="btn-switch-reset-profile-template"
+                  type="button"
+                  onClick={() => {
+                    setStateModalOpen(false);
+                    setIsFirstVisitOnboarding(false);
+                    setOnboardingWizardOpen(true);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-mono font-extrabold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Switch / Reset Profile Template</span>
+                </button>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {PROFILE_PRESET_METADATA.map((preset) => {
+                  const isCurrent = state.profilePresetId === preset.id;
+                  return (
+                    <button
+                      key={preset.id}
+                      id={`settings-quick-preset-${preset.id}`}
+                      type="button"
+                      onClick={() => {
+                        if (preset.id === 'BLANK_CUSTOM') {
+                          setStateModalOpen(false);
+                          setIsFirstVisitOnboarding(false);
+                          setOnboardingWizardOpen(true);
+                        } else {
+                          handleApplyProfilePreset(preset.id);
+                          setStateModalOpen(false);
+                        }
+                      }}
+                      className={`px-2.5 py-1 rounded-lg font-mono text-[11px] border cursor-pointer transition ${
+                        isCurrent
+                          ? 'bg-indigo-500/30 border-indigo-400 text-indigo-100 font-bold'
+                          : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300'
+                      }`}
+                    >
+                      {preset.number}. {preset.shortTitle}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Universal Day-Boundary & Pacing Preferences */}
+            <div
+              id="settings-day-boundary-preferences"
+              className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5"
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs font-mono font-bold text-emerald-300 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Universal Day-Boundary &amp; Pacing Preferences</span>
+                </div>
+                <span className="text-[11px] font-mono text-slate-400">
+                  Shift Key: {state.logicalDayKey}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800 space-y-1">
+                  <label
+                    htmlFor="select-logical-day-rollover-hour"
+                    className="block text-[11px] font-mono font-bold text-slate-200"
+                  >
+                    Logical Day Rollover Hour (12:00 AM – 6:00 AM)
+                  </label>
+                  <select
+                    id="select-logical-day-rollover-hour"
+                    value={state.logicalDayRolloverHour ?? 4}
+                    onChange={(e) =>
+                      handleUpdateDayBoundaryPreferences(
+                        Number(e.target.value),
+                        state.earlyEveningShutdownTime || '6:00 PM'
+                      )
+                    }
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-cyan-200 font-bold"
+                  >
+                    {[0, 1, 2, 3, 4, 5, 6].map((hr) => (
+                      <option key={hr} value={hr}>
+                        {formatRolloverHourLabel(hr)}
+                        {hr === 4 ? ' (Default)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] font-mono text-slate-400">
+                    Hours before {formatRolloverHourLabel(state.logicalDayRolloverHour ?? 4)} stay on the active logical shift day.
+                  </p>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-slate-900/90 border border-slate-800 space-y-1">
+                  <label
+                    htmlFor="select-early-evening-shutdown-time"
+                    className="block text-[11px] font-mono font-bold text-slate-200"
+                  >
+                    Early Evening Shutdown Time (Evening Outing Days)
+                  </label>
+                  <select
+                    id="select-early-evening-shutdown-time"
+                    value={state.earlyEveningShutdownTime || '6:00 PM'}
+                    onChange={(e) =>
+                      handleUpdateDayBoundaryPreferences(
+                        state.logicalDayRolloverHour ?? 4,
+                        e.target.value
+                      )
+                    }
+                    className="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-amber-200 font-bold"
+                  >
+                    {[
+                      '5:00 PM',
+                      '5:30 PM',
+                      '6:00 PM',
+                      '6:30 PM',
+                      '7:00 PM',
+                      '7:30 PM',
+                      '8:00 PM',
+                    ].map((timeStr) => (
+                      <option key={timeStr} value={timeStr}>
+                        {timeStr}
+                        {timeStr === '6:00 PM' ? ' (Default)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[10px] font-mono text-slate-400">
+                    Sets the hard cutoff timestamp when Evening Outing fixed event is active.
+                  </p>
+                </div>
+              </div>
             </div>
 
             {/* Gemini API Key Storage & Fallback Section */}
@@ -4200,7 +4452,10 @@ export function App() {
 
                   const nextState: SymmetryState = {
                     ...state,
-                    logicalDayKey: getLogicalDayKey(),
+                    logicalDayKey: getLogicalDayKey(
+                      new Date(),
+                      state.logicalDayRolloverHour ?? 4
+                    ),
                     // Preserve consecutive Surge day counts & 4-Rung Roadmap totals
                     surgeConsecutiveDays: state.surgeConsecutiveDays,
                     roadmapTracks: state.roadmapTracks,
@@ -4281,7 +4536,7 @@ export function App() {
                   setStateIoText(serializeToStateMarkdown(nextState));
                   setStateModalOpen(false);
                   showNotice(
-                    `New Day Reset complete: Daily floor reset to 0/7, ceiling set to ${newCeiling} blocks${
+                    `New Day Reset complete: Daily floor reset to 0/${state.baselineBlocks.length}, ceiling set to ${newCeiling} blocks${
                       appliedDeduction > 0
                         ? ` (-${appliedDeduction} Flow Extension deduction applied)`
                         : ''
@@ -4297,7 +4552,7 @@ export function App() {
 
             <textarea
               id="textarea-state-io"
-              rows={12}
+              rows={10}
               value={stateIoText}
               onChange={(e) => setStateIoText(e.target.value)}
               className="w-full font-mono text-xs bg-slate-950 border border-slate-800 rounded-xl p-3 text-slate-200 focus:outline-none"
@@ -4328,6 +4583,24 @@ export function App() {
           </div>
         </div>
       )}
+
+      {/* Profile Archetype & Onboarding Wizard Modal */}
+      <OnboardingWizardModal
+        isOpen={onboardingWizardOpen}
+        isFirstVisit={isFirstVisitOnboarding}
+        state={state}
+        onClose={() => {
+          try {
+            localStorage.setItem(ONBOARDING_COMPLETED_KEY, 'true');
+          } catch {
+            // Ignore storage errors
+          }
+          setIsFirstVisitOnboarding(false);
+          setOnboardingWizardOpen(false);
+        }}
+        onApplyPreset={handleApplyProfilePreset}
+        onUpdateDayBoundaryPreferences={handleUpdateDayBoundaryPreferences}
+      />
     </div>
   );
 }

@@ -349,9 +349,24 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
               <div className="flex flex-wrap gap-1.5">
                 {(
                   [
-                    { id: 'BREATHING_478', label: '4-7-8 Breathing Visual Pace' },
-                    { id: 'ESPRESSO', label: 'Espresso Reset' },
-                    { id: 'COMPRESSION_BOOTS', label: 'Compression Boots' },
+                    {
+                      id: 'BREATHING_478',
+                      label:
+                        state.breakOptions?.stressBreathingLabel ||
+                        '4-7-8 Breathing Visual Pace',
+                    },
+                    {
+                      id: 'ESPRESSO',
+                      label:
+                        state.breakOptions?.stressEspressoLabel ||
+                        'Espresso Reset',
+                    },
+                    {
+                      id: 'COMPRESSION_BOOTS',
+                      label:
+                        state.breakOptions?.stressBootsLabel ||
+                        'Compression Boots',
+                    },
                   ] as { id: StressResetProtocol; label: string }[]
                 ).map((p) => (
                   <button
@@ -424,7 +439,8 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
                   3–5m Micro-Reset
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Max 2 chained 20m blocks [40m] before a mandatory 10–15m break.
+                  {state.breakOptions?.l1Label ||
+                    'Max 2 chained 20m blocks [40m] before a mandatory 10–15m break.'}
                 </p>
               </div>
 
@@ -459,15 +475,23 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
                 <div className="space-y-1 pt-1">
                   {(
                     [
-                      { id: 'ESPRESSO' as Level2BreakProtocol, label: 'Espresso', icon: Coffee },
+                      {
+                        id: 'ESPRESSO' as Level2BreakProtocol,
+                        label: state.breakOptions?.l2EspressoLabel || 'Espresso',
+                        icon: Coffee,
+                      },
                       {
                         id: 'BASS_GUITAR_5M' as Level2BreakProtocol,
-                        label: '5m Cold Song (Bass/Guitar)',
+                        label:
+                          state.breakOptions?.l2MusicLabel ||
+                          '5m Cold Song (Bass/Guitar)',
                         icon: Music,
                       },
                       {
                         id: 'TENS_NORMATEC_15M' as Level2BreakProtocol,
-                        label: '15m TENS / Normatec',
+                        label:
+                          state.breakOptions?.l2PhysicalLabel ||
+                          '15m TENS / Normatec',
                         icon: Activity,
                       },
                     ] as const

@@ -122,6 +122,12 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
                     {track.name}
                   </h3>
 
+                  {track.archetypeRole && (
+                    <span className="px-2.5 py-0.5 rounded-full font-mono text-[10px] font-bold uppercase bg-indigo-500/15 border border-indigo-400/40 text-indigo-200">
+                      {track.archetypeRole}
+                    </span>
+                  )}
+
                   {/* Rule 9: Zero-Quota Sandbox Tracks marked as "Flexible Pace / Coasting in Neutral" during inactive weeks with zero warnings */}
                   {track.isSandbox && (
                     <span

@@ -467,15 +467,20 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
 
             <div>
               <h3 className="font-serif text-2xl text-amber-50">
-                1. Acoustic &amp; Instrument Play
+                {recharge.fluidCategories?.CAT1_MUSIC.label ||
+                  '1. Acoustic & Instrument Play'}
               </h3>
               <p className="text-xs text-amber-100/80 mt-0.5">
-                Bass / Guitar / Piano / Drums — fluid musical expression.
+                {recharge.fluidCategories?.CAT1_MUSIC.subtitle ||
+                  'Bass / Guitar / Piano / Drums — fluid musical expression.'}
               </p>
             </div>
 
             <div className="p-3 rounded-2xl bg-black/45 border border-rose-400/25 font-mono text-xs text-rose-100">
-              5m Startup: “Play 1 familiar song cold — no DAW or drills”
+              5m Startup: “
+              {recharge.fluidCategories?.CAT1_MUSIC.startupStep ||
+                'Play 1 familiar song cold — no DAW or drills'}
+              ”
             </div>
           </div>
 
@@ -616,15 +621,20 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
 
             <div>
               <h3 className="font-serif text-2xl text-amber-50">
-                4. It&apos;s Always Sunny in Philadelphia
+                {recharge.fluidCategories?.CAT4_COMFORT.label ||
+                  "4. It's Always Sunny in Philadelphia"}
               </h3>
               <p className="text-xs text-amber-100/80 mt-0.5">
-                Low-friction comfort show recharge away from the desk setup.
+                {recharge.fluidCategories?.CAT4_COMFORT.subtitle ||
+                  'Low-friction comfort show recharge away from the desk setup.'}
               </p>
             </div>
 
             <div className="p-3 rounded-2xl bg-black/45 border border-amber-400/25 font-mono text-xs text-amber-100">
-              5m Startup: “First 5m of episode away from work monitor”
+              5m Startup: “
+              {recharge.fluidCategories?.CAT4_COMFORT.startupStep ||
+                'First 5m of episode away from work monitor'}
+              ”
             </div>
           </div>
 
