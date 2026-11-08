@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Activity,
@@ -10,6 +10,7 @@ import {
   ExternalLink,
   FileJson,
   FileText,
+  Link2,
   Share2,
   Sparkles,
   Upload,
@@ -28,9 +29,12 @@ import {
   GeminiExportMode,
   MODE_A_COMMAND_PREFIX,
   MODE_B_PROMPT_PRESETS,
-  parseGeminiResponseToState,
   resolveCurrentBandwidth,
 } from '../utils/geminiExporter';
+import {
+  buildGeminiSyncDeepLinkUrl,
+  parseGeminiResponseToStatePatch,
+} from '../utils/geminiImporter';
 import { triggerHaptic } from '../utils/haptics';
 import { AveryCorpEmblem } from './AveryCorpEmblem';
 
@@ -42,6 +46,9 @@ interface GeminiBridgeModalProps {
   onChangeBandwidth?: (bandwidth: BandwidthLevel) => void;
   onShowNotice: (msg: string) => void;
   isEveningTheme?: boolean;
+  initialTab?: 'EXPORT' | 'IMPORT';
+  initialImportText?: string;
+  initialImportSourceLabel?: string | null;
 }
 
 type BridgeTabId = 'EXPORT' | 'IMPORT';
@@ -54,8 +61,13 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
   onChangeBandwidth,
   onShowNotice,
   isEveningTheme = false,
+  initialTab,
+  initialImportText,
+  initialImportSourceLabel,
 }) => {
-  const [activeBridgeTab, setActiveBridgeTab] = useState<BridgeTabId>('EXPORT');
+  const [activeBridgeTab, setActiveBridgeTab] = useState<BridgeTabId>(
+    initialTab || 'EXPORT'
+  );
   const [selectedExportMode, setSelectedExportMode] =
     useState<GeminiExportMode>('MODE_A_SKILL_SYNC');
   const [selectedPresetId, setSelectedPresetId] = useState<string>(
@@ -65,8 +77,28 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
     MODE_B_PROMPT_PRESETS[0].prompt
   );
   const [copiedBanner, setCopiedBanner] = useState<string | null>(null);
-  const [importText, setImportText] = useState<string>('');
+  const [importText, setImportText] = useState<string>(initialImportText || '');
+  const [importSourceLabel, setImportSourceLabel] = useState<string | null>(
+    initialImportSourceLabel || null
+  );
   const [importError, setImportError] = useState<string | null>(null);
+  const [isDraggingFile, setIsDraggingFile] = useState<boolean>(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (isOpen && initialTab) {
+      setActiveBridgeTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
+
+  useEffect(() => {
+    if (isOpen && typeof initialImportText === 'string' && initialImportText.trim()) {
+      setImportText(initialImportText);
+      setImportSourceLabel(initialImportSourceLabel || '1-Tap Sync');
+      setImportError(null);
+      setActiveBridgeTab('IMPORT');
+    }
+  }, [isOpen, initialImportText, initialImportSourceLabel]);
 
   const metrics = computeShiftMetrics(state);
   const rolloverHour = state.logicalDayRolloverHour ?? 4;
@@ -92,20 +124,25 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
     });
   }, [state, selectedExportMode, customRecalibratePrompt, currentBandwidth]);
 
-  // Live preview of detected sections when user pastes into the Reverse Bridge tab
+  // Live preview of detected sections via Universal Multi-Format Parser (Formats A, B, C)
   const liveImportInspection = useMemo(() => {
     const trimmed = importText.trim();
     if (!trimmed) return null;
     try {
-      const result = parseGeminiResponseToState(trimmed, state);
+      const result = parseGeminiResponseToStatePatch(trimmed, state);
       return {
         valid: true,
+        formatLabel: result.formatLabel,
+        diffSummaryBanner: result.diffSummaryBanner,
         changes: result.appliedChanges,
         previewState: result.nextState,
+        highlights: result.detectedHighlights,
       };
     } catch (err) {
       return {
         valid: false,
+        formatLabel: null,
+        diffSummaryBanner: null,
         error: err instanceof Error ? err.message : 'Unrecognized format',
         changes: [] as string[],
       };
@@ -289,26 +326,55 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
     onShowNotice(msg);
   };
 
-  // Reverse Bridge: Parse & Apply pasted response from Gemini
+  // Reverse Bridge: Parse & Apply pasted/dropped/deep-linked response from Gemini
   const handleParseAndApplyImport = () => {
     setImportError(null);
     try {
-      const { nextState, appliedChanges } = parseGeminiResponseToState(
+      const { nextState, diffSummaryBanner } = parseGeminiResponseToStatePatch(
         importText,
         state
       );
       triggerHaptic([20, 40]);
-      const summary = appliedChanges.join(' • ');
-      onApplyImportedState(nextState, summary);
-      onShowNotice(`Synced from Gemini: ${summary}`);
+      onApplyImportedState(nextState, diffSummaryBanner);
+      onShowNotice(
+        `${diffSummaryBanner.replace(' — Apply?', '')} (Saved Undo snapshot — Cmd/Ctrl+Z to revert).`
+      );
       onClose();
     } catch (err) {
       const message =
         err instanceof Error
           ? err.message
-          : 'Could not parse Gemini response. Paste state.md or a JSON block.';
+          : 'Could not parse Gemini response. Paste state.md, a conversational plan, or a JSON block.';
       setImportError(message);
     }
+  };
+
+  const handleReadDroppedOrPickedFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      setImportText(text);
+      setImportSourceLabel(`Dropped File: ${file.name}`);
+      setImportError(null);
+      setActiveBridgeTab('IMPORT');
+      triggerHaptic([12]);
+    } catch {
+      setImportError(`Failed to read file "${file.name}".`);
+    }
+  };
+
+  const handleCopyDeepLinkUrl = async () => {
+    const sourcePayload =
+      importText.trim() ||
+      compileFullGeminiPayload(state, 'STATE_MD', {
+        bandwidth: currentBandwidth,
+      });
+    const deepLink = buildGeminiSyncDeepLinkUrl(sourcePayload);
+    await copyTextToClipboard(deepLink);
+    triggerHaptic([12]);
+    const msg =
+      'Copied ?geminiSync=<base64> Deep-Link URL to clipboard! Opening this link syncs the app in 1 tap.';
+    setCopiedBanner(msg);
+    onShowNotice(msg);
   };
 
   return (
@@ -786,6 +852,16 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
 
                       <div className="flex items-center gap-1.5">
                         <button
+                          id="btn-copy-deep-link-export"
+                          type="button"
+                          onClick={() => void handleCopyDeepLinkUrl()}
+                          className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-200 font-mono text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                          title="Copy clickable ?geminiSync=<base64> Deep-Link URL"
+                        >
+                          <Link2 className="w-3 h-3" />
+                          <span>Copy ?geminiSync= Link</span>
+                        </button>
+                        <button
                           id="btn-preview-copy-compiled-payload"
                           type="button"
                           onClick={async () => {
@@ -813,13 +889,62 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
                   </div>
                 </>
               ) : (
-                /* Tab 2: Reverse Bridge ("Import Response from Gemini") */
+                /* Tab 2: Reverse Bridge ("Import Response from Gemini" — 4 One-Click Methods) */
                 <div className="space-y-4">
-                  <div className="p-4 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 space-y-2">
+                  {/* Prominent Visual Diff Preview Banner ("Detected from Gemini: Cruise Mode, 7-Day Pipeline updated, Focus #1 set to '...' — Apply?") */}
+                  {liveImportInspection && liveImportInspection.valid && (
+                    <div
+                      id="gemini-diff-preview-confirmation-banner"
+                      className="p-4 rounded-2xl bg-emerald-950/50 border-2 border-emerald-400/70 shadow-[0_0_30px_-5px_rgba(52,211,153,0.35)] space-y-3"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="px-2 py-0.5 rounded-md bg-emerald-400/20 border border-emerald-400/50 text-emerald-200 font-mono text-[10px] font-bold uppercase">
+                              {importSourceLabel || 'Gemini Sync Diff Preview'}
+                            </span>
+                            {liveImportInspection.formatLabel && (
+                              <span className="text-[11px] font-mono text-emerald-300/90">
+                                {liveImportInspection.formatLabel}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-sm sm:text-base font-mono font-bold text-emerald-100">
+                            {liveImportInspection.diffSummaryBanner}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            id="btn-confirm-diff-preview-apply"
+                            type="button"
+                            onClick={handleParseAndApplyImport}
+                            className="px-4 py-2.5 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-mono font-bold text-xs flex items-center gap-1.5 shadow-[0_0_20px_rgba(52,211,153,0.4)] cursor-pointer"
+                          >
+                            <Check className="w-4 h-4 stroke-[2.5]" />
+                            <span>Apply Now (Cmd/Ctrl+Z Undo Ready)</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[11px] font-mono text-emerald-100/90 pt-1 border-t border-emerald-500/30">
+                        {liveImportInspection.changes.map((c, idx) => (
+                          <li key={idx} className="flex items-center gap-1.5">
+                            <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                            <span>{c}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div className="p-4 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <h3 className="text-sm font-bold text-emerald-200 flex items-center gap-2">
                         <ClipboardPaste className="w-4 h-4 text-emerald-400" />
-                        <span>Reverse Bridge — Paste Response from Gemini</span>
+                        <span>
+                          Universal 4-Method Gemini Importer (JSON • state.md • Conversational Plan)
+                        </span>
                       </h3>
                       <div className="flex flex-wrap items-center gap-1.5">
                         <button
@@ -834,17 +959,29 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
                                 const clip = await navigator.clipboard.readText();
                                 if (clip) {
                                   setImportText(clip);
+                                  setImportSourceLabel('1-Tap Clipboard Sync');
                                   setImportError(null);
+                                  triggerHaptic([12]);
                                 }
                               }
                             } catch {
                               // User can Cmd+V manually into textarea
                             }
                           }}
-                          className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-200 font-mono text-[11px] flex items-center gap-1 cursor-pointer"
+                          className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-200 font-mono text-[11px] font-bold flex items-center gap-1 cursor-pointer"
                         >
                           <ClipboardPaste className="w-3 h-3" />
-                          <span>Read Clipboard</span>
+                          <span>1-Tap Read Clipboard (Cmd/Ctrl+Shift+V)</span>
+                        </button>
+                        <button
+                          id="btn-reverse-bridge-copy-deep-link"
+                          type="button"
+                          onClick={() => void handleCopyDeepLinkUrl()}
+                          className="px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-sky-200 font-mono text-[11px] flex items-center gap-1 cursor-pointer"
+                          title="Generate clickable ?geminiSync=<base64> Deep-Link URL from current text or state"
+                        >
+                          <Link2 className="w-3 h-3" />
+                          <span>Copy ?geminiSync= Link</span>
                         </button>
                         <button
                           id="btn-reverse-bridge-load-live-state"
@@ -855,6 +992,7 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
                                 bandwidth: currentBandwidth,
                               })
                             );
+                            setImportSourceLabel('Live state.md');
                             setImportError(null);
                           }}
                           className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-mono text-[11px] cursor-pointer"
@@ -866,6 +1004,7 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
                             type="button"
                             onClick={() => {
                               setImportText('');
+                              setImportSourceLabel(null);
                               setImportError(null);
                             }}
                             className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 font-mono text-[11px] cursor-pointer"
@@ -877,55 +1016,92 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
                     </div>
 
                     <p className="text-xs text-slate-300 leading-relaxed">
-                      Paste <strong>any response from Gemini</strong> below—either a full or partial{' '}
-                      <code className="text-emerald-300">state.md</code> Markdown document, an updated{' '}
-                      <strong>7-Day Master Pipeline Table</strong>, updated{' '}
-                      <strong>Closed List #1–#3</strong> bullets, updated{' '}
-                      <strong>Evening Recharge</strong> titles, or a raw{' '}
-                      <code className="text-emerald-300">JSON</code> block—and click{' '}
-                      <strong>Parse &amp; Apply to App</strong>.
+                      Supports <strong>Format A</strong> (<code className="text-emerald-300">```json</code> or{' '}
+                      <code className="text-emerald-300">```symmetrical-sync</code> code blocks),{' '}
+                      <strong>Format B</strong> (<code className="text-emerald-300">state.md</code>{' '}
+                      <code className="text-emerald-300"># Part I / II / III</code>), and{' '}
+                      <strong>Format C</strong> (conversational Gemini replies with{' '}
+                      <code className="text-emerald-300">Day | Mode &amp; Fixed Anchors...</code> tables,{' '}
+                      <code className="text-emerald-300">[20m | ... work left]</code> checklists, or{' '}
+                      <code className="text-emerald-300">Tier 1 Cruise / Tier 2 Surge / Tier 3 Taper</code>).
                     </p>
+                  </div>
+
+                  {/* Method 4: Drag-and-Drop state.md / .json File Zone */}
+                  <div
+                    id="gemini-file-drop-zone"
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (!isDraggingFile) setIsDraggingFile(true);
+                    }}
+                    onDragLeave={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setIsDraggingFile(false);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setIsDraggingFile(false);
+                      const file = e.dataTransfer?.files?.[0];
+                      if (file) {
+                        void handleReadDroppedOrPickedFile(file);
+                      }
+                    }}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`p-3.5 rounded-2xl border-2 border-dashed transition cursor-pointer flex flex-wrap items-center justify-between gap-2 font-mono text-xs ${
+                      isDraggingFile
+                        ? 'border-emerald-400 bg-emerald-500/20 text-emerald-100'
+                        : 'border-slate-700 hover:border-emerald-400/60 bg-slate-900/50 text-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Upload className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>
+                        <strong>Drag &amp; Drop</strong> any <code className="text-emerald-300">state.md</code> or{' '}
+                        <code className="text-emerald-300">.json</code> file anywhere on the window (or click to browse)
+                      </span>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700 text-[11px] text-slate-200">
+                      Choose File…
+                    </span>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".md,.markdown,.json,.txt"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          void handleReadDroppedOrPickedFile(file);
+                        }
+                        e.target.value = '';
+                      }}
+                    />
                   </div>
 
                   <textarea
                     id="textarea-gemini-reverse-bridge-input"
-                    rows={12}
+                    rows={10}
                     value={importText}
                     onChange={(e) => {
                       setImportText(e.target.value);
                       setImportError(null);
                     }}
-                    placeholder="Paste Gemini's response here (Markdown state.md, 7-Day Pipeline Table, Closed List items, or JSON block)..."
+                    placeholder="Paste ANY Gemini response here (Format A JSON/symmetrical-sync block, Format B state.md, or Format C conversational 7-Day Pipeline table & [20m | ... work left] checklist)..."
                     className="w-full p-4 rounded-2xl bg-slate-950 border border-slate-800 focus:border-emerald-400 text-slate-100 font-mono text-xs leading-relaxed focus:outline-none"
                   />
 
-                  {/* Live Detection Preview */}
-                  {liveImportInspection && (
+                  {/* Invalid Format Warning */}
+                  {liveImportInspection && !liveImportInspection.valid && (
                     <div
                       id="gemini-reverse-bridge-detection-preview"
-                      className={`p-3.5 rounded-xl border font-mono text-xs ${
-                        liveImportInspection.valid
-                          ? 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200'
-                          : 'bg-amber-950/30 border-amber-500/40 text-amber-200'
-                      }`}
+                      className="p-3.5 rounded-xl border font-mono text-xs bg-amber-950/30 border-amber-500/40 text-amber-200"
                     >
-                      {liveImportInspection.valid ? (
-                        <div className="space-y-1">
-                          <div className="font-bold flex items-center gap-1.5">
-                            <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-                            <span>Ready to Apply — Detected Updates:</span>
-                          </div>
-                          <ul className="list-disc list-inside text-[11px] text-emerald-100/90 space-y-0.5">
-                            {liveImportInspection.changes.map((c, idx) => (
-                              <li key={idx}>{c}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <span>{liveImportInspection.error}</span>
-                        </div>
-                      )}
+                      <div className="flex items-center gap-2">
+                        <span>{liveImportInspection.error}</span>
+                      </div>
                     </div>
                   )}
 
@@ -965,7 +1141,19 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
             {/* Modal Footer */}
             <div className="px-5 py-3 border-t border-white/10 bg-black/40 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-slate-400">
               <span>
-                Shortcut: <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-slate-200">Cmd/Ctrl + G</kbd> to toggle Sync Hub anywhere
+                Shortcuts:{' '}
+                <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-slate-200">
+                  Cmd/Ctrl + G
+                </kbd>{' '}
+                Sync Hub •{' '}
+                <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-emerald-300">
+                  Cmd/Ctrl + Shift + V
+                </kbd>{' '}
+                1-Tap Sync from Clipboard •{' '}
+                <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-slate-200">
+                  Cmd/Ctrl + Z
+                </kbd>{' '}
+                Undo Import
               </span>
               <div className="flex items-center gap-3">
                 <button

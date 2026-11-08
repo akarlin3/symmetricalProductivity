@@ -4,6 +4,7 @@ import {
   BarChart3,
   Bot,
   Calendar,
+  ClipboardPaste,
   Clock,
   Command,
   Download,
@@ -58,6 +59,7 @@ interface HeaderBarProps {
   isEveningTheme: boolean;
   onOpenCommandDock?: () => void;
   onOpenGeminiBridgeModal?: () => void;
+  onOneTapSyncFromClipboard?: () => void;
   cinemaFocusMode?: boolean;
   onToggleCinemaFocusMode?: () => void;
   architectModeUnlocked?: boolean;
@@ -88,6 +90,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   isEveningTheme,
   onOpenCommandDock,
   onOpenGeminiBridgeModal,
+  onOneTapSyncFromClipboard,
   cinemaFocusMode = false,
   onToggleCinemaFocusMode,
   architectModeUnlocked = false,
@@ -681,6 +684,26 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                           <span>Sync with Gemini Hub</span>
                         </span>
                         <kbd className="text-[10px] font-mono text-sky-200/80">⌘G</kbd>
+                      </button>
+                    )}
+
+                    {onOneTapSyncFromClipboard && (
+                      <button
+                        id="btn-one-tap-sync-clipboard"
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic([14]);
+                          soundEngine.playTactileClick('UI_TAP');
+                          setMenuDrawerOpen(false);
+                          onOneTapSyncFromClipboard();
+                        }}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-400/25 text-xs font-medium text-emerald-100 flex items-center justify-between cursor-pointer"
+                      >
+                        <span className="flex items-center gap-2.5">
+                          <ClipboardPaste className="w-4 h-4 text-emerald-300" />
+                          <span>1-Tap Sync from Clipboard</span>
+                        </span>
+                        <kbd className="text-[10px] font-mono text-emerald-200/80">⌘⇧V</kbd>
                       </button>
                     )}
 
