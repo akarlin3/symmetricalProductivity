@@ -213,9 +213,33 @@ export interface RoadmapTrack {
   rungs: RoadmapRung[];
 }
 
+export type TodayBlockLogCategory =
+  | 'FLOOR_ANATOMY'
+  | 'FLOOR_COMP'
+  | 'FLOOR_READING'
+  | 'FLOOR_SYNTHESIS'
+  | 'PROJECT_FOCUS_1'
+  | 'FLOW_EXTENSION'
+  | 'EVENING_RECHARGE';
+
+export interface TodayBlockLogEntry {
+  id: string;
+  timestamp: string;
+  logicalDate: string;
+  category: TodayBlockLogCategory;
+  title: string;
+  durationMinutes: number;
+  roadmapTrack: string;
+  stroke: 'INPUT' | 'OUTPUT';
+  sourceBlockId?: string;
+  stickyKey?: StickyKey;
+  rungNumber?: 1 | 2 | 3 | 4;
+}
+
 export interface SymmetryState {
   version: string;
   logicalDayKey?: string; // 4:00 AM boundary day key (hours < 4 counts as previous day)
+  todayBlockLog: TodayBlockLogEntry[];
   upcomingMilestones: string[];
   loadMode: LoadMode;
   cruisePlus: boolean;
@@ -235,3 +259,4 @@ export interface SymmetryState {
   recharge: RechargeState;
   roadmapTracks: RoadmapTrack[];
 }
+

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Check,
   Copy,
@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { triggerHaptic } from './utils/haptics';
 import {
+  BaselineCategory,
   FixedEventType,
   Level2BreakProtocol,
   LoadMode,
@@ -28,10 +29,13 @@ import {
   SymmetryState,
   TabId,
   TimerRunMode,
+  TodayBlockLogCategory,
+  TodayBlockLogEntry,
   TrackId,
 } from './types/symmetry';
 import {
   computeShiftMetrics,
+  createLogTimestamp,
   DEFAULT_SYMMETRY_STATE,
   getLogicalDayKey,
   parseFromStateInput,
@@ -54,6 +58,8 @@ import {
 } from './utils/smartIntakePlanner';
 import { HeaderBar } from './components/HeaderBar';
 import { PipelineDrawer } from './components/PipelineDrawer';
+import { TodayLogDrawer } from './components/TodayLogDrawer';
+import { UndoToast, UndoToastState } from './components/UndoToast';
 import { Tab1Pipeline } from './components/Tab1Pipeline';
 import { Tab2TimerTriage } from './components/Tab2TimerTriage';
 import { Tab3Recharge } from './components/Tab3Recharge';
@@ -73,6 +79,7 @@ export function App() {
   });
 
   const [activeTab, setActiveTab] = useState<TabId>('PIPELINE');
+  const [todayLogDrawerOpen, setTodayLogDrawerOpen] = useState(false);
   const [pipelineDrawerOpen, setPipelineDrawerOpen] = useState(false);
   const [stateModalOpen, setStateModalOpen] = useState(false);
   const [stateIoText, setStateIoText] = useState('');
@@ -89,6 +96,32 @@ export function App() {
     getStoredGeminiApiKey()
   );
   const [apiKeyVersion, setApiKeyVersion] = useState(0);
+
+  // 10-Second Undo Toast Stack & Countdown
+  const undoStackRef = useRef<SymmetryState[]>([]);
+  const [undoToast, setUndoToast] = useState<UndoToastState | null>(null);
+  const [undoSecondsLeft, setUndoSecondsLeft] = useState<number>(10);
+
+  const pushUndoSnapshot = useCallback((snapshot: SymmetryState, label: string) => {
+    const cloned: SymmetryState = JSON.parse(JSON.stringify(snapshot));
+    undoStackRef.current = [cloned, ...undoStackRef.current.slice(0, 19)];
+    const expiresAtMs = Date.now() + 10_000;
+    setUndoToast({
+      id: `undo_${Date.now()}`,
+      label,
+      expiresAtMs,
+    });
+    setUndoSecondsLeft(10);
+  }, []);
+
+  const handleTriggerUndo = useCallback(() => {
+    const [latestSnapshot, ...rest] = undoStackRef.current;
+    if (!latestSnapshot) return;
+    undoStackRef.current = rest;
+    setState(latestSnapshot);
+    setUndoToast(null);
+    setStatusNotice('Undid last action — restored previous block counter, countdown, and Roadmap totals.');
+  }, []);
 
   const showNotice = (msg: string) => {
     setStatusNotice(msg);
@@ -309,6 +342,7 @@ export function App() {
         return {
           ...prev,
           logicalDayKey: currentLogicalDay,
+          todayBlockLog: [],
           customModeBlockAdjustment: newCeiling,
           midDayResetCompletedToday: false,
           flashcardsReviewedCount: 0,
@@ -387,8 +421,23 @@ export function App() {
     };
   }, []);
 
-  // Global Spacebar shortcut to start/pause the centerpiece Dual-Ring Timer
-  // and Cmd/Ctrl + J shortcut to focus the Smart Intake & Week Planner bar
+  // 10-Second Undo Toast Expiration Countdown
+  useEffect(() => {
+    if (!undoToast) return;
+    const tick = () => {
+      const remainingMs = undoToast.expiresAtMs - Date.now();
+      if (remainingMs <= 0) {
+        setUndoToast(null);
+      } else {
+        setUndoSecondsLeft(Math.max(1, Math.ceil(remainingMs / 1000)));
+      }
+    };
+    tick();
+    const id = window.setInterval(tick, 250);
+    return () => window.clearInterval(id);
+  }, [undoToast]);
+
+  // Global Keyboard Shortcuts: Cmd/Ctrl+J for Smart Intake, Cmd/Ctrl+Z for Undo, Spacebar to start/pause centerpiece Dual-Ring Timer
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'j') {
@@ -406,16 +455,27 @@ export function App() {
         return;
       }
 
-      if (e.code !== 'Space' || e.repeat) return;
       const target = e.target as HTMLElement | null;
-      if (
+      const isEditableInput =
         target &&
         (target.tagName === 'INPUT' ||
           target.tagName === 'TEXTAREA' ||
           target.tagName === 'SELECT' ||
-          target.tagName === 'BUTTON' ||
-          target.isContentEditable)
-      ) {
+          target.isContentEditable);
+
+      // Cmd+Z / Ctrl+Z triggers Undo when not typing in an input
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+        if (isEditableInput) return;
+        if (undoStackRef.current.length > 0) {
+          e.preventDefault();
+          triggerHaptic([15, 30]);
+          handleTriggerUndo();
+        }
+        return;
+      }
+
+      if (e.code !== 'Space' || e.repeat) return;
+      if (isEditableInput || (target && target.tagName === 'BUTTON')) {
         return;
       }
       e.preventDefault();
@@ -442,10 +502,16 @@ export function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activeTab, pipelineDrawerOpen]);
+  }, [activeTab, pipelineDrawerOpen, handleTriggerUndo]);
 
   const handleApplySmartIntakePlan = (plan: SmartIntakePlanResult) => {
-    setState((prev) => applySmartIntakePlanToState(prev, plan));
+    setState((prev) => {
+      pushUndoSnapshot(
+        prev,
+        `Applied Smart Intake Plan (${plan.todayLoadMode} • ${plan.closedListUpdates.length} Closed List items)`
+      );
+      return applySmartIntakePlanToState(prev, plan);
+    });
     setSmartIntakePreview(null);
     setSmartIntakeText('');
     showNotice(
@@ -535,6 +601,82 @@ export function App() {
     });
   };
 
+  // Helper to debit Roadmap Input (50%) or Output (50%)
+  const debitRoadmapTrack = (
+    prevTracks: SymmetryState['roadmapTracks'],
+    trackId: string,
+    ledgerType: 'INPUT' | 'OUTPUT',
+    rungNumber: 1 | 2 | 3 | 4 = ledgerType === 'INPUT' ? 1 : 3
+  ) => {
+    return prevTracks.map((t) => {
+      if (t.id !== trackId) return t;
+      return {
+        ...t,
+        inputBlocksCredited:
+          ledgerType === 'INPUT'
+            ? Math.max(0, t.inputBlocksCredited - 1)
+            : t.inputBlocksCredited,
+        outputBlocksCredited:
+          ledgerType === 'OUTPUT'
+            ? Math.max(0, t.outputBlocksCredited - 1)
+            : t.outputBlocksCredited,
+        rungs: t.rungs.map((r) =>
+          r.rungNumber === rungNumber
+            ? { ...r, completedBlocks: Math.max(0, r.completedBlocks - 1) }
+            : r
+        ),
+      };
+    });
+  };
+
+  const baselineCategoryToLogCategory = (
+    cat: BaselineCategory
+  ): TodayBlockLogCategory => {
+    if (cat === 'FLASHCARDS_ANATOMY') return 'FLOOR_ANATOMY';
+    if (cat === 'FLASHCARDS_COMP') return 'FLOOR_COMP';
+    if (cat === 'SYNTHESIS') return 'FLOOR_SYNTHESIS';
+    return 'FLOOR_READING';
+  };
+
+  const logCategoryToBaselineCategory = (
+    cat: TodayBlockLogCategory
+  ): BaselineCategory | null => {
+    if (cat === 'FLOOR_ANATOMY') return 'FLASHCARDS_ANATOMY';
+    if (cat === 'FLOOR_COMP') return 'FLASHCARDS_COMP';
+    if (cat === 'FLOOR_READING') return 'READING';
+    if (cat === 'FLOOR_SYNTHESIS') return 'SYNTHESIS';
+    return null;
+  };
+
+  const createTodayLogEntry = (
+    prev: SymmetryState,
+    params: {
+      category: TodayBlockLogCategory;
+      title: string;
+      durationMinutes: number;
+      roadmapTrack: string;
+      stroke: 'INPUT' | 'OUTPUT';
+      sourceBlockId?: string;
+      stickyKey?: StickyKey;
+      rungNumber?: 1 | 2 | 3 | 4;
+    }
+  ): TodayBlockLogEntry => {
+    const now = new Date();
+    return {
+      id: `log_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: createLogTimestamp(now),
+      logicalDate: prev.logicalDayKey || getLogicalDayKey(now),
+      category: params.category,
+      title: params.title,
+      durationMinutes: params.durationMinutes,
+      roadmapTrack: params.roadmapTrack,
+      stroke: params.stroke,
+      sourceBlockId: params.sourceBlockId,
+      stickyKey: params.stickyKey,
+      rungNumber: params.rungNumber,
+    };
+  };
+
   // Complete a 20m work block and route to the appropriate Break level
   const handleCompleteWorkBlockTransition = (prev: SymmetryState): SymmetryState => {
     const matchingBaseline = prev.baselineBlocks.find(
@@ -545,17 +687,31 @@ export function App() {
     let updatedDiscretionary = prev.discretionaryBlocksCompletedToday;
     let updatedProjects = prev.projectQueue;
     let updatedTracks = prev.roadmapTracks;
+    let newLogEntry: TodayBlockLogEntry;
 
     if (matchingBaseline) {
       updatedBaseline = prev.baselineBlocks.map((b) =>
         b.id === matchingBaseline.id ? { ...b, completed: true } : b
       );
+      const stroke: 'INPUT' | 'OUTPUT' =
+        matchingBaseline.category === 'SYNTHESIS' ? 'OUTPUT' : 'INPUT';
+      const rungNum: 1 | 2 | 3 | 4 =
+        matchingBaseline.category === 'SYNTHESIS' ? 2 : 1;
       updatedTracks = creditRoadmapTrack(
         updatedTracks,
         matchingBaseline.trackId,
-        matchingBaseline.category === 'SYNTHESIS' ? 'OUTPUT' : 'INPUT',
-        matchingBaseline.category === 'SYNTHESIS' ? 2 : 1
+        stroke,
+        rungNum
       );
+      newLogEntry = createTodayLogEntry(prev, {
+        category: baselineCategoryToLogCategory(matchingBaseline.category),
+        title: matchingBaseline.title,
+        durationMinutes: 20,
+        roadmapTrack: matchingBaseline.trackId,
+        stroke,
+        sourceBlockId: matchingBaseline.id,
+        rungNumber: rungNum,
+      });
     } else {
       updatedDiscretionary += 1;
       updatedProjects = prev.projectQueue.map((p) =>
@@ -566,12 +722,28 @@ export function App() {
             }
           : p
       );
-      const primaryTrack = prev.projectQueue[0]?.trackId || 'writing';
+      const primaryProj = prev.projectQueue[0];
+      const primaryTrack = primaryProj?.trackId || 'writing';
       updatedTracks = creditRoadmapTrack(updatedTracks, primaryTrack, 'OUTPUT', 3);
+      newLogEntry = createTodayLogEntry(prev, {
+        category: 'PROJECT_FOCUS_1',
+        title: primaryProj?.title || prev.timer.activeTaskTitle,
+        durationMinutes: 20,
+        roadmapTrack: primaryTrack,
+        stroke: 'OUTPUT',
+        sourceBlockId: primaryProj?.id,
+        rungNumber: 3,
+      });
     }
+
+    pushUndoSnapshot(
+      prev,
+      `Block Logged: ${newLogEntry.title} (${newLogEntry.durationMinutes}m)`
+    );
 
     const nextCandidate: SymmetryState = {
       ...prev,
+      todayBlockLog: [...(prev.todayBlockLog || []), newLogEntry],
       baselineBlocks: updatedBaseline,
       discretionaryBlocksCompletedToday: updatedDiscretionary,
       projectQueue: updatedProjects,
@@ -867,6 +1039,7 @@ export function App() {
             }
           } else {
             changed = true;
+            pushUndoSnapshot(prev, 'Block Logged: 5m Flashcard Recovery (5m)');
             dispatchLockScreenAlert(
               'WORK_BLOCK_COMPLETE',
               '5m Flashcard Recovery Block Complete',
@@ -885,6 +1058,15 @@ export function App() {
               'INPUT',
               1
             );
+            const recLogEntry = createTodayLogEntry(prev, {
+              category: 'FLOOR_COMP',
+              title: 'Stress Triage — 5m Flashcard Recovery Ramp',
+              durationMinutes: 5,
+              roadmapTrack: 'science',
+              stroke: 'INPUT',
+              rungNumber: 1,
+            });
+            next.todayBlockLog = [...(prev.todayBlockLog ?? []), recLogEntry];
           }
         }
 
@@ -956,6 +1138,10 @@ export function App() {
           } else {
             changed = true;
             const windows = prev.recharge.option0ConsecutiveWindows + 1;
+            pushUndoSnapshot(
+              prev,
+              `Block Logged: Option 0 Stillness (${windows}/2) (20m)`
+            );
             dispatchLockScreenAlert(
               'WORK_BLOCK_COMPLETE',
               'Option 0 Stillness Window Complete',
@@ -969,6 +1155,15 @@ export function App() {
               option0ConsecutiveWindows: windows,
               forkCheckModalOpen: windows >= 2,
             };
+            const optLogEntry = createTodayLogEntry(prev, {
+              category: 'EVENING_RECHARGE',
+              title: `Option 0 — Rest / Stillness Window (${windows}/2)`,
+              durationMinutes: 20,
+              roadmapTrack: 'personal',
+              stroke: 'INPUT',
+              rungNumber: 1,
+            });
+            next.todayBlockLog = [...(prev.todayBlockLog ?? []), optLogEntry];
           }
         }
 
@@ -1061,22 +1256,58 @@ export function App() {
       const target = prev.baselineBlocks.find((b) => b.id === blockId);
       if (!target) return prev;
       const nextCompleted = !target.completed;
+      const stroke: 'INPUT' | 'OUTPUT' =
+        target.category === 'SYNTHESIS' ? 'OUTPUT' : 'INPUT';
+      const rungNum: 1 | 2 | 3 | 4 = target.category === 'SYNTHESIS' ? 2 : 1;
+
       const updatedBaseline = prev.baselineBlocks.map((b) =>
         b.id === blockId
           ? { ...b, completed: nextCompleted, bankedViaEarlyClearance: false }
           : b
       );
+
       let updatedTracks = prev.roadmapTracks;
+      let updatedLog = prev.todayBlockLog || [];
+
       if (nextCompleted) {
         updatedTracks = creditRoadmapTrack(
           updatedTracks,
           target.trackId,
-          target.category === 'SYNTHESIS' ? 'OUTPUT' : 'INPUT',
-          target.category === 'SYNTHESIS' ? 2 : 1
+          stroke,
+          rungNum
         );
+        const newEntry = createTodayLogEntry(prev, {
+          category: baselineCategoryToLogCategory(target.category),
+          title: target.title,
+          durationMinutes: 20,
+          roadmapTrack: target.trackId,
+          stroke,
+          sourceBlockId: target.id,
+          rungNumber: rungNum,
+        });
+        updatedLog = [...updatedLog, newEntry];
+        pushUndoSnapshot(prev, `Block Logged: ${target.title} (20m)`);
+      } else {
+        updatedTracks = debitRoadmapTrack(
+          updatedTracks,
+          target.trackId,
+          stroke,
+          rungNum
+        );
+        // Remove the most recent log entry for this baseline block
+        const reverseIdx = [...updatedLog]
+          .reverse()
+          .findIndex((e) => e.sourceBlockId === target.id);
+        if (reverseIdx !== -1) {
+          const removeIdx = updatedLog.length - 1 - reverseIdx;
+          updatedLog = updatedLog.filter((_, idx) => idx !== removeIdx);
+        }
+        pushUndoSnapshot(prev, `Baseline Pill Unchecked: ${target.title} (20m)`);
       }
+
       return {
         ...prev,
+        todayBlockLog: updatedLog,
         baselineBlocks: updatedBaseline,
         roadmapTracks: updatedTracks,
       };
@@ -1095,6 +1326,12 @@ export function App() {
           bankedViaEarlyClearance: nextEnabled,
         };
       });
+      pushUndoSnapshot(
+        prev,
+        nextEnabled
+          ? 'Early Clearance Enabled: Unused Flashcards Banked'
+          : 'Early Clearance Disabled: Flashcard Blocks Restored'
+      );
       return {
         ...prev,
         earlyClearanceEnabled: nextEnabled,
@@ -1152,14 +1389,415 @@ export function App() {
         'OUTPUT',
         3
       );
+      const newEntry = createTodayLogEntry(prev, {
+        category: 'PROJECT_FOCUS_1',
+        title: primary.title,
+        durationMinutes: 20,
+        roadmapTrack: primary.trackId,
+        stroke: 'OUTPUT',
+        sourceBlockId: primary.id,
+        rungNumber: 3,
+      });
+      pushUndoSnapshot(prev, `Block Logged: ${primary.title} (20m)`);
       return {
         ...prev,
+        todayBlockLog: [...(prev.todayBlockLog || []), newEntry],
         discretionaryBlocksCompletedToday: prev.discretionaryBlocksCompletedToday + 1,
         projectQueue: updatedQueue,
         roadmapTracks: updatedTracks,
       };
     });
     showNotice('Logged +1 discretionary project block on Item #1 (Credited to Output).');
+  };
+
+  // Handlers for Today's Log Slide-Over Drawer (Reassign, Edit Title, Delete, + Manual Block)
+  const handleReassignLogEntryCategory = (
+    entryId: string,
+    newCategory: TodayBlockLogCategory
+  ) => {
+    setState((prev) => {
+      const entries = prev.todayBlockLog || [];
+      const target = entries.find((e) => e.id === entryId);
+      if (!target || target.category === newCategory) return prev;
+
+      const oldBaselineCat = logCategoryToBaselineCategory(target.category);
+      const newBaselineCat = logCategoryToBaselineCategory(newCategory);
+
+      let updatedBaseline = [...prev.baselineBlocks];
+      let updatedDiscretionary = prev.discretionaryBlocksCompletedToday;
+      let updatedProjects = [...prev.projectQueue];
+      let updatedTracks = [...prev.roadmapTracks];
+
+      // 1. Reverse old category state & Roadmap credit
+      if (oldBaselineCat) {
+        const oldBlock =
+          updatedBaseline.find(
+            (b) => b.id === target.sourceBlockId && b.completed
+          ) ||
+          updatedBaseline.find(
+            (b) => b.category === oldBaselineCat && b.completed
+          );
+        if (oldBlock) {
+          updatedBaseline = updatedBaseline.map((b) =>
+            b.id === oldBlock.id ? { ...b, completed: false } : b
+          );
+        }
+        updatedTracks = debitRoadmapTrack(
+          updatedTracks,
+          target.roadmapTrack,
+          target.stroke,
+          target.rungNumber || (target.stroke === 'OUTPUT' ? 2 : 1)
+        );
+      } else if (target.category === 'PROJECT_FOCUS_1') {
+        updatedDiscretionary = Math.max(0, updatedDiscretionary - 1);
+        updatedProjects = updatedProjects.map((p) =>
+          p.slot === 1
+            ? { ...p, completedBlocks: Math.max(0, p.completedBlocks - 1) }
+            : p
+        );
+        updatedTracks = debitRoadmapTrack(
+          updatedTracks,
+          target.roadmapTrack,
+          target.stroke,
+          target.rungNumber || 3
+        );
+      }
+
+      // 2. Apply new category state & Roadmap credit (preserving 20m daily ceiling credit)
+      let nextSourceBlockId: string | undefined;
+      let nextTrack: TrackId = 'science';
+      let nextStroke: 'INPUT' | 'OUTPUT' = 'INPUT';
+      let nextRung: 1 | 2 | 3 | 4 = 1;
+      let nextTitle = target.title;
+
+      if (newBaselineCat) {
+        const candidateBlock =
+          updatedBaseline.find(
+            (b) => b.category === newBaselineCat && !b.completed
+          ) || updatedBaseline.find((b) => b.category === newBaselineCat);
+
+        if (candidateBlock && !candidateBlock.completed) {
+          updatedBaseline = updatedBaseline.map((b) =>
+            b.id === candidateBlock.id
+              ? { ...b, completed: true, bankedViaEarlyClearance: false }
+              : b
+          );
+          nextSourceBlockId = candidateBlock.id;
+          nextTrack = candidateBlock.trackId;
+          nextStroke =
+            candidateBlock.category === 'SYNTHESIS' ? 'OUTPUT' : 'INPUT';
+          nextRung = candidateBlock.category === 'SYNTHESIS' ? 2 : 1;
+          nextTitle = candidateBlock.title;
+        } else {
+          // All baseline slots in that category are already marked complete; preserve 20m ceiling credit via discretionary count
+          updatedDiscretionary += 1;
+          nextTrack = newBaselineCat === 'SYNTHESIS' ? 'writing' : 'science';
+          nextStroke = newBaselineCat === 'SYNTHESIS' ? 'OUTPUT' : 'INPUT';
+          nextRung = newBaselineCat === 'SYNTHESIS' ? 2 : 1;
+        }
+        updatedTracks = creditRoadmapTrack(
+          updatedTracks,
+          nextTrack,
+          nextStroke,
+          nextRung
+        );
+      } else if (newCategory === 'PROJECT_FOCUS_1') {
+        updatedDiscretionary += 1;
+        const primary = updatedProjects[0];
+        if (primary) {
+          updatedProjects = updatedProjects.map((p) =>
+            p.slot === 1
+              ? {
+                  ...p,
+                  completedBlocks: Math.min(
+                    p.totalBlocks,
+                    p.completedBlocks + 1
+                  ),
+                }
+              : p
+          );
+          nextSourceBlockId = primary.id;
+          nextTrack = primary.trackId;
+          nextTitle = primary.title;
+        } else {
+          nextTrack = 'writing';
+        }
+        nextStroke = 'OUTPUT';
+        nextRung = 3;
+        updatedTracks = creditRoadmapTrack(
+          updatedTracks,
+          nextTrack,
+          nextStroke,
+          nextRung
+        );
+      }
+
+      pushUndoSnapshot(
+        prev,
+        `Reassigned Block: ${target.title} → ${newCategory} (20m)`
+      );
+
+      const updatedEntries = entries.map((e) =>
+        e.id === entryId
+          ? {
+              ...e,
+              category: newCategory,
+              title: nextTitle,
+              roadmapTrack: nextTrack,
+              stroke: nextStroke,
+              sourceBlockId: nextSourceBlockId,
+              rungNumber: nextRung,
+            }
+          : e
+      );
+
+      return {
+        ...prev,
+        todayBlockLog: updatedEntries,
+        baselineBlocks: updatedBaseline,
+        discretionaryBlocksCompletedToday: updatedDiscretionary,
+        projectQueue: updatedProjects,
+        roadmapTracks: updatedTracks,
+      };
+    });
+  };
+
+  const handleEditLogEntryTitle = (entryId: string, newTitle: string) => {
+    setState((prev) => {
+      const entries = prev.todayBlockLog || [];
+      const target = entries.find((e) => e.id === entryId);
+      if (!target) return prev;
+      pushUndoSnapshot(prev, `Edited Block Title: ${newTitle}`);
+      return {
+        ...prev,
+        todayBlockLog: entries.map((e) =>
+          e.id === entryId ? { ...e, title: newTitle } : e
+        ),
+      };
+    });
+  };
+
+  const handleDeleteLogEntry = (entryId: string) => {
+    setState((prev) => {
+      const entries = prev.todayBlockLog || [];
+      const target = entries.find((e) => e.id === entryId);
+      if (!target) return prev;
+
+      let updatedBaseline = [...prev.baselineBlocks];
+      let updatedDiscretionary = prev.discretionaryBlocksCompletedToday;
+      let updatedProjects = [...prev.projectQueue];
+      let updatedTracks = [...prev.roadmapTracks];
+      let updatedRecharge = { ...prev.recharge };
+      let updatedPipelineDays = [...prev.pipelineDays];
+
+      const baselineCat = logCategoryToBaselineCategory(target.category);
+      if (baselineCat) {
+        const matchingBlock =
+          updatedBaseline.find(
+            (b) => b.id === target.sourceBlockId && b.completed
+          ) ||
+          updatedBaseline.find(
+            (b) => b.category === baselineCat && b.completed
+          );
+        if (matchingBlock) {
+          updatedBaseline = updatedBaseline.map((b) =>
+            b.id === matchingBlock.id ? { ...b, completed: false } : b
+          );
+        } else {
+          updatedDiscretionary = Math.max(0, updatedDiscretionary - 1);
+        }
+      } else if (target.category === 'PROJECT_FOCUS_1') {
+        updatedDiscretionary = Math.max(0, updatedDiscretionary - 1);
+        updatedProjects = updatedProjects.map((p) =>
+          p.slot === 1
+            ? { ...p, completedBlocks: Math.max(0, p.completedBlocks - 1) }
+            : p
+        );
+      } else if (target.category === 'FLOW_EXTENSION') {
+        const nextExtCount = Math.max(
+          0,
+          updatedRecharge.flowExtensionBlocksLoggedToday - 1
+        );
+        const deducted =
+          nextExtCount >= 3 ? 2 : nextExtCount >= 2 ? 1 : 0;
+        updatedRecharge = {
+          ...updatedRecharge,
+          flowExtensionBlocksLoggedToday: nextExtCount,
+        };
+        updatedPipelineDays = updatedPipelineDays.map((d, idx) =>
+          idx === 1 ? { ...d, deductedBlocksFromExtension: deducted } : d
+        );
+      } else if (target.category === 'EVENING_RECHARGE' && target.stickyKey) {
+        const slot = updatedRecharge.stickySlots[target.stickyKey];
+        if (slot) {
+          updatedRecharge = {
+            ...updatedRecharge,
+            stickySlots: {
+              ...updatedRecharge.stickySlots,
+              [target.stickyKey]: {
+                ...slot,
+                fiveMinStarts: Math.max(0, slot.fiveMinStarts - 1),
+              },
+            },
+          };
+        }
+      }
+
+      if (target.roadmapTrack) {
+        updatedTracks = debitRoadmapTrack(
+          updatedTracks,
+          target.roadmapTrack,
+          target.stroke,
+          target.rungNumber || (target.stroke === 'OUTPUT' ? 3 : 1)
+        );
+      }
+
+      pushUndoSnapshot(
+        prev,
+        `Deleted Log Entry: ${target.title} (${target.durationMinutes}m)`
+      );
+
+      return {
+        ...prev,
+        todayBlockLog: entries.filter((e) => e.id !== entryId),
+        baselineBlocks: updatedBaseline,
+        discretionaryBlocksCompletedToday: updatedDiscretionary,
+        projectQueue: updatedProjects,
+        roadmapTracks: updatedTracks,
+        recharge: updatedRecharge,
+        pipelineDays: updatedPipelineDays,
+      };
+    });
+  };
+
+  const handleAddManualBlock = (
+    category: TodayBlockLogCategory,
+    title: string,
+    durationMinutes: number
+  ) => {
+    setState((prev) => {
+      let updatedBaseline = [...prev.baselineBlocks];
+      let updatedDiscretionary = prev.discretionaryBlocksCompletedToday;
+      let updatedProjects = [...prev.projectQueue];
+      let updatedTracks = [...prev.roadmapTracks];
+      let updatedRecharge = { ...prev.recharge };
+      let updatedPipelineDays = [...prev.pipelineDays];
+
+      let sourceBlockId: string | undefined;
+      let trackId: TrackId = 'science';
+      let stroke: 'INPUT' | 'OUTPUT' = 'INPUT';
+      let rungNumber: 1 | 2 | 3 | 4 = 1;
+
+      const baselineCat = logCategoryToBaselineCategory(category);
+      if (baselineCat) {
+        const candidate = updatedBaseline.find(
+          (b) => b.category === baselineCat && !b.completed
+        );
+        if (candidate) {
+          updatedBaseline = updatedBaseline.map((b) =>
+            b.id === candidate.id
+              ? { ...b, completed: true, bankedViaEarlyClearance: false }
+              : b
+          );
+          sourceBlockId = candidate.id;
+          trackId = candidate.trackId;
+        } else {
+          updatedDiscretionary += 1;
+          trackId = baselineCat === 'SYNTHESIS' ? 'writing' : 'science';
+        }
+        stroke = baselineCat === 'SYNTHESIS' ? 'OUTPUT' : 'INPUT';
+        rungNumber = baselineCat === 'SYNTHESIS' ? 2 : 1;
+        updatedTracks = creditRoadmapTrack(
+          updatedTracks,
+          trackId,
+          stroke,
+          rungNumber
+        );
+      } else if (category === 'PROJECT_FOCUS_1') {
+        updatedDiscretionary += 1;
+        const primary = updatedProjects[0];
+        if (primary) {
+          updatedProjects = updatedProjects.map((p) =>
+            p.slot === 1
+              ? {
+                  ...p,
+                  completedBlocks: Math.min(
+                    p.totalBlocks,
+                    p.completedBlocks + 1
+                  ),
+                }
+              : p
+          );
+          sourceBlockId = primary.id;
+          trackId = primary.trackId;
+        } else {
+          trackId = 'writing';
+        }
+        stroke = 'OUTPUT';
+        rungNumber = 3;
+        updatedTracks = creditRoadmapTrack(
+          updatedTracks,
+          trackId,
+          stroke,
+          rungNumber
+        );
+      } else if (category === 'FLOW_EXTENSION') {
+        const nextExt = updatedRecharge.flowExtensionBlocksLoggedToday + 1;
+        const deducted = nextExt >= 3 ? 2 : nextExt >= 2 ? 1 : 0;
+        updatedRecharge = {
+          ...updatedRecharge,
+          flowExtensionBlocksLoggedToday: nextExt,
+        };
+        updatedPipelineDays = updatedPipelineDays.map((d, idx) =>
+          idx === 1 ? { ...d, deductedBlocksFromExtension: deducted } : d
+        );
+        trackId = updatedProjects[0]?.trackId || 'writing';
+        stroke = 'OUTPUT';
+        rungNumber = 3;
+        updatedTracks = creditRoadmapTrack(
+          updatedTracks,
+          trackId,
+          stroke,
+          rungNumber
+        );
+      } else {
+        trackId = 'writing';
+        stroke = 'INPUT';
+        rungNumber = 1;
+        updatedTracks = creditRoadmapTrack(
+          updatedTracks,
+          trackId,
+          stroke,
+          rungNumber
+        );
+      }
+
+      const newEntry = createTodayLogEntry(prev, {
+        category,
+        title,
+        durationMinutes,
+        roadmapTrack: trackId,
+        stroke,
+        sourceBlockId,
+        rungNumber,
+      });
+
+      pushUndoSnapshot(
+        prev,
+        `Block Logged: ${title} (${durationMinutes}m)`
+      );
+
+      return {
+        ...prev,
+        todayBlockLog: [...(prev.todayBlockLog || []), newEntry],
+        baselineBlocks: updatedBaseline,
+        discretionaryBlocksCompletedToday: updatedDiscretionary,
+        projectQueue: updatedProjects,
+        roadmapTracks: updatedTracks,
+        recharge: updatedRecharge,
+        pipelineDays: updatedPipelineDays,
+      };
+    });
   };
 
   const handleCompleteProjectItem1 = () => {
@@ -1357,6 +1995,7 @@ export function App() {
           state={state}
           activeTab={activeTab}
           onSelectTab={setActiveTab}
+          onOpenTodayLogDrawer={() => setTodayLogDrawerOpen(true)}
           onOpenPipelineDrawer={() => setPipelineDrawerOpen(true)}
           onOpenStateModal={() => {
             setGeminiApiKeyInput(getStoredGeminiApiKey());
@@ -1654,22 +2293,37 @@ export function App() {
                   '5m Flashcard Recovery Block Complete',
                   'Completed 5-minute Flashcard recovery ramp.'
                 );
-                setState((prev) => ({
-                  ...prev,
-                  roadmapTracks: creditRoadmapTrack(
-                    prev.roadmapTracks,
-                    'science',
-                    'INPUT',
-                    1
-                  ),
-                  timer: {
-                    ...prev.timer,
-                    queuedRecoveryFlashcard5m: false,
-                    recoveryFlashcardRunning: false,
-                    recoveryFlashcardSecondsLeft: 300,
-                    recoveryFlashcardTargetEndTimeMs: null,
-                  },
-                }));
+                setState((prev) => {
+                  const newEntry = createTodayLogEntry(prev, {
+                    category: 'FLOOR_COMP',
+                    title: '5m Flashcard Recovery Ramp',
+                    durationMinutes: 5,
+                    roadmapTrack: 'science',
+                    stroke: 'INPUT',
+                    rungNumber: 1,
+                  });
+                  pushUndoSnapshot(
+                    prev,
+                    'Block Logged: 5m Flashcard Recovery Ramp (5m)'
+                  );
+                  return {
+                    ...prev,
+                    todayBlockLog: [...(prev.todayBlockLog || []), newEntry],
+                    roadmapTracks: creditRoadmapTrack(
+                      prev.roadmapTracks,
+                      'science',
+                      'INPUT',
+                      1
+                    ),
+                    timer: {
+                      ...prev.timer,
+                      queuedRecoveryFlashcard5m: false,
+                      recoveryFlashcardRunning: false,
+                      recoveryFlashcardSecondsLeft: 300,
+                      recoveryFlashcardTargetEndTimeMs: null,
+                    },
+                  };
+                });
                 showNotice('Completed 5m Flashcard recovery block.');
               }}
               onGoToRecharge={() => setActiveTab('RECHARGE')}
@@ -1873,22 +2527,37 @@ export function App() {
                   '5m Flashcard Recovery Block Complete',
                   'Completed 5-minute Flashcard recovery ramp.'
                 );
-                setState((prev) => ({
-                  ...prev,
-                  roadmapTracks: creditRoadmapTrack(
-                    prev.roadmapTracks,
-                    'science',
-                    'INPUT',
-                    1
-                  ),
-                  timer: {
-                    ...prev.timer,
-                    queuedRecoveryFlashcard5m: false,
-                    recoveryFlashcardRunning: false,
-                    recoveryFlashcardSecondsLeft: 300,
-                    recoveryFlashcardTargetEndTimeMs: null,
-                  },
-                }));
+                setState((prev) => {
+                  const newEntry = createTodayLogEntry(prev, {
+                    category: 'FLOOR_COMP',
+                    title: '5m Flashcard Recovery Ramp',
+                    durationMinutes: 5,
+                    roadmapTrack: 'science',
+                    stroke: 'INPUT',
+                    rungNumber: 1,
+                  });
+                  pushUndoSnapshot(
+                    prev,
+                    'Block Logged: 5m Flashcard Recovery Ramp (5m)'
+                  );
+                  return {
+                    ...prev,
+                    todayBlockLog: [...(prev.todayBlockLog || []), newEntry],
+                    roadmapTracks: creditRoadmapTrack(
+                      prev.roadmapTracks,
+                      'science',
+                      'INPUT',
+                      1
+                    ),
+                    timer: {
+                      ...prev.timer,
+                      queuedRecoveryFlashcard5m: false,
+                      recoveryFlashcardRunning: false,
+                      recoveryFlashcardSecondsLeft: 300,
+                      recoveryFlashcardTargetEndTimeMs: null,
+                    },
+                  };
+                });
                 showNotice('Completed 5m Flashcard recovery block.');
               }}
               notificationLog={notificationLog}
@@ -1996,8 +2665,22 @@ export function App() {
                     newBlocksLogged >= 3 ? 2 : newBlocksLogged >= 2 ? 1 : 0;
                   const newElapsed =
                     prev.recharge.flowExtensionElapsedSeconds + 1200;
+                  const primaryTrack = prev.projectQueue[0]?.trackId || 'writing';
+                  const newEntry = createTodayLogEntry(prev, {
+                    category: 'FLOW_EXTENSION',
+                    title: `Flow Extension Block #${newBlocksLogged}`,
+                    durationMinutes: 20,
+                    roadmapTrack: primaryTrack,
+                    stroke: 'OUTPUT',
+                    rungNumber: 3,
+                  });
+                  pushUndoSnapshot(
+                    prev,
+                    `Block Logged: Flow Extension Block #${newBlocksLogged} (20m)`
+                  );
                   return {
                     ...prev,
+                    todayBlockLog: [...(prev.todayBlockLog || []), newEntry],
                     pipelineDays: prev.pipelineDays.map((d, idx) =>
                       idx === 1
                         ? { ...d, deductedBlocksFromExtension: deducted }
@@ -2005,7 +2688,7 @@ export function App() {
                     ),
                     roadmapTracks: creditRoadmapTrack(
                       prev.roadmapTracks,
-                      prev.projectQueue[0]?.trackId || 'writing',
+                      primaryTrack,
                       'OUTPUT',
                       3
                     ),
@@ -2076,8 +2759,21 @@ export function App() {
                 );
                 setState((prev) => {
                   const nextWin = prev.recharge.option0ConsecutiveWindows + 1;
+                  const newEntry = createTodayLogEntry(prev, {
+                    category: 'EVENING_RECHARGE',
+                    title: `Option 0 Stillness Window (${nextWin}/2)`,
+                    durationMinutes: 20,
+                    roadmapTrack: 'personal',
+                    stroke: 'INPUT',
+                    rungNumber: 1,
+                  });
+                  pushUndoSnapshot(
+                    prev,
+                    `Block Logged: Option 0 Stillness (${nextWin}/2) (20m)`
+                  );
                   return {
                     ...prev,
+                    todayBlockLog: [...(prev.todayBlockLog || []), newEntry],
                     recharge: {
                       ...prev.recharge,
                       option0Running: false,
@@ -2160,8 +2856,11 @@ export function App() {
                       ? r.activeMediaTab
                       : null;
 
+                  const isFresh5mStart =
+                    !r.categoryRunning && r.pacingStage === 'STARTUP_5M';
+
                   const updatedSlots = { ...r.stickySlots };
-                  if (stickyKey && !r.categoryRunning && r.pacingStage === 'STARTUP_5M') {
+                  if (stickyKey && isFresh5mStart) {
                     updatedSlots[stickyKey] = {
                       ...updatedSlots[stickyKey],
                       fiveMinStarts: Math.min(
@@ -2173,33 +2872,82 @@ export function App() {
 
                   // Auto-credit Roadmap Input (Media) or Sandbox Output (Maker/Music)
                   let updatedTracks = prev.roadmapTracks;
-                  if (!r.categoryRunning && r.pacingStage === 'STARTUP_5M') {
+                  let updatedLog = prev.todayBlockLog || [];
+
+                  if (isFresh5mStart) {
+                    let trackCredited: TrackId = 'personal';
+                    let strokeCredited: 'INPUT' | 'OUTPUT' = 'INPUT';
+                    let rungCredited: 1 | 2 | 3 | 4 = 1;
+                    let rechargeTitle = 'Evening Recharge 5m Step';
+
                     if (r.activeCategory === 'CAT3_MEDIA') {
+                      trackCredited = 'writing';
+                      strokeCredited = 'INPUT';
+                      rungCredited = 1;
+                      rechargeTitle = `${updatedSlots[r.activeMediaTab].activeTitle} (Media 5m Start)`;
                       updatedTracks = creditRoadmapTrack(
                         updatedTracks,
-                        'writing',
-                        'INPUT',
-                        1
+                        trackCredited,
+                        strokeCredited,
+                        rungCredited
                       );
                     } else if (r.activeCategory === 'CAT2_MAKER') {
+                      trackCredited = 'coding';
+                      strokeCredited = 'OUTPUT';
+                      rungCredited = 2;
+                      rechargeTitle = `${updatedSlots.CAT2_MAKER.activeTitle} (Maker 5m Start)`;
                       updatedTracks = creditRoadmapTrack(
                         updatedTracks,
-                        'coding',
-                        'OUTPUT',
-                        2
+                        trackCredited,
+                        strokeCredited,
+                        rungCredited
                       );
                     } else if (r.activeCategory === 'CAT1_MUSIC') {
+                      trackCredited = 'music';
+                      strokeCredited = 'OUTPUT';
+                      rungCredited = 2;
+                      rechargeTitle = 'Acoustic / Instrument Cold Song (5m)';
                       updatedTracks = creditRoadmapTrack(
                         updatedTracks,
-                        'music',
-                        'OUTPUT',
-                        2
+                        trackCredited,
+                        strokeCredited,
+                        rungCredited
                       );
+                    } else if (r.activeCategory === 'CAT5_GAMING') {
+                      trackCredited = 'personal';
+                      strokeCredited = 'INPUT';
+                      rungCredited = 1;
+                      rechargeTitle = `${updatedSlots.CAT5_GAMING.activeTitle} (Gaming 5m Start)`;
+                    } else if (r.activeCategory === 'CAT4_COMFORT') {
+                      trackCredited = 'personal';
+                      strokeCredited = 'INPUT';
+                      rungCredited = 1;
+                      rechargeTitle = "It's Always Sunny in Philadelphia (5m Start)";
                     }
+
+                    const newEntry = createTodayLogEntry(prev, {
+                      category: 'EVENING_RECHARGE',
+                      title: rechargeTitle,
+                      durationMinutes: 5,
+                      roadmapTrack: trackCredited,
+                      stroke: strokeCredited,
+                      stickyKey: stickyKey || undefined,
+                      rungNumber: rungCredited,
+                    });
+                    updatedLog = [...updatedLog, newEntry];
+
+                    const countLabel = stickyKey
+                      ? ` [${updatedSlots[stickyKey].fiveMinStarts}/3]`
+                      : '';
+                    pushUndoSnapshot(
+                      prev,
+                      `Block Logged: ${rechargeTitle}${countLabel} (5m)`
+                    );
                   }
 
                   return {
                     ...prev,
+                    todayBlockLog: updatedLog,
                     roadmapTracks: updatedTracks,
                     recharge: {
                       ...r,
@@ -2244,6 +2992,10 @@ export function App() {
                   const slot = prev.recharge.stickySlots[key];
                   if (!slot || slot.backlogQueue.length === 0) return prev;
                   const [nextTitle, ...restQueue] = slot.backlogQueue;
+                  pushUndoSnapshot(
+                    prev,
+                    `Sticky Backlog Swapped: ${slot.activeTitle} → ${nextTitle}`
+                  );
                   return {
                     ...prev,
                     recharge: {
@@ -2275,6 +3027,10 @@ export function App() {
                   const track = prev.roadmapTracks.find((t) => t.id === trackId);
                   const rung = track?.rungs.find((r) => r.rungNumber === rungNumber);
                   if (!track || !rung) return prev;
+                  pushUndoSnapshot(
+                    prev,
+                    `Block Logged: ${track.name} Rung ${rungNumber} (20m)`
+                  );
                   return {
                     ...prev,
                     roadmapTracks: creditRoadmapTrack(
@@ -2390,6 +3146,27 @@ export function App() {
           })}
         </div>
       </nav>
+
+      {/* 10-Second Floating Glassmorphic Undo Toast */}
+      <UndoToast
+        toast={undoToast}
+        secondsRemaining={undoSecondsLeft}
+        onUndo={handleTriggerUndo}
+        onDismiss={() => setUndoToast(null)}
+        isEveningTheme={isEveningTheme}
+      />
+
+      {/* Editable Today's Block Log Slide-Over Drawer */}
+      <TodayLogDrawer
+        isOpen={todayLogDrawerOpen}
+        onClose={() => setTodayLogDrawerOpen(false)}
+        state={state}
+        onReassignEntryCategory={handleReassignLogEntryCategory}
+        onEditEntryTitle={handleEditLogEntryTitle}
+        onDeleteEntry={handleDeleteLogEntry}
+        onAddManualBlock={handleAddManualBlock}
+        isEveningTheme={isEveningTheme}
+      />
 
       {/* 7-Day Pipeline Table Drawer */}
       <PipelineDrawer
@@ -2610,6 +3387,7 @@ export function App() {
                     flashcardsReviewedCount: 0,
                     earlyClearanceEnabled: false,
                     discretionaryBlocksCompletedToday: 0,
+                    todayBlockLog: [],
                     baselineBlocks: state.baselineBlocks.map((b) => ({
                       ...b,
                       completed: false,
