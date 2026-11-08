@@ -98,16 +98,20 @@ const sourceIndexHtml = `<!doctype html>
 </html>
 `;
 
-// Write self-contained dist/index.html, repo-root index.html, and source index.html with inline fallback
+// Write self-contained dist/index.html, repo-root index.html, repo-root public/index.html, and source index.html
+const rootPublicDir = path.join(repoRoot, 'public');
+fs.mkdirSync(rootPublicDir, { recursive: true });
 fs.writeFileSync(path.join(distDir, 'index.html'), selfContainedDistHtml, 'utf8');
 fs.writeFileSync(path.join(repoRoot, 'index.html'), selfContainedDistHtml, 'utf8');
+fs.writeFileSync(path.join(rootPublicDir, 'index.html'), selfContainedDistHtml, 'utf8');
 fs.writeFileSync(path.join(appRoot, 'index.html'), sourceIndexHtml, 'utf8');
 
-// Copy manifest.webmanifest, favicon.svg, sw.js, sw-alarms.js to repo root for root static hosting
+// Copy manifest.webmanifest, favicon.svg, sw.js, sw-alarms.js, icons, workbox to repo root and repo-root public/
 for (const file of fs.readdirSync(distDir)) {
   const srcPath = path.join(distDir, file);
   if (fs.statSync(srcPath).isFile() && file !== 'index.html') {
     fs.copyFileSync(srcPath, path.join(repoRoot, file));
+    fs.copyFileSync(srcPath, path.join(rootPublicDir, file));
   }
 }
 
@@ -118,5 +122,5 @@ console.log(
     ssrHtml.length +
     'B), and JS (' +
     jsContent.length +
-    'B) into dist/index.html, root index.html, and symmetrical-productivity/index.html'
+    'B) into dist/index.html, public/index.html, root index.html, and symmetrical-productivity/index.html'
 );

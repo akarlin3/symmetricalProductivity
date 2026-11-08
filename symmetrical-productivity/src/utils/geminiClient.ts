@@ -9,7 +9,7 @@ export const LEGACY_ASSISTANT_BYOK_STORAGE_KEY = 'symmetry_gemini_api_key_v1';
 
 export const PRO_MODE_CHANGE_EVENT = 'symmetry-pro-mode-change';
 
-const DEFAULT_CLOUDFLARE_PRO_ORIGIN = 'https://symmetrical-productivity.pages.dev';
+const DEFAULT_CLOUDFLARE_PRO_ORIGIN = 'https://symmetry.averynik.org';
 
 export interface GeminiGeneratePayload {
   model?: string;
@@ -171,7 +171,12 @@ export function getCloudflareProEndpointUrl(): string {
       typeof Capacitor.isNativePlatform === 'function' &&
       Capacitor.isNativePlatform();
 
-    if (isNativeAndroidOrIos) {
+    const isStaticGithubPagesHost =
+      typeof window !== 'undefined' &&
+      window.location &&
+      window.location.hostname.endsWith('.github.io');
+
+    if (isNativeAndroidOrIos || isStaticGithubPagesHost) {
       const baseOrigin = (
         storedOrigin ||
         envOrigin ||
