@@ -1,13 +1,13 @@
 import React, { useRef, useState } from 'react';
 
 export interface AveryCorpEmblemProps {
-  /** Pixel diameter of the circular emblem container (default: 36) */
+  /** Pixel width/height of the small square emblem container (default: 28) */
   size?: number;
   /** Render mode: 'image' uses /averycorp-emblem.jpeg; 'svg' renders the inline precision vector emblem */
   variant?: 'image' | 'svg';
-  /** Crop mode for image variant: 'mark-only' zooms into the central interlocked rings & chains (scale-[1.65] -translate-y-[8%]), 'full-seal' shows the full circular seal */
+  /** Crop mode for image variant: 'mark-only' zooms into the central interlocked rings & chains (scale-[1.65] -translate-y-[8%]), 'full-seal' shows the full seal */
   cropMode?: 'mark-only' | 'full-seal';
-  /** When true (5m Startup or 15m Momentum timer active), adds subtle ambient gold/cyan radial glow and slow 60s orbital pulse */
+  /** When true (5m Startup or 15m Momentum timer active), adds subtle ambient gold/cyan glow and pulse */
   isTimerActive?: boolean;
   /** When true (Architect Mode unlocked), illuminates a crisp 1px metallic gold border & aura */
   architectUnlocked?: boolean;
@@ -25,7 +25,7 @@ export interface AveryCorpEmblemProps {
 
 /**
  * High-precision inline SVG vector version of the AveryCorp Institute (Est. 2026) emblem:
- * - Deep navy circle (#121b2d)
+ * - Deep navy square base (#121b2d)
  * - Outer gold chain-link border (#d4af37)
  * - Two crossed gold chain ellipses
  * - Two interlocked brushed-gunmetal Mobius bands
@@ -68,28 +68,30 @@ export const AveryCorpVectorSvg: React.FC<{
         </linearGradient>
       </defs>
 
-      {/* Deep Navy Circle Base */}
-      <circle cx="100" cy="100" r="96" fill="url(#averyNavyBg)" />
+      {/* Deep Navy Square Base */}
+      <rect x="4" y="4" width="192" height="192" rx="18" fill="url(#averyNavyBg)" />
 
       {/* Outer Gold Chain-Link Perimeter */}
       {includeOuterChain && (
-        <g
-          className={isTimerActive ? 'origin-center animate-[spin_60s_linear_infinite]' : 'origin-center'}
-        >
-          <circle
-            cx="100"
-            cy="100"
-            r="91"
+        <g className={isTimerActive ? 'animate-pulse' : undefined}>
+          <rect
+            x="10"
+            y="10"
+            width="180"
+            height="180"
+            rx="14"
             stroke="#d4af37"
             strokeWidth="3.2"
             strokeDasharray="6 3.5"
             strokeLinecap="round"
             opacity="0.92"
           />
-          <circle
-            cx="100"
-            cy="100"
-            r="88.5"
+          <rect
+            x="13"
+            y="13"
+            width="174"
+            height="174"
+            rx="12"
             stroke="#fef08a"
             strokeWidth="1"
             strokeDasharray="3 6.5"
@@ -249,12 +251,12 @@ export const AveryCorpEmblem: React.FC<AveryCorpEmblemProps> = ({
 
   const content = (
     <>
-      {/* Subtle Ambient Gold/Cyan Radial Glow + 60s Orbital Pulse when Timer Active */}
+      {/* Subtle Ambient Gold/Cyan Glow + Pulse when Timer Active */}
       {isTimerActive && (
         <>
           <span
             aria-hidden="true"
-            className="pointer-events-none absolute -inset-1.5 rounded-full blur-md opacity-75 transition-opacity duration-500"
+            className="pointer-events-none absolute -inset-1.5 rounded-[4px] blur-md opacity-75 transition-opacity duration-500"
             style={{
               background:
                 'radial-gradient(circle, rgba(212,175,55,0.42) 0%, rgba(56,189,248,0.28) 55%, rgba(18,27,45,0) 80%)',
@@ -262,14 +264,14 @@ export const AveryCorpEmblem: React.FC<AveryCorpEmblemProps> = ({
           />
           <span
             aria-hidden="true"
-            className="pointer-events-none absolute -inset-0.5 rounded-full border border-dashed border-amber-300/60 animate-[spin_60s_linear_infinite]"
+            className="pointer-events-none absolute -inset-0.5 rounded-[4px] border border-dashed border-amber-300/60 animate-pulse"
           />
         </>
       )}
 
       <span
         style={dimensionStyle}
-        className={`w-7 h-7 rounded-full overflow-hidden bg-[#121b2d] flex items-center justify-center relative aspect-square border transition-all duration-300 ${interactiveRingClasses} ${className}`}
+        className={`w-7 h-7 rounded-[3px] overflow-hidden bg-[#121b2d] flex items-center justify-center relative aspect-square border transition-all duration-300 ${interactiveRingClasses} ${className}`}
       >
         {variant === 'svg' ? (
           <AveryCorpVectorSvg
@@ -307,7 +309,7 @@ export const AveryCorpEmblem: React.FC<AveryCorpEmblemProps> = ({
           type="button"
           onClick={onClick}
           aria-label={ariaLabel}
-          className="relative inline-flex items-center justify-center rounded-full cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70"
+          className="relative inline-flex items-center justify-center rounded-[3px] cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70"
         >
           {content}
         </button>
@@ -316,7 +318,7 @@ export const AveryCorpEmblem: React.FC<AveryCorpEmblemProps> = ({
           id={id}
           role="img"
           aria-label={ariaLabel}
-          className="relative inline-flex items-center justify-center rounded-full select-none"
+          className="relative inline-flex items-center justify-center rounded-[3px] select-none"
         >
           {content}
         </div>
@@ -327,9 +329,9 @@ export const AveryCorpEmblem: React.FC<AveryCorpEmblemProps> = ({
         <div
           id="averycorp-emblem-preview-popover"
           role="tooltip"
-          className="absolute left-0 top-full mt-2.5 z-50 w-64 p-3 rounded-2xl bg-[#0b111e]/95 backdrop-blur-2xl border border-amber-400/40 shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_25px_rgba(212,175,55,0.2)] text-left pointer-events-none animate-fadeIn"
+          className="absolute left-0 top-full mt-2.5 z-50 w-64 p-3 rounded-xl bg-[#0b111e]/95 backdrop-blur-2xl border border-amber-400/40 shadow-[0_20px_50px_rgba(0,0,0,0.85),0_0_25px_rgba(212,175,55,0.2)] text-left pointer-events-none animate-fadeIn"
         >
-          <div className="w-full aspect-square rounded-full overflow-hidden bg-[#121b2d] border border-amber-400/50 shadow-inner flex items-center justify-center mx-auto">
+          <div className="w-full aspect-square rounded-md overflow-hidden bg-[#121b2d] border border-amber-400/50 shadow-inner flex items-center justify-center mx-auto">
             <img
               src="/averycorp-emblem.jpeg"
               alt="AveryCorp Institute Full Crest"

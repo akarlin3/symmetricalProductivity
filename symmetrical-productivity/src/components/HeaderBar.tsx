@@ -169,14 +169,14 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
     <>
       <header className="sticky top-0 z-30 pt-2 pb-1 px-4 pointer-events-none">
         <div
-          className={`max-w-3xl mx-auto h-11 px-3 py-1.5 pointer-events-auto rounded-full border backdrop-blur-2xl flex items-center justify-between gap-2 transition-all duration-500 ${
+          className={`max-w-4xl mx-auto min-h-11 px-3 py-1.5 pointer-events-auto rounded-2xl sm:rounded-full border backdrop-blur-2xl flex flex-wrap items-center justify-between gap-2 transition-all duration-500 ${
             isEveningTheme
               ? 'bg-[#090706]/85 border-white/[0.05] text-amber-50 shadow-[inset_0_1px_0_0_rgba(255,251,235,0.06),0_12px_28px_-14px_rgba(0,0,0,0.85)]'
               : 'bg-[#06080d]/80 border-white/[0.05] text-slate-100 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.07),0_12px_28px_-14px_rgba(0,0,0,0.85)]'
           }`}
         >
-          {/* 1. LEFT: Circular Emblem (28px / w-7 h-7) + Subtle Title + Compact Duration-Only Pill */}
-          <div className="flex items-center gap-2 min-w-0">
+          {/* 1. LEFT: Small Square Emblem (28px / w-7 h-7) + Full Title + Compact Duration-Only Pill */}
+          <div className="flex items-center gap-2 shrink-0">
             <AveryCorpEmblem
               id="header-brand-prism-trigger"
               size={28}
@@ -193,11 +193,11 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             <h1
               id="header-app-title-trigger"
               onClick={handleBrandPrismTap}
-              className={`hidden sm:block text-xs font-medium tracking-tight cursor-pointer select-none truncate transition-opacity duration-500 ${
+              className={`text-xs font-medium tracking-tight cursor-pointer select-none whitespace-nowrap shrink-0 transition-opacity duration-500 ${
                 isCinemaReceding ? 'opacity-20 hover:opacity-100' : ''
               } ${isEveningTheme ? 'text-amber-100/90' : 'text-slate-200'}`}
             >
-              Symmetry
+              Symmetry Productivity
             </h1>
 
             {/* Compact Duration-Only Pill (Remains sharp during Cinema Focus) */}

@@ -197,7 +197,7 @@ export const OnboardingWizardModal: React.FC<OnboardingWizardModalProps> = ({
         >
           <div className="flex items-center gap-3">
             <AveryCorpEmblem
-              size={40}
+              size={32}
               variant="image"
               cropMode="mark-only"
               architectUnlocked={architectModeUnlocked}
