@@ -12,6 +12,7 @@ export type BaselineCategory = 'FLASHCARDS_ANATOMY' | 'FLASHCARDS_COMP' | 'READI
 export type ActiveTaskType = 'FLASHCARDS' | 'READING' | 'SYNTHESIS' | 'PROJECT';
 
 export type TrackId = 'science' | 'writing' | 'personal' | 'coding' | 'music';
+export type RoadmapTrackId = TrackId;
 
 export type EnergyBandwidthState = 'SHARP' | 'STEADY' | 'LOW_FOGGY';
 
@@ -56,14 +57,20 @@ export interface BaselineBlock {
   title: string;
   category: BaselineCategory;
   completed: boolean;
+  durationMinutes?: number;
+  targetBlocks?: number; // 1..6 (defaults to 1)
+  completedBlocks?: number; // 0..targetBlocks
   partialCredit?: number; // 0.5 when a 0.5x Micro-Block is logged
   bankedViaEarlyClearance?: boolean;
+  earlyClearanceEligible?: boolean; // Toggleable per slot
+  lateNightBlocker?: boolean; // Toggleable per slot (prevents scheduling as final block of night)
   startupStep: string;
+  startupPrompt?: string;
   trackId: TrackId;
   cognitiveDemand?: CognitiveDemandTag;
 }
 
-export type ProjectPresetType = 'PAPER_8' | 'SLIDES_4' | 'CUSTOM';
+export type ProjectPresetType = 'PAPER_8' | 'SLIDES_4' | 'QUICK_2' | 'CUSTOM';
 
 export interface ProjectItem {
   id: string;
@@ -204,6 +211,8 @@ export interface StickySlotState {
   archivedTitles?: string[];
 }
 
+export type StickyItemState = StickySlotState;
+
 export interface CompletedDeliverableEntry {
   id: string;
   title: string;
@@ -235,18 +244,61 @@ export interface FluidCategoriesMap {
   CAT4_COMFORT: FluidCategoryConfig;
 }
 
-export type ProfilePresetId =
+export interface EveningSubTrackConfig {
+  id: string; // e.g., '3A_FICTION' | '3B_NONFICTION' | '3C_VIDEO' | string
+  label: string; // e.g., '3A Fiction', '3B Nonfiction', '3C Watch'
+  activeTitle: string;
+  startupStep?: string;
+  startupPrompt?: string;
+  speedControl?: boolean;
+  backlogQueue: string[];
+  fiveMinStarts: number;
+  unlockedViaCheckIn: boolean;
+}
+
+export interface EveningCategoryCardConfig {
+  id: string; // 'CAT1_MUSIC' | 'CAT2_MAKER' | 'CAT3_MEDIA' | 'CAT4_COMFORT' | 'CAT5_GAMING' | custom ID
+  slotNumber?: number;
+  categoryName: string; // e.g., '1. Creative / Hands-On' or '1. Music'
+  subtitle?: string;
+  behavior: 'FLUID' | 'STICKY';
+  trackMode: 'SINGLE' | 'TRIPLE';
+  hidden?: boolean;
+  legacyCategoryKey?: RechargeCategoryId;
+  stickyKey?: StickyKey;
+  fluidKey?: 'CAT1_MUSIC' | 'CAT4_COMFORT';
+  // Single-track properties
+  activeTitle: string;
+  startupStep?: string;
+  startupPrompt?: string;
+  backlogQueue: string[];
+  fiveMinStarts: number;
+  unlockedViaCheckIn: boolean;
+  // Triple-track properties
+  subTracks?: EveningSubTrackConfig[];
+  activeSubTrackId?: string;
+}
+
+export type BuiltInProfilePresetId =
   | 'AVERY_DEFAULT'
+  | 'BALANCED_CORE'
+  | 'DEEP_PROJECT_BUILDER'
+  | 'STUDY_HIGH_RETENTION'
+  | 'MODULAR_BLANK_CANVAS'
   | 'ACADEMIC_RESEARCHER'
   | 'SOFTWARE_ENGINEER'
   | 'WRITER_CREATIVE'
   | 'BLANK_CUSTOM';
 
+export type ProfilePresetId = BuiltInProfilePresetId | (string & {});
+
 export interface TaskWeightsConfig {
-  heavyLabel: string; // e.g. "2-Page Paper", "Paper", "System Build", "Chapter/Book"
-  heavyBlocks: number; // Locked at 8 blocks
-  mediumLabel: string; // e.g. "Slide Deck", "Presentation", "Feature Spec", "Essay"
-  mediumBlocks: number; // Locked at 4 blocks
+  heavyLabel: string; // e.g. "Major Deliverable", "2-Page Paper"
+  heavyBlocks: number; // Default 8 blocks
+  mediumLabel: string; // e.g. "Medium Deliverable", "Slide Deck"
+  mediumBlocks: number; // Default 4 blocks
+  quickLabel?: string; // e.g. "Quick Sprint"
+  quickBlocks?: number; // Default 2 blocks
 }
 
 export interface BreakOptionsConfig {
@@ -257,6 +309,11 @@ export interface BreakOptionsConfig {
   stressBreathingLabel: string;
   stressEspressoLabel: string;
   stressBootsLabel: string;
+  l1MicroResetLabel?: string;
+  l2Option1Label?: string;
+  l2Option2Label?: string;
+  l2Option3Label?: string;
+  stressResetLabel?: string;
 }
 
 export interface RechargeState {
@@ -277,7 +334,7 @@ export interface RechargeState {
   option0TargetEndTimeMs: number | null;
   option0ConsecutiveWindows: number; // Cap at 2 (40m)
   forkCheckModalOpen: boolean;
-  // 5 Recharge Categories
+  // 5+ Recharge Categories
   activeCategory: RechargeCategoryId;
   activeMediaTab: MediaSubTrackId;
   fictionSpeed: '1.75x' | '2.00x' | '2.25x';
@@ -290,6 +347,7 @@ export interface RechargeState {
   checkInMilestone: 20 | 40;
   stickySlots: Record<StickyKey, StickySlotState>;
   fluidCategories?: FluidCategoriesMap;
+  categoryCards?: EveningCategoryCardConfig[];
   completedLog?: string[];
 }
 
@@ -320,6 +378,7 @@ export interface RoadmapRung {
   ledgerType: 'INPUT' | 'OUTPUT';
   completedBlocks: number;
   targetBlocks: number;
+  milestones?: string[];
 }
 
 export interface RoadmapTrack {
@@ -408,6 +467,7 @@ export interface SymmetryState {
   version: string;
   profilePresetId?: ProfilePresetId;
   profileName?: string;
+  inlineEditModeActive?: boolean;
   logicalDayRolloverHour?: number; // Default: 4 (4:00 AM), adjustable 0..6 (12:00 AM to 6:00 AM)
   earlyEveningShutdownTime?: string; // Default: '6:00 PM'
   taskWeights?: TaskWeightsConfig;
@@ -446,6 +506,7 @@ export interface SymmetryState {
   recharge: RechargeState;
   roadmapTracks: RoadmapTrack[];
 }
+
 
 
 

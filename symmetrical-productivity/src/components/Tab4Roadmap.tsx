@@ -1,17 +1,29 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, Layers, Plus } from 'lucide-react';
-import { SymmetryState, TrackId } from '../types/symmetry';
+import { ChevronDown, ChevronRight, Layers, Plus, X } from 'lucide-react';
+import { RoadmapRung, RoadmapTrack, SymmetryState, TrackId } from '../types/symmetry';
+import { InlineEditableText } from './InlineEditableText';
+import { triggerHaptic } from '../utils/haptics';
 
 interface Tab4RoadmapProps {
   state: SymmetryState;
   onIncrementRungBlock: (trackId: TrackId, rungNumber: 1 | 2 | 3 | 4) => void;
   onToggleSandboxActiveWeek: (trackId: TrackId) => void;
+  onUpdateRoadmapTrack?: (trackId: TrackId, patch: Partial<RoadmapTrack>) => void;
+  onUpdateRoadmapRung?: (
+    trackId: TrackId,
+    rungNumber: 1 | 2 | 3 | 4,
+    patch: Partial<RoadmapRung>
+  ) => void;
+  onToggleTrackSandboxType?: (trackId: TrackId) => void;
 }
 
 export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
   state,
   onIncrementRungBlock,
   onToggleSandboxActiveWeek,
+  onUpdateRoadmapTrack,
+  onUpdateRoadmapRung,
+  onToggleTrackSandboxType,
 }) => {
   // Progressive disclosure: only expand the 4-Rung milestone details for the single track currently selected
   const [selectedTrackId, setSelectedTrackId] = useState<TrackId>(
@@ -43,7 +55,7 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
           <div className="space-y-1.5">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-white/[0.05] text-[10px] font-mono uppercase tracking-widest text-cyan-200">
               <Layers className="w-3 h-3 text-cyan-400" />
-              <span>4-Rung Roadmap • 50/50 Ledger</span>
+              <span>4-Rung Roadmap • 50/50 Ledger • Inline Editable</span>
             </span>
             <h2
               id="roadmap-ledger-heading"
@@ -52,7 +64,7 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
               Long-Term Input &amp; Output Horizon
             </h2>
             <p className="text-xs text-slate-400">
-              Auto-credits Daily Core Baseline &amp; Media to Input (50%) and Project Blocks to Output (50%). Select any track below to inspect its 4-Rung milestones.
+              Auto-credits Daily Core Baseline &amp; Media to Input (50%) and Project Blocks to Output (50%). Click any Track title, subtitle, Rung horizon, or milestone bullet to edit inline.
             </p>
           </div>
 
@@ -88,7 +100,7 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
         </div>
       </section>
 
-      {/* 5 Tracks Overview (3 Core Tracks + 2 Zero-Quota Sandbox Tracks) — Only Selected Track Expands 4-Rung Milestones */}
+      {/* 5 Tracks Overview (Core Tracks + Zero-Quota Sandbox Tracks) — Only Selected Track Expands 4-Rung Milestones */}
       <div className="grid grid-cols-1 gap-6">
         {state.roadmapTracks.map((track) => {
           const isSelected = selectedTrackId === track.id;
@@ -127,13 +139,8 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
             >
               {/* Clean Track Overview Row (Always Visible) */}
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-                <button
-                  type="button"
-                  onClick={() => setSelectedTrackId(track.id)}
-                  aria-expanded={isSelected}
-                  className="text-left flex-1 min-w-0 space-y-1.5 cursor-pointer group"
-                >
-                  <div className="flex flex-wrap items-center gap-2.5">
+                <div className="text-left flex-1 min-w-0 space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span
                       id={track.isSandbox ? `sandbox-status-${track.id}` : undefined}
                       className={`px-2.5 py-0.5 rounded-full font-mono text-[10px] uppercase tracking-wider border ${
@@ -146,24 +153,75 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
                     >
                       {singleStatusText}
                     </span>
-                    {track.archetypeRole && (
-                      <span className="text-[11px] font-mono text-slate-400">
-                        {track.archetypeRole}
-                      </span>
+
+                    {/* Inline Toggle between Core Track & Zero-Quota Sandbox */}
+                    {onToggleTrackSandboxType && (
+                      <button
+                        id={`btn-toggle-track-type-${track.id}`}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          triggerHaptic([10]);
+                          onToggleTrackSandboxType(track.id);
+                        }}
+                        title="Toggle between Core Track (Weekly Quota) and Zero-Quota Sandbox Track"
+                        className={`px-2 py-0.5 rounded-full font-mono text-[10px] border cursor-pointer transition ${
+                          track.isSandbox
+                            ? 'bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/30 text-amber-200'
+                            : 'bg-cyan-500/10 hover:bg-cyan-500/20 border-cyan-500/30 text-cyan-200'
+                        }`}
+                      >
+                        {track.isSandbox ? 'Zero-Quota Sandbox ⇄ Core' : 'Core Track ⇄ Sandbox'}
+                      </button>
                     )}
+
+                    {/* Inline Editable Track Subtitle / Role */}
+                    <span className="text-[11px] font-mono text-slate-400">
+                      <InlineEditableText
+                        id={`inline-track-subtitle-${track.id}`}
+                        value={track.archetypeRole || track.categoryLabel}
+                        onSave={(nextSubtitle) =>
+                          onUpdateRoadmapTrack?.(track.id, {
+                            archetypeRole: nextSubtitle,
+                          })
+                        }
+                        textClassName="text-[11px] font-mono text-slate-400"
+                        inputClassName="text-[11px] font-mono w-48"
+                        ariaLabel={`Edit subtitle for ${track.name}`}
+                      />
+                    </span>
                   </div>
 
                   <div className="flex items-center gap-2.5">
-                    <h3 className="font-serif text-2xl sm:text-3xl font-medium tracking-tight text-white group-hover:text-cyan-100 transition">
-                      {track.name}
+                    <h3
+                      onClick={() => setSelectedTrackId(track.id)}
+                      className="font-serif text-2xl sm:text-3xl font-medium tracking-tight text-white hover:text-cyan-100 transition cursor-pointer"
+                    >
+                      <InlineEditableText
+                        id={`inline-track-title-${track.id}`}
+                        value={track.name}
+                        onSave={(nextName) =>
+                          onUpdateRoadmapTrack?.(track.id, { name: nextName })
+                        }
+                        textClassName="font-serif text-2xl sm:text-3xl font-medium tracking-tight text-white"
+                        inputClassName="text-lg font-serif w-72"
+                        ariaLabel={`Edit track title for ${track.name}`}
+                      />
                     </h3>
-                    {isSelected ? (
-                      <ChevronDown className="w-4 h-4 text-cyan-300 shrink-0" />
-                    ) : (
-                      <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-slate-300 shrink-0" />
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedTrackId(track.id)}
+                      aria-label={`Toggle rungs for ${track.name}`}
+                      className="p-1 text-slate-400 hover:text-cyan-300 cursor-pointer"
+                    >
+                      {isSelected ? (
+                        <ChevronDown className="w-4 h-4 text-cyan-300 shrink-0" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4 text-slate-500 shrink-0" />
+                      )}
+                    </button>
                   </div>
-                </button>
+                </div>
 
                 {/* Dual Input / Output Progress Bars & Controls */}
                 <div className="flex flex-col sm:flex-row sm:items-center gap-4 lg:w-[440px] shrink-0">
@@ -242,34 +300,139 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
                           )
                         : 100;
                     const isOutput = rung.ledgerType === 'OUTPUT';
+                    const milestones =
+                      rung.milestones && rung.milestones.length > 0
+                        ? rung.milestones
+                        : [rung.description];
 
                     return (
                       <div
                         key={rung.rungNumber}
                         className="p-4 rounded-2xl bg-black/25 border border-white/[0.05] flex flex-col justify-between space-y-3"
                       >
-                        <div className="space-y-1.5">
+                        <div className="space-y-2">
                           <div className="flex items-center justify-between gap-1.5">
-                            <span
-                              className={`px-2 py-0.5 rounded-full font-mono text-[10px] uppercase border ${
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onUpdateRoadmapRung?.(track.id, rung.rungNumber, {
+                                  ledgerType: isOutput ? 'INPUT' : 'OUTPUT',
+                                })
+                              }
+                              title="Click to toggle Rung ledger between INPUT and OUTPUT"
+                              className={`px-2 py-0.5 rounded-full font-mono text-[10px] uppercase border cursor-pointer transition ${
                                 isOutput
-                                  ? 'bg-emerald-500/10 border-white/[0.05] text-emerald-200'
-                                  : 'bg-cyan-500/10 border-white/[0.05] text-cyan-200'
+                                  ? 'bg-emerald-500/10 hover:bg-emerald-500/20 border-white/[0.05] text-emerald-200'
+                                  : 'bg-cyan-500/10 hover:bg-cyan-500/20 border-white/[0.05] text-cyan-200'
                               }`}
                             >
                               Rung {rung.rungNumber} • {rung.ledgerType}
-                            </span>
-                            <span className="font-mono font-light tabular-nums text-xs text-white">
-                              {rung.completedBlocks}/{rung.targetBlocks}
+                            </button>
+                            <span className="font-mono font-light tabular-nums text-xs text-white flex items-center gap-0.5">
+                              <span>{rung.completedBlocks}/</span>
+                              <InlineEditableText
+                                id={`inline-rung-target-${track.id}-${rung.rungNumber}`}
+                                value={String(rung.targetBlocks)}
+                                onSave={(val) => {
+                                  const parsed = parseInt(val.replace(/[^0-9]/g, ''), 10);
+                                  if (!Number.isNaN(parsed) && parsed >= 0) {
+                                    onUpdateRoadmapRung?.(track.id, rung.rungNumber, {
+                                      targetBlocks: parsed,
+                                    });
+                                  }
+                                }}
+                                textClassName="font-mono text-xs text-white"
+                                inputClassName="w-10 text-xs font-mono text-center"
+                                showPencilOnHover={false}
+                                ariaLabel={`Edit target blocks for Rung ${rung.rungNumber}`}
+                              />
                             </span>
                           </div>
 
+                          {/* Inline Editable Rung Time Horizon / Label */}
                           <h4 className="font-serif text-lg font-medium tracking-tight text-white">
-                            {rung.label}
+                            <InlineEditableText
+                              id={`inline-rung-label-${track.id}-${rung.rungNumber}`}
+                              value={rung.label}
+                              onSave={(nextLabel) =>
+                                onUpdateRoadmapRung?.(track.id, rung.rungNumber, {
+                                  label: nextLabel,
+                                })
+                              }
+                              textClassName="font-serif text-lg font-medium tracking-tight text-white"
+                              inputClassName="text-xs font-mono w-full"
+                              ariaLabel={`Edit Rung ${rung.rungNumber} time horizon label`}
+                            />
                           </h4>
-                          <p className="text-[11px] text-slate-400 leading-relaxed">
-                            {rung.description}
-                          </p>
+
+                          {/* Inline Editable Milestone Bullets (Edit, Add, Remove) */}
+                          <ul className="space-y-1.5 pt-0.5">
+                            {milestones.map((bullet, bIdx) => (
+                              <li
+                                key={`${rung.rungNumber}_m_${bIdx}`}
+                                className="text-[11px] text-slate-300 leading-relaxed flex items-start justify-between gap-1.5 group/bullet"
+                              >
+                                <span className="text-cyan-400 font-mono mt-0.5">•</span>
+                                <div className="flex-1 min-w-0">
+                                  <InlineEditableText
+                                    id={`inline-rung-milestone-${track.id}-${rung.rungNumber}-${bIdx}`}
+                                    value={bullet}
+                                    onSave={(nextBullet) => {
+                                      const updated = milestones.map((m, i) =>
+                                        i === bIdx ? nextBullet : m
+                                      );
+                                      onUpdateRoadmapRung?.(track.id, rung.rungNumber, {
+                                        milestones: updated,
+                                        description: updated[0] || nextBullet,
+                                      });
+                                    }}
+                                    textClassName="text-[11px] text-slate-300 leading-relaxed"
+                                    inputClassName="text-[11px] font-mono w-full"
+                                    ariaLabel={`Edit milestone bullet ${bIdx + 1} for Rung ${rung.rungNumber}`}
+                                  />
+                                </div>
+                                {milestones.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updated = milestones.filter(
+                                        (_, i) => i !== bIdx
+                                      );
+                                      onUpdateRoadmapRung?.(track.id, rung.rungNumber, {
+                                        milestones: updated,
+                                        description: updated[0] || rung.description,
+                                      });
+                                    }}
+                                    title="Remove milestone bullet"
+                                    className="opacity-60 group-hover/bullet:opacity-100 p-0.5 text-slate-500 hover:text-rose-300 cursor-pointer shrink-0"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+
+                          <button
+                            id={`btn-add-rung-milestone-${track.id}-${rung.rungNumber}`}
+                            type="button"
+                            onClick={() => {
+                              const nextBullets = [
+                                ...milestones,
+                                `${rung.ledgerType === 'OUTPUT' ? 'Output' : 'Input'} milestone ${
+                                  milestones.length + 1
+                                }`,
+                              ];
+                              onUpdateRoadmapRung?.(track.id, rung.rungNumber, {
+                                milestones: nextBullets,
+                                description: nextBullets[0] || rung.description,
+                              });
+                            }}
+                            className="inline-flex items-center gap-1 text-[10px] font-mono text-cyan-300/80 hover:text-cyan-200 cursor-pointer pt-0.5"
+                          >
+                            <Plus className="w-2.5 h-2.5" />
+                            <span>+ Add Milestone</span>
+                          </button>
                         </div>
 
                         <div className="space-y-2.5 pt-1">
@@ -371,3 +534,4 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
     </div>
   );
 };
+

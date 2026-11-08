@@ -65,6 +65,192 @@ export function cycleCognitiveDemandTag(
   return 'DEEP_SYNTHESIS';
 }
 
+export function getBaselineSlotTargetBlocks(block: BaselineBlock): number {
+  if (typeof block.targetBlocks === 'number' && !Number.isNaN(block.targetBlocks)) {
+    return Math.max(1, Math.min(6, Math.round(block.targetBlocks)));
+  }
+  return 1;
+}
+
+export function getBaselineSlotCompletedBlocks(block: BaselineBlock): number {
+  const target = getBaselineSlotTargetBlocks(block);
+  if (block.completed || block.bankedViaEarlyClearance) {
+    return target;
+  }
+  if (typeof block.completedBlocks === 'number' && block.completedBlocks > 0) {
+    return Math.min(target, Math.max(0, block.completedBlocks));
+  }
+  if (typeof block.partialCredit === 'number' && block.partialCredit > 0) {
+    return Math.min(target, block.partialCredit);
+  }
+  return 0;
+}
+
+export function getTotalBaselineFloorBlocks(blocks: BaselineBlock[] | undefined): number {
+  if (!blocks || blocks.length === 0) return 0;
+  return blocks.reduce((sum, b) => sum + getBaselineSlotTargetBlocks(b), 0);
+}
+
+export function isBaselineSlotEarlyClearanceEligible(block: BaselineBlock): boolean {
+  if (typeof block.earlyClearanceEligible === 'boolean') {
+    return block.earlyClearanceEligible;
+  }
+  return (
+    block.category === 'FLASHCARDS_ANATOMY' || block.category === 'FLASHCARDS_COMP'
+  );
+}
+
+export function isBaselineSlotLateNightBlocked(block: BaselineBlock): boolean {
+  if (typeof block.lateNightBlocker === 'boolean') {
+    return block.lateNightBlocker;
+  }
+  return (
+    block.category === 'FLASHCARDS_ANATOMY' || block.category === 'FLASHCARDS_COMP'
+  );
+}
+
+export function getEffectiveEveningCategoryCards(
+  recharge: SymmetryState['recharge']
+): import('../types/symmetry').EveningCategoryCardConfig[] {
+  if (Array.isArray(recharge.categoryCards) && recharge.categoryCards.length > 0) {
+    return recharge.categoryCards;
+  }
+  const cat1 =
+    recharge.fluidCategories?.CAT1_MUSIC ||
+    DEFAULT_SYMMETRY_STATE.recharge.fluidCategories!.CAT1_MUSIC;
+  const cat4 =
+    recharge.fluidCategories?.CAT4_COMFORT ||
+    DEFAULT_SYMMETRY_STATE.recharge.fluidCategories!.CAT4_COMFORT;
+  const s2 =
+    recharge.stickySlots?.CAT2_MAKER ||
+    DEFAULT_SYMMETRY_STATE.recharge.stickySlots.CAT2_MAKER;
+  const s3a =
+    recharge.stickySlots?.['3A_FICTION'] ||
+    DEFAULT_SYMMETRY_STATE.recharge.stickySlots['3A_FICTION'];
+  const s3b =
+    recharge.stickySlots?.['3B_NONFICTION'] ||
+    DEFAULT_SYMMETRY_STATE.recharge.stickySlots['3B_NONFICTION'];
+  const s3c =
+    recharge.stickySlots?.['3C_VIDEO'] ||
+    DEFAULT_SYMMETRY_STATE.recharge.stickySlots['3C_VIDEO'];
+  const s5 =
+    recharge.stickySlots?.CAT5_GAMING ||
+    DEFAULT_SYMMETRY_STATE.recharge.stickySlots.CAT5_GAMING;
+
+  return [
+    {
+      id: 'CAT1_MUSIC',
+      slotNumber: 1,
+      categoryName: cat1.label.replace(/^1\.\s*/, ''),
+      subtitle: cat1.subtitle,
+      behavior: 'FLUID',
+      trackMode: 'SINGLE',
+      activeTitle: cat1.activeTitle,
+      startupPrompt: cat1.startupStep,
+      backlogQueue: [],
+      fiveMinStarts: 0,
+      unlockedViaCheckIn: false,
+      hidden: false,
+      legacyCategoryKey: 'CAT1_MUSIC',
+      fluidKey: 'CAT1_MUSIC',
+    },
+    {
+      id: 'CAT2_MAKER',
+      slotNumber: 2,
+      categoryName: s2.label.replace(/\s*\[Sticky\]$/i, ''),
+      subtitle: 'Hands-on diagnostic, build, or tactile progression.',
+      behavior: 'STICKY',
+      trackMode: 'SINGLE',
+      activeTitle: s2.activeTitle,
+      startupPrompt: s2.startupStep,
+      backlogQueue: [...(s2.backlogQueue || [])],
+      fiveMinStarts: s2.fiveMinStarts || 0,
+      unlockedViaCheckIn: Boolean(s2.unlockedViaCheckIn),
+      hidden: false,
+      legacyCategoryKey: 'CAT2_MAKER',
+      stickyKey: 'CAT2_MAKER',
+    },
+    {
+      id: 'CAT3_MEDIA',
+      slotNumber: 3,
+      categoryName: 'Reading & Media',
+      subtitle: 'Parallel sticky tracks across Fiction, Nonfiction, and Watch.',
+      behavior: 'STICKY',
+      trackMode: 'TRIPLE',
+      activeTitle: s3a.activeTitle,
+      startupPrompt: s3a.startupStep,
+      backlogQueue: [...(s3a.backlogQueue || [])],
+      fiveMinStarts: s3a.fiveMinStarts || 0,
+      unlockedViaCheckIn: Boolean(s3a.unlockedViaCheckIn),
+      activeSubTrackId: recharge.activeMediaTab || '3A_FICTION',
+      subTracks: [
+        {
+          id: '3A_FICTION',
+          label: s3a.label.replace(/\s*\[Sticky\]$/i, ''),
+          activeTitle: s3a.activeTitle,
+          startupPrompt: s3a.startupStep,
+          backlogQueue: [...(s3a.backlogQueue || [])],
+          fiveMinStarts: s3a.fiveMinStarts || 0,
+          unlockedViaCheckIn: Boolean(s3a.unlockedViaCheckIn),
+          speedControl: true,
+        },
+        {
+          id: '3B_NONFICTION',
+          label: s3b.label.replace(/\s*\[Sticky\]$/i, ''),
+          activeTitle: s3b.activeTitle,
+          startupPrompt: s3b.startupStep,
+          backlogQueue: [...(s3b.backlogQueue || [])],
+          fiveMinStarts: s3b.fiveMinStarts || 0,
+          unlockedViaCheckIn: Boolean(s3b.unlockedViaCheckIn),
+        },
+        {
+          id: '3C_VIDEO',
+          label: s3c.label.replace(/\s*\[Sticky\]$/i, ''),
+          activeTitle: s3c.activeTitle,
+          startupPrompt: s3c.startupStep,
+          backlogQueue: [...(s3c.backlogQueue || [])],
+          fiveMinStarts: s3c.fiveMinStarts || 0,
+          unlockedViaCheckIn: Boolean(s3c.unlockedViaCheckIn),
+        },
+      ],
+      hidden: false,
+      legacyCategoryKey: 'CAT3_MEDIA',
+    },
+    {
+      id: 'CAT4_COMFORT',
+      slotNumber: 4,
+      categoryName: cat4.label.replace(/^4\.\s*/, ''),
+      subtitle: cat4.subtitle,
+      behavior: 'FLUID',
+      trackMode: 'SINGLE',
+      activeTitle: cat4.activeTitle,
+      startupPrompt: cat4.startupStep,
+      backlogQueue: [],
+      fiveMinStarts: 0,
+      unlockedViaCheckIn: false,
+      hidden: false,
+      legacyCategoryKey: 'CAT4_COMFORT',
+      fluidKey: 'CAT4_COMFORT',
+    },
+    {
+      id: 'CAT5_GAMING',
+      slotNumber: 5,
+      categoryName: s5.label.replace(/\s*\[Sticky\]$/i, ''),
+      subtitle: 'Focused interactive objective with 20m/40m check-in pacing.',
+      behavior: 'STICKY',
+      trackMode: 'SINGLE',
+      activeTitle: s5.activeTitle,
+      startupPrompt: s5.startupStep,
+      backlogQueue: [...(s5.backlogQueue || [])],
+      fiveMinStarts: s5.fiveMinStarts || 0,
+      unlockedViaCheckIn: Boolean(s5.unlockedViaCheckIn),
+      hidden: false,
+      legacyCategoryKey: 'CAT5_GAMING',
+      stickyKey: 'CAT5_GAMING',
+    },
+  ];
+}
+
 export function getActiveFocusProject(
   state: SymmetryState
 ): ProjectItem | undefined {
@@ -1127,20 +1313,17 @@ export function formatMinutesAsWorkLeft(minutes: number): string {
 }
 
 export function computeShiftMetrics(state: SymmetryState) {
-  const floorLen = state.baselineBlocks?.length || 7;
+  const floorLen = getTotalBaselineFloorBlocks(state.baselineBlocks) || 1;
   const rawTarget = Math.max(1, state.customModeBlockAdjustment || floorLen);
   const totalTargetBlocks = state.preExamTaperActive
     ? Math.min(9, rawTarget)
     : rawTarget;
   const completedBaselineCount =
     Math.round(
-      state.baselineBlocks.reduce((acc, b) => {
-        if (b.completed || b.bankedViaEarlyClearance) return acc + 1;
-        if (typeof b.partialCredit === 'number' && b.partialCredit > 0) {
-          return acc + Math.min(1, b.partialCredit);
-        }
-        return acc;
-      }, 0) * 10
+      state.baselineBlocks.reduce(
+        (acc, b) => acc + getBaselineSlotCompletedBlocks(b),
+        0
+      ) * 10
     ) / 10;
   const totalCompletedBlocks =
     Math.round((completedBaselineCount + state.discretionaryBlocksCompletedToday) * 10) / 10;
@@ -1172,22 +1355,11 @@ export function computeShiftMetrics(state: SymmetryState) {
 /**
  * Generates the exact Sequential 20m Checklist (Interleaved Work Blocks + Auto-Breaks + Running Countdown)
  * from Block 1 down to `[0m work left — Hard Shutdown]`.
- *
- * Rules enforced:
- * 1. Spaces Flashcard blocks across early and mid-shift so flashcards are NEVER scheduled as the final blocks of the night.
- * 2. Groups Reading and Synthesis blocks in the baseline floor, and locks remaining discretionary blocks to the active Closed List project.
- * 3. Adapts uncompleted block order when Energy-State Bandwidth Router is `SHARP` or `LOW_FOGGY`, and respects Shock Absorber ceiling compression.
- * 4. Interleaves Break rows automatically:
- *    - `Level 1 Micro-Reset (3–5m: Window gaze / water / 3 dishes)` between two blocks of the same task.
- *    - `Level 2 Task-Switch Buffer (10–15m: Espresso / 1-Song Riff / 15m TENS)` after any 2 chained blocks (40m)
- *      or whenever switching task types.
- *    - Mandatory `Level 3 Mid-Shift Reset (60–120m: 30m meal + walk/boots)` after Block 7 on Surge days (14-15 blocks).
- * 5. Running countdown badge on every work row (`[20m | 3h 40m work left]` -> `[40m | 3h 20m work left]` -> ... -> `[0m work left — End-of-Shift Bridge]`).
  */
 export function generateSequentialChecklist(
   state: SymmetryState
 ): import('../types/symmetry').SequentialChecklistStep[] {
-  const baselineCount = state.baselineBlocks?.length || 7;
+  const baselineCount = getTotalBaselineFloorBlocks(state.baselineBlocks) || 1;
   const totalTargetBlocks = Math.max(1, state.customModeBlockAdjustment || baselineCount);
   const primaryProject = getActiveFocusProject(state);
   const discretionaryCount = Math.max(0, totalTargetBlocks - baselineCount);
@@ -1205,57 +1377,66 @@ export function generateSequentialChecklist(
     banked: boolean;
   }
 
-  const fcBlocks = state.baselineBlocks.filter(
-    (b) => b.category === 'FLASHCARDS_ANATOMY' || b.category === 'FLASHCARDS_COMP'
-  );
-  const readBlocks = state.baselineBlocks.filter((b) => b.category === 'READING');
-  const synthBlocks = state.baselineBlocks.filter((b) => b.category === 'SYNTHESIS');
+  const expandSlotToUnits = (
+    b: BaselineBlock,
+    defaultTaskType: import('../types/symmetry').ActiveTaskType,
+    badgePrefix: string
+  ): Omit<RawWorkSpec, 'blockNumber'>[] => {
+    const target = getBaselineSlotTargetBlocks(b);
+    const completedUnits = Math.floor(getBaselineSlotCompletedBlocks(b));
+    const units: Omit<RawWorkSpec, 'blockNumber'>[] = [];
+    for (let u = 1; u <= target; u++) {
+      const unitCompleted = Boolean(b.completed || b.bankedViaEarlyClearance || u <= completedUnits);
+      const suffix = target > 1 && !b.title.includes('/') ? ` — Block ${u}/${target}` : '';
+      units.push({
+        sourceId: b.id,
+        title: `${b.title}${suffix}`,
+        categoryBadge:
+          target > 1 ? `${badgePrefix} (${u}/${target})` : badgePrefix,
+        taskType: defaultTaskType,
+        cognitiveDemand: getBaselineCognitiveDemand(b),
+        startupStep: b.startupStep,
+        completed: unitCompleted,
+        banked: Boolean(b.bankedViaEarlyClearance),
+      });
+    }
+    return units;
+  };
 
-  const earlyFcCount = Math.ceil(fcBlocks.length / 2);
-  const earlyFc = fcBlocks.slice(0, earlyFcCount);
-  const midFc = fcBlocks.slice(earlyFcCount);
+  const fcSlots = state.baselineBlocks.filter((b) =>
+    isBaselineSlotLateNightBlocked(b)
+  );
+  const nonFcSlots = state.baselineBlocks.filter(
+    (b) => !isBaselineSlotLateNightBlocked(b)
+  );
+  const readSlots = nonFcSlots.filter((b) => b.category !== 'SYNTHESIS');
+  const synthSlots = nonFcSlots.filter((b) => b.category === 'SYNTHESIS');
+
+  const fcUnits = fcSlots.flatMap((b) =>
+    expandSlotToUnits(b, 'FLASHCARDS', 'EARLY/MID SHIFT • RECALL')
+  );
+  const readUnits = readSlots.flatMap((b) =>
+    expandSlotToUnits(b, 'READING', 'BASELINE FLOOR • INTAKE/ADMIN')
+  );
+  const synthUnits = synthSlots.flatMap((b) =>
+    expandSlotToUnits(b, 'SYNTHESIS', 'BASELINE FLOOR • SYNTHESIS')
+  );
+
+  const earlyFcCount = Math.ceil(fcUnits.length / 2);
+  const earlyFc = fcUnits.slice(0, earlyFcCount).map((u, idx) => ({
+    ...u,
+    categoryBadge: `EARLY SHIFT • RECALL (${idx + 1}/${fcUnits.length})`,
+  }));
+  const midFc = fcUnits.slice(earlyFcCount).map((u, idx) => ({
+    ...u,
+    categoryBadge: `MID-SHIFT • RECALL (${earlyFcCount + idx + 1}/${fcUnits.length})`,
+  }));
 
   const orderedBaselineSpecs: Omit<RawWorkSpec, 'blockNumber'>[] = [
-    ...earlyFc.map((b, idx) => ({
-      sourceId: b.id,
-      title: b.title,
-      categoryBadge: `EARLY SHIFT • FLASHCARDS (${idx + 1}/${fcBlocks.length})`,
-      taskType: 'FLASHCARDS' as const,
-      cognitiveDemand: getBaselineCognitiveDemand(b),
-      startupStep: b.startupStep,
-      completed: b.completed,
-      banked: Boolean(b.bankedViaEarlyClearance),
-    })),
-    ...readBlocks.map((b, idx) => ({
-      sourceId: b.id,
-      title: b.title,
-      categoryBadge: `BASELINE FLOOR • HALF-CHAPTER READ (${idx + 1}/${readBlocks.length})`,
-      taskType: 'READING' as const,
-      cognitiveDemand: getBaselineCognitiveDemand(b),
-      startupStep: b.startupStep,
-      completed: b.completed,
-      banked: Boolean(b.bankedViaEarlyClearance),
-    })),
-    ...midFc.map((b, idx) => ({
-      sourceId: b.id,
-      title: b.title,
-      categoryBadge: `MID-SHIFT • FLASHCARDS (${earlyFcCount + idx + 1}/${fcBlocks.length})`,
-      taskType: 'FLASHCARDS' as const,
-      cognitiveDemand: getBaselineCognitiveDemand(b),
-      startupStep: b.startupStep,
-      completed: b.completed,
-      banked: Boolean(b.bankedViaEarlyClearance),
-    })),
-    ...synthBlocks.map((b) => ({
-      sourceId: b.id,
-      title: b.title,
-      categoryBadge: 'BASELINE FLOOR • HALF-CHAPTER SYNTHESIS',
-      taskType: 'SYNTHESIS' as const,
-      cognitiveDemand: getBaselineCognitiveDemand(b),
-      startupStep: b.startupStep,
-      completed: b.completed,
-      banked: Boolean(b.bankedViaEarlyClearance),
-    })),
+    ...earlyFc,
+    ...readUnits,
+    ...midFc,
+    ...synthUnits,
   ];
 
   // If Shock Absorber compressed totalTargetBlocks below baselineCount, keep completed first + highest-yield remaining baseline specs

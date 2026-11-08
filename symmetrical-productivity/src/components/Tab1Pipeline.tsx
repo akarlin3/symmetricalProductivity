@@ -51,16 +51,24 @@ import {
   getActiveBlockDurationsSeconds,
   getActiveFocusProject,
   getBaselineCognitiveDemand,
+  getBaselineSlotCompletedBlocks,
+  getBaselineSlotTargetBlocks,
   getPreExamTaperSuggestion,
   getProjectCognitiveDemand,
   getShrunkStartupPrompt,
+  getTotalBaselineFloorBlocks,
+  isBaselineSlotEarlyClearanceEligible,
+  isBaselineSlotLateNightBlocked,
 } from '../state/defaultState';
 import { DualRingTimerSvg } from './DualRingTimerSvg';
 import { BreathingVisualizer478 } from './BreathingVisualizer478';
 import { InteractivePipelineTable } from './PipelineDrawer';
 import { SmartIntakeBar } from './SmartIntakeBar';
+import { InlineEditableText } from './InlineEditableText';
+import { InlineBreakOptionsEditor, InlineSlotEditor } from './InlineSlotEditor';
 import { triggerHaptic } from '../utils/haptics';
 import { soundEngine } from '../utils/soundEngine';
+import { Pencil, X } from 'lucide-react';
 
 interface PendingIntakeDeliverable {
   title: string;
@@ -155,6 +163,18 @@ interface Tab1PipelineProps {
   onApplyShockAbsorber: (mode: ShockAbsorberMode, targetCeiling?: number) => void;
   onSetActiveDualSlotNumber: (slot: 1 | 2) => void;
   onLaunchBoundedCuriosityBlock: () => void;
+  // Direct Inline Editing Handlers
+  onUpdateBaselineBlock?: (blockId: string, patch: Partial<BaselineBlock>) => void;
+  onAddBaselineBlock?: () => void;
+  onDeleteBaselineBlock?: (blockId: string) => void;
+  onUpdateProjectItem?: (
+    projectId: string,
+    patch: Partial<import('../types/symmetry').ProjectItem>
+  ) => void;
+  onUpdateActiveTimerTask?: (patch: { title?: string; startupPrompt?: string }) => void;
+  onUpdateBreakOptions?: (
+    patch: Partial<import('../types/symmetry').BreakOptionsConfig>
+  ) => void;
 }
 
 export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
@@ -215,6 +235,12 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   onApplyShockAbsorber,
   onSetActiveDualSlotNumber,
   onLaunchBoundedCuriosityBlock,
+  onUpdateBaselineBlock,
+  onAddBaselineBlock,
+  onDeleteBaselineBlock,
+  onUpdateProjectItem,
+  onUpdateActiveTimerTask,
+  onUpdateBreakOptions,
 }) => {
   const metrics = computeShiftMetrics(state);
   const { timer } = state;
@@ -223,16 +249,25 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   const energyBandwidth: EnergyBandwidthState = state.energyBandwidth || 'STEADY';
   const elasticMult: ElasticBlockMultiplier = timer.elasticMultiplier ?? 1.0;
   const shrinkLevel: StartupShrinkLevel = timer.startupShrinkLevel ?? 1;
+  const totalBaselineFloorBlocks = getTotalBaselineFloorBlocks(state.baselineBlocks);
 
-  // Progressive Disclosure States (All secondary drawers/accordions closed by default)
+  // Progressive Disclosure States (Opens automatically if Modular Blank Canvas inlineEditModeActive is true)
   const [stageOptionsOpen, setStageOptionsOpen] = useState(false);
-  const [progressChecklistOpen, setProgressChecklistOpen] = useState(false);
+  const [progressChecklistOpen, setProgressChecklistOpen] = useState(
+    Boolean(state.inlineEditModeActive)
+  );
   const [triageDetailsOpen, setTriageDetailsOpen] = useState(false);
   const [sequentialViewOpen, setSequentialViewOpen] = useState(false);
   const [recalibrateWizardOpen, setRecalibrateWizardOpen] = useState(false);
   const [intakeDrawerOpen, setIntakeDrawerOpen] = useState(false);
   const [sevenDayAccordionOpen, setSevenDayAccordionOpen] = useState(false);
   const [lockedDrawerOpen, setLockedDrawerOpen] = useState(false);
+  const [editingBaselineSlotId, setEditingBaselineSlotId] = useState<string | null>(
+    state.inlineEditModeActive ? state.baselineBlocks[0]?.id || null : null
+  );
+  const [editingBreakPill, setEditingBreakPill] = useState<
+    'L1' | 'L2' | 'STRESS' | null
+  >(null);
 
   const [shockAbsorberSelection, setShockAbsorberSelection] = useState<ShockAbsorberMode>(
     state.shockAbsorberMode || 'HALF_SHIFT'
@@ -765,7 +800,25 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               </div>
 
               <h2 className="font-serif text-3xl sm:text-4xl font-medium tracking-tight text-white leading-tight">
-                {timer.activeTaskTitle}
+                <InlineEditableText
+                  value={timer.activeTaskTitle}
+                  onSave={(newTitle) => {
+                    onUpdateActiveTimerTask?.({ title: newTitle });
+                    if (
+                      primaryProject &&
+                      timer.activeBlockSourceId === primaryProject.id
+                    ) {
+                      onUpdateProjectItem?.(primaryProject.id, { title: newTitle });
+                    } else {
+                      const matchBase = state.baselineBlocks.find(
+                        (b) => b.id === timer.activeBlockSourceId
+                      );
+                      if (matchBase) {
+                        onUpdateBaselineBlock?.(matchBase.id, { title: newTitle });
+                      }
+                    }
+                  }}
+                />
               </h2>
 
               {/* 5m Startup Step Prompt */}
@@ -785,12 +838,34 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     </span>
                   </span>
                 </div>
-                <p
+                <div
                   id="hud-startup-script-text"
                   className="text-xs sm:text-sm text-slate-200 leading-relaxed font-normal"
                 >
-                  “{activeDisplayedStartupPrompt}”
-                </p>
+                  <InlineEditableText
+                    value={activeDisplayedStartupPrompt}
+                    onSave={(newStartup) => {
+                      onUpdateActiveTimerTask?.({ startupPrompt: newStartup });
+                      if (
+                        primaryProject &&
+                        timer.activeBlockSourceId === primaryProject.id
+                      ) {
+                        onUpdateProjectItem?.(primaryProject.id, {
+                          startupStep: newStartup,
+                        });
+                      } else {
+                        const matchBase = state.baselineBlocks.find(
+                          (b) => b.id === timer.activeBlockSourceId
+                        );
+                        if (matchBase) {
+                          onUpdateBaselineBlock?.(matchBase.id, {
+                            startupStep: newStartup,
+                          });
+                        }
+                      }
+                    }}
+                  />
+                </div>
               </div>
             </div>
 
@@ -830,10 +905,36 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                   </span>
                 </div>
                 <div className="font-serif text-xl sm:text-2xl font-medium text-slate-100 truncate">
-                  {upNextBlock.title}
+                  <InlineEditableText
+                    value={upNextBlock.title}
+                    onSave={(newVal) => {
+                      const base = state.baselineBlocks.find(
+                        (b) => b.id === upNextBlock.sourceId
+                      );
+                      if (base) {
+                        onUpdateBaselineBlock?.(base.id, { title: newVal });
+                      } else if (primaryProject) {
+                        onUpdateProjectItem?.(primaryProject.id, { title: newVal });
+                      }
+                    }}
+                  />
                 </div>
                 <div className="text-xs text-slate-400 truncate">
-                  {upNextBlock.startupStep}
+                  <InlineEditableText
+                    value={upNextBlock.startupStep}
+                    onSave={(newVal) => {
+                      const base = state.baselineBlocks.find(
+                        (b) => b.id === upNextBlock.sourceId
+                      );
+                      if (base) {
+                        onUpdateBaselineBlock?.(base.id, { startupStep: newVal });
+                      } else if (primaryProject) {
+                        onUpdateProjectItem?.(primaryProject.id, {
+                          startupStep: newVal,
+                        });
+                      }
+                    }}
+                  />
                 </div>
               </div>
 
@@ -1242,7 +1343,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
       {/* =====================================================================
           VISUAL GROUP 2: MINIMALIST PROGRESS STRIP
           Single ultra-clean horizontal progress strip (`Baseline 4/7 • Focus #1: Paper 2/8`)
-          that expands into the full checklist ONLY when clicked.
+          with inline slot editing directly on the strip and inside the checklist.
          ===================================================================== */}
       <section
         id="minimalist-progress-strip-section"
@@ -1253,12 +1354,19 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
             : ''
         }`}
       >
-        <button
+        <div
           id="btn-toggle-minimalist-progress-strip"
-          type="button"
           onClick={() => {
             triggerHaptic([10]);
             setProgressChecklistOpen((prev) => !prev);
+          }}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setProgressChecklistOpen((prev) => !prev);
+            }
           }}
           aria-expanded={progressChecklistOpen}
           className="w-full px-6 sm:px-8 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-left cursor-pointer hover:bg-white/[0.015] transition"
@@ -1267,22 +1375,46 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
             <span className="font-mono text-xs sm:text-sm text-slate-200 tracking-tight tabular-nums">
               Baseline{' '}
               <span className="text-cyan-300 font-medium">
-                {metrics.completedBaselineCount}/{state.baselineBlocks.length}
+                {metrics.completedBaselineCount}/{totalBaselineFloorBlocks}
               </span>
             </span>
 
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onAddBaselineBlock?.();
+                setProgressChecklistOpen(true);
+              }}
+              title="Add Daily Baseline Habit Slot"
+              className="px-2 py-0.5 rounded-full bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/40 text-[10px] font-mono text-teal-200 inline-flex items-center gap-1 transition"
+            >
+              <Plus className="w-3 h-3" />
+              <span>+ Add Baseline Habit</span>
+            </button>
+
             <span className="text-slate-600">•</span>
 
-            <span className="font-mono text-xs sm:text-sm text-slate-200 tracking-tight tabular-nums truncate">
-              Focus #{primaryProject?.slot || 1}:{' '}
-              <span className="font-serif text-base sm:text-lg text-white font-medium">
-                {primaryProject?.title || 'None'}
-              </span>{' '}
-              <span className="text-emerald-300 font-medium">
-                {primaryProject
-                  ? `${primaryProject.completedBlocks}/${primaryProject.totalBlocks}`
-                  : '0/0'}
-              </span>
+            <span className="font-mono text-xs sm:text-sm text-slate-200 tracking-tight tabular-nums truncate flex items-center gap-1.5">
+              <span>Focus #{primaryProject?.slot || 1}:</span>
+              {primaryProject ? (
+                <>
+                  <InlineEditableText
+                    value={primaryProject.title}
+                    onSave={(val) =>
+                      onUpdateProjectItem?.(primaryProject.id, { title: val })
+                    }
+                    textClassName="font-serif text-base sm:text-lg text-white font-medium"
+                  />
+                  <span className="text-emerald-300 font-medium">
+                    {primaryProject.completedBlocks}/{primaryProject.totalBlocks}
+                  </span>
+                </>
+              ) : (
+                <span className="font-serif text-base sm:text-lg text-white font-medium">
+                  None
+                </span>
+              )}
             </span>
           </div>
 
@@ -1303,7 +1435,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               )}
             </span>
           </div>
-        </button>
+        </div>
 
         {/* Expanded Checklist Drawer (Only rendered when clicked) */}
         <AnimatePresence>
@@ -1316,149 +1448,231 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
             >
               {/* Two-Column Expanded Baseline & Focus #1 Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Left Column: 7-Block Daily Core Baseline */}
+                {/* Left Column: Daily Core Baseline (Inline Editable + Legacy Avery Segments) */}
                 <div
                   id="bento-baseline-card"
                   className="p-5 rounded-2xl bg-white/[0.015] border border-white/[0.05] space-y-4"
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400">
                         Daily Core Baseline
                       </span>
                       <h3 className="font-serif text-2xl font-medium text-white">
-                        {state.baselineBlocks.length}-Block Floor
+                        {totalBaselineFloorBlocks}-Block Floor ({state.baselineBlocks.length} Slots)
                       </h3>
                     </div>
-                    <button
-                      id="btn-toggle-early-clearance"
-                      type="button"
-                      disabled={metrics.isZeroWorkLeft}
-                      onClick={() => {
-                        triggerHaptic([15]);
-                        onToggleEarlyClearance();
-                      }}
-                      className={`px-2.5 py-1 rounded-full border font-mono text-[10px] transition cursor-pointer ${
-                        state.earlyClearanceEnabled
-                          ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-200'
-                          : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.05] text-slate-300'
-                      }`}
-                    >
-                      {state.earlyClearanceEnabled
-                        ? '✓ Early Clearance Banked'
-                        : 'Early Clearance'}
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => onAddBaselineBlock?.()}
+                        className="px-2.5 py-1 rounded-full bg-teal-500/15 hover:bg-teal-500/25 border border-teal-500/40 font-mono text-[10px] text-teal-200 flex items-center gap-1 cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>+ Add Baseline Habit</span>
+                      </button>
+                      <button
+                        id="btn-toggle-early-clearance"
+                        type="button"
+                        disabled={metrics.isZeroWorkLeft}
+                        onClick={() => {
+                          triggerHaptic([15]);
+                          onToggleEarlyClearance();
+                        }}
+                        className={`px-2.5 py-1 rounded-full border font-mono text-[10px] transition cursor-pointer ${
+                          state.earlyClearanceEnabled
+                            ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-200'
+                            : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.05] text-slate-300'
+                        }`}
+                      >
+                        {state.earlyClearanceEnabled
+                          ? '✓ Early Clearance Banked'
+                          : 'Early Clearance'}
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Flashcard Segments */}
+                  {/* Direct Inline Baseline Slots List (Rename, 1b-6b target, 5m startup script, Early Clearance, Late-Night Blocker, Delete x) */}
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
-                      <span>Flashcards (1 Anatomy + 3 Comp)</span>
-                      <span>{state.flashcardsReviewedCount}/250 cards</span>
-                    </div>
-                    <div
-                      className="grid gap-1.5"
-                      style={{
-                        gridTemplateColumns: `repeat(${Math.max(
-                          1,
-                          flashcardBlocks.length
-                        )}, minmax(0, 1fr))`,
-                      }}
-                    >
-                      {flashcardBlocks.map((b, idx) => {
-                        const blockedAsFinal =
-                          isFinalBlockOfNight && !b.completed && !b.bankedViaEarlyClearance;
-                        const shortTag = idx === 0 ? 'ANAT 1' : `COMP ${idx}`;
-                        return (
-                          <button
-                            key={b.id}
-                            id={`pill-segment-${b.id}`}
-                            type="button"
-                            disabled={metrics.isZeroWorkLeft || blockedAsFinal}
-                            onClick={() => {
-                              triggerHaptic([10]);
-                              setSelectedBaselineId(b.id);
-                              onToggleBaselineBlock(b.id);
-                            }}
-                            className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
-                              b.completed
-                                ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-100'
-                                : b.bankedViaEarlyClearance
-                                ? 'bg-cyan-500/15 border-cyan-400/35 text-cyan-100'
-                                : blockedAsFinal
-                                ? 'bg-red-950/25 border-red-800/40 text-red-300/60 cursor-not-allowed'
-                                : 'bg-white/[0.02] hover:bg-white/[0.06] border-white/[0.05] text-slate-300'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between font-mono text-[10px]">
-                              <span>{shortTag}</span>
-                              {b.completed && <Check className="w-3 h-3 text-emerald-300" />}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <input
-                      id="input-flashcard-count"
-                      type="range"
-                      min={0}
-                      max={state.flashcardsDailyCap}
-                      step={5}
-                      value={state.flashcardsReviewedCount}
-                      onChange={(e) => onUpdateFlashcardCount(Number(e.target.value))}
-                      className="w-full accent-cyan-400 cursor-pointer"
-                    />
-                  </div>
+                    {state.baselineBlocks.map((b) => {
+                      const slotTarget = getBaselineSlotTargetBlocks(b);
+                      const slotDone = getBaselineSlotCompletedBlocks(b);
+                      const isEarlyElig = isBaselineSlotEarlyClearanceEligible(b);
+                      const isLateBlocked = isBaselineSlotLateNightBlocked(b);
+                      const blockedAsFinal =
+                        isFinalBlockOfNight &&
+                        isLateBlocked &&
+                        !b.completed &&
+                        !b.bankedViaEarlyClearance;
+                      const isCanceledByTaper =
+                        state.preExamTaperActive && b.category === 'SYNTHESIS';
+                      const isEditingThisSlot = editingBaselineSlotId === b.id;
 
-                  {/* Half-Chapter Segments */}
-                  <div className="space-y-2 pt-2 border-t border-white/[0.05]">
-                    <span className="text-[11px] font-mono text-slate-400 block">
-                      Half-Chapter Blocks (2 Read/Eq + 1 Synthesis)
-                    </span>
-                    <div
-                      className="grid gap-1.5"
-                      style={{
-                        gridTemplateColumns: `repeat(${Math.max(
-                          1,
-                          halfChapterBlocks.length
-                        )}, minmax(0, 1fr))`,
-                      }}
-                    >
-                      {halfChapterBlocks.map((b, idx) => {
-                        const isCanceledByTaper =
-                          state.preExamTaperActive && b.category === 'SYNTHESIS';
-                        const shortTag =
-                          b.category === 'SYNTHESIS' ? 'SYNTH' : `READ ${idx + 1}`;
-                        return (
-                          <button
-                            key={b.id}
-                            id={`pill-segment-${b.id}`}
-                            type="button"
-                            disabled={metrics.isZeroWorkLeft || isCanceledByTaper}
-                            onClick={() => {
-                              triggerHaptic([10]);
-                              setSelectedBaselineId(b.id);
-                              onToggleBaselineBlock(b.id);
-                            }}
-                            className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
-                              isCanceledByTaper
-                                ? 'bg-indigo-950/25 border-indigo-500/30 text-indigo-300/60 line-through cursor-not-allowed'
-                                : b.completed
-                                ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-100'
-                                : 'bg-white/[0.02] hover:bg-white/[0.06] border-white/[0.05] text-slate-300'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between font-mono text-[10px]">
-                              <span>{shortTag}</span>
-                              {b.completed && !isCanceledByTaper && (
-                                <Check className="w-3 h-3 text-emerald-300" />
+                      return (
+                        <div
+                          key={b.id}
+                          id={`pill-segment-${b.id}`}
+                          className={`p-3 rounded-xl border transition ${
+                            isCanceledByTaper
+                              ? 'bg-indigo-950/25 border-indigo-500/30 text-indigo-300/60'
+                              : b.completed
+                              ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-100'
+                              : b.bankedViaEarlyClearance
+                              ? 'bg-cyan-500/15 border-cyan-400/35 text-cyan-100'
+                              : blockedAsFinal
+                              ? 'bg-red-950/25 border-red-800/40 text-red-300/60'
+                              : 'bg-white/[0.02] hover:bg-white/[0.05] border-white/[0.06] text-slate-200'
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <button
+                                type="button"
+                                disabled={
+                                  metrics.isZeroWorkLeft ||
+                                  blockedAsFinal ||
+                                  isCanceledByTaper
+                                }
+                                onClick={() => {
+                                  triggerHaptic([10]);
+                                  setSelectedBaselineId(b.id);
+                                  onToggleBaselineBlock(b.id);
+                                }}
+                                title="Click to log/toggle block completion"
+                                className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 cursor-pointer ${
+                                  b.completed
+                                    ? 'bg-emerald-400 border-emerald-300 text-slate-950'
+                                    : b.bankedViaEarlyClearance
+                                    ? 'bg-cyan-400 border-cyan-300 text-slate-950'
+                                    : 'bg-slate-900 border-slate-700 text-transparent hover:border-teal-400'
+                                }`}
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+
+                              <div className="min-w-0 flex-1">
+                                <div className="text-xs font-medium text-white flex flex-wrap items-center gap-1.5">
+                                  <InlineEditableText
+                                    value={b.title}
+                                    onSave={(newTitle) =>
+                                      onUpdateBaselineBlock?.(b.id, {
+                                        title: newTitle,
+                                      })
+                                    }
+                                  />
+                                  {isEarlyElig && (
+                                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-[9px] font-mono text-emerald-300">
+                                      Early Clearance
+                                    </span>
+                                  )}
+                                  {isLateBlocked && (
+                                    <span className="px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-[9px] font-mono text-amber-300">
+                                      Late-Night Blocker
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] text-slate-400 mt-0.5">
+                                  <InlineEditableText
+                                    value={b.startupStep}
+                                    onSave={(newStartup) =>
+                                      onUpdateBaselineBlock?.(b.id, {
+                                        startupStep: newStartup,
+                                      })
+                                    }
+                                    placeholder="5m startup script..."
+                                  />
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <select
+                                value={slotTarget}
+                                onChange={(e) =>
+                                  onUpdateBaselineBlock?.(b.id, {
+                                    targetBlocks: Number(e.target.value) || 1,
+                                  })
+                                }
+                                title="Block Target (1b–6b)"
+                                className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 font-mono text-[10px] text-teal-300 cursor-pointer"
+                              >
+                                {[1, 2, 3, 4, 5, 6].map((n) => (
+                                  <option key={n} value={n}>
+                                    {slotDone}/{n}b
+                                  </option>
+                                ))}
+                              </select>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setEditingBaselineSlotId((prev) =>
+                                    prev === b.id ? null : b.id
+                                  )
+                                }
+                                title="Configure Slot (Early Clearance, Late-Night Blocker, Track)"
+                                className={`p-1 rounded border text-slate-400 hover:text-teal-300 transition ${
+                                  isEditingThisSlot
+                                    ? 'bg-teal-500/20 border-teal-400 text-teal-200'
+                                    : 'bg-slate-900/70 border-slate-800'
+                                }`}
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
+
+                              {state.baselineBlocks.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => onDeleteBaselineBlock?.(b.id)}
+                                  title="Delete Baseline Slot (x)"
+                                  className="p-1 rounded bg-slate-900/70 border border-slate-800 text-slate-500 hover:text-rose-400 transition"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
                               )}
                             </div>
-                          </button>
-                        );
-                      })}
-                    </div>
+                          </div>
+
+                          {isEditingThisSlot && (
+                            <InlineSlotEditor
+                              block={b}
+                              canDelete={state.baselineBlocks.length > 1}
+                              onUpdate={(patch) =>
+                                onUpdateBaselineBlock?.(b.id, patch)
+                              }
+                              onDelete={() => {
+                                onDeleteBaselineBlock?.(b.id);
+                                setEditingBaselineSlotId(null);
+                              }}
+                              onClose={() => setEditingBaselineSlotId(null)}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
+
+                  {/* Card counter slider when Flashcard / Recall slots exist */}
+                  {flashcardBlocks.length > 0 && (
+                    <div className="space-y-1.5 pt-2 border-t border-white/[0.05]">
+                      <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
+                        <span>Active Recall / Flashcard Queue</span>
+                        <span>
+                          {state.flashcardsReviewedCount}/{state.flashcardsDailyCap} cards
+                        </span>
+                      </div>
+                      <input
+                        id="input-flashcard-count"
+                        type="range"
+                        min={0}
+                        max={state.flashcardsDailyCap}
+                        step={5}
+                        value={state.flashcardsReviewedCount}
+                        onChange={(e) => onUpdateFlashcardCount(Number(e.target.value))}
+                        className="w-full accent-cyan-400 cursor-pointer"
+                      />
+                    </div>
+                  )}
 
                   {selectedBaseline && (
                     <div className="pt-2 border-t border-white/[0.05] flex items-center justify-between gap-2">
@@ -1489,7 +1703,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                   )}
                 </div>
 
-                {/* Right Column: Locked Focus #1 Deliverable */}
+                {/* Right Column: Locked Focus #1 Deliverable (Inline Editable Title, Block Count 1b-12b, 5m Startup Script) */}
                 <div
                   id="bento-project-lock-card"
                   className="p-5 rounded-2xl bg-white/[0.015] border border-white/[0.05] flex flex-col justify-between space-y-4"
@@ -1528,18 +1742,59 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       )}
 
                       <div className="flex items-start justify-between gap-2">
-                        <div>
+                        <div className="min-w-0 flex-1">
                           <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-300/90 flex items-center gap-1">
                             <Unlock className="w-3 h-3" />
                             <span>Locked Focus #{primaryProject.slot}</span>
                           </span>
                           <h3 className="font-serif text-2xl font-medium text-white mt-0.5">
-                            {primaryProject.title}
+                            <InlineEditableText
+                              value={primaryProject.title}
+                              onSave={(newTitle) =>
+                                onUpdateProjectItem?.(primaryProject.id, {
+                                  title: newTitle,
+                                })
+                              }
+                            />
                           </h3>
+                          <div className="text-xs text-slate-400 mt-1">
+                            <span className="text-[10px] font-mono uppercase text-amber-300/80 mr-1.5">
+                              5m Startup:
+                            </span>
+                            <InlineEditableText
+                              value={primaryProject.startupStep}
+                              onSave={(newStep) =>
+                                onUpdateProjectItem?.(primaryProject.id, {
+                                  startupStep: newStep,
+                                })
+                              }
+                            />
+                          </div>
                         </div>
-                        <span className="px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-400/30 font-mono text-xs tabular-nums text-emerald-200">
-                          {primaryProject.completedBlocks}/{primaryProject.totalBlocks}
-                        </span>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <select
+                            aria-label="Focus #1 Block Count (1b-12b)"
+                            value={primaryProject.totalBlocks}
+                            onChange={(e) =>
+                              onUpdateProjectItem?.(primaryProject.id, {
+                                totalBlocks: Number(e.target.value) || 4,
+                              })
+                            }
+                            title="Edit Deliverable Block Count (1b–12b)"
+                            className="px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-400/30 font-mono text-xs tabular-nums text-emerald-200 cursor-pointer"
+                          >
+                            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
+                              <option
+                                key={n}
+                                value={n}
+                                className="bg-slate-950 text-slate-100"
+                              >
+                                {primaryProject.completedBlocks}/{n}b
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
 
                       {/* Segmented Blocks */}
@@ -1652,14 +1907,45 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                         <div
                           key={proj.id}
                           id={`project-card-slot-${proj.slot}`}
-                          className="p-2.5 rounded-xl bg-black/30 border border-white/[0.05] flex items-center justify-between text-xs"
+                          className="p-2.5 rounded-xl bg-black/30 border border-white/[0.05] space-y-1.5 text-xs"
                         >
-                          <span className="text-slate-300 truncate">
-                            #{proj.slot} {proj.title}
-                          </span>
-                          <span className="font-mono text-slate-400 text-[11px]">
-                            {proj.completedBlocks}/{proj.totalBlocks}
-                          </span>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-slate-200 font-medium truncate">
+                              #{proj.slot}{' '}
+                              <InlineEditableText
+                                value={proj.title}
+                                onSave={(val) =>
+                                  onUpdateProjectItem?.(proj.id, { title: val })
+                                }
+                              />
+                            </span>
+                            <select
+                              value={proj.totalBlocks}
+                              onChange={(e) =>
+                                onUpdateProjectItem?.(proj.id, {
+                                  totalBlocks: Number(e.target.value) || 4,
+                                })
+                              }
+                              className="bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 font-mono text-slate-300 text-[10px]"
+                            >
+                              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
+                                <option key={n} value={n}>
+                                  {proj.completedBlocks}/{n}b
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="text-[11px] text-slate-400">
+                            <span className="font-mono text-[10px] text-slate-500 mr-1">
+                              5m Startup:
+                            </span>
+                            <InlineEditableText
+                              value={proj.startupStep}
+                              onSave={(val) =>
+                                onUpdateProjectItem?.(proj.id, { startupStep: val })
+                              }
+                            />
+                          </div>
                         </div>
                       ))}
 
@@ -1685,8 +1971,18 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                             }
                             className="bg-slate-950 border border-white/[0.07] rounded-lg px-2 py-1 text-[11px] font-mono text-slate-200"
                           >
-                            <option value="PAPER_8">Paper (8b)</option>
-                            <option value="SLIDES_4">Slides (4b)</option>
+                            <option value="PAPER_8">
+                              {state.taskWeights?.heavyLabel || 'Major'} (
+                              {state.taskWeights?.heavyBlocks || 8}b)
+                            </option>
+                            <option value="SLIDES_4">
+                              {state.taskWeights?.mediumLabel || 'Medium'} (
+                              {state.taskWeights?.mediumBlocks || 4}b)
+                            </option>
+                            <option value="QUICK_2">
+                              {state.taskWeights?.quickLabel || 'Quick Sprint'} (
+                              {state.taskWeights?.quickBlocks || 2}b)
+                            </option>
                             <option value="CUSTOM">Custom</option>
                           </select>
                           <button
@@ -1880,82 +2176,132 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
           VISUAL GROUP 3: QUIET SINGLE-LINE TRIAGE BAR
           Collapses break/reset cards into a single subtle bottom pill bar:
           `Micro-Reset 5m` • `Switch Buffer 15m` • `Stress Reset`
+          Click the pencil on any Break pill to edit its custom recovery options on the spot.
          ===================================================================== */}
       <section
         id="bento-quick-triage-dock"
         aria-label="Quiet Single-Line Triage Bar"
-        className={`rounded-full bento-surface px-5 py-3 flex flex-wrap items-center justify-between gap-3 transition-all duration-500 ${
+        className={`rounded-3xl bento-surface px-5 py-3 space-y-2 transition-all duration-500 ${
           isCinemaReceding
             ? 'opacity-15 blur-[2px] hover:opacity-100 hover:blur-0'
             : ''
         }`}
       >
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <div className="inline-flex items-center gap-1">
+              <button
+                type="button"
+                disabled={timer.chainedBlocksCount >= 2}
+                onClick={() => {
+                  triggerHaptic([10]);
+                  onSelectL1Minutes(5);
+                }}
+                className={`px-3.5 py-1.5 rounded-full font-mono text-xs border transition cursor-pointer disabled:opacity-40 ${
+                  timer.mode === 'BREAK_L1'
+                    ? 'bg-cyan-500/15 border-cyan-400/40 text-cyan-100'
+                    : 'bg-white/[0.025] hover:bg-white/[0.06] border-white/[0.05] text-slate-300'
+                }`}
+              >
+                Micro-Reset {timer.l1DurationMinutes || 5}m
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setEditingBreakPill((prev) => (prev === 'L1' ? null : 'L1'))
+                }
+                title="Edit Micro-Reset 5m recovery options inline"
+                className="p-1 rounded-full text-slate-500 hover:text-teal-300 hover:bg-slate-800/70 transition"
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
+            </div>
+
+            <span className="text-slate-600 hidden sm:inline">•</span>
+
+            <div className="inline-flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic([10]);
+                  onSelectL2Minutes(15);
+                }}
+                className={`px-3.5 py-1.5 rounded-full font-mono text-xs border transition cursor-pointer ${
+                  timer.mode === 'BREAK_L2'
+                    ? 'bg-indigo-500/15 border-indigo-400/40 text-indigo-100'
+                    : 'bg-white/[0.025] hover:bg-white/[0.06] border-white/[0.05] text-slate-300'
+                }`}
+              >
+                Switch Buffer {timer.l2DurationMinutes || 15}m
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setEditingBreakPill((prev) => (prev === 'L2' ? null : 'L2'))
+                }
+                title="Edit Switch Buffer 15m recovery options inline"
+                className="p-1 rounded-full text-slate-500 hover:text-teal-300 hover:bg-slate-800/70 transition"
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
+            </div>
+
+            <span className="text-slate-600 hidden sm:inline">•</span>
+
+            <div className="inline-flex items-center gap-1">
+              <button
+                id="btn-dock-stress-reset"
+                type="button"
+                onClick={() => {
+                  triggerHaptic([20, 40, 20]);
+                  onTriggerStressReset('BREATHING_478', 15);
+                }}
+                className={`px-3.5 py-1.5 rounded-full font-mono text-xs border flex items-center gap-1.5 transition cursor-pointer ${
+                  timer.mode === 'STRESS_RESET'
+                    ? 'bg-amber-500/20 border-amber-400/50 text-amber-100'
+                    : 'bg-amber-500/[0.06] hover:bg-amber-500/15 border-amber-400/20 text-amber-200/90'
+                }`}
+              >
+                <Wind className="w-3.5 h-3.5 text-amber-400" />
+                <span>Stress Reset</span>
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setEditingBreakPill((prev) =>
+                    prev === 'STRESS' ? null : 'STRESS'
+                  )
+                }
+                title="Edit Stress Reset recovery options inline"
+                className="p-1 rounded-full text-slate-500 hover:text-teal-300 hover:bg-slate-800/70 transition"
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+
           <button
             type="button"
-            disabled={timer.chainedBlocksCount >= 2}
-            onClick={() => {
-              triggerHaptic([10]);
-              onSelectL1Minutes(5);
-            }}
-            className={`px-3.5 py-1.5 rounded-full font-mono text-xs border transition cursor-pointer disabled:opacity-40 ${
-              timer.mode === 'BREAK_L1'
-                ? 'bg-cyan-500/15 border-cyan-400/40 text-cyan-100'
-                : 'bg-white/[0.025] hover:bg-white/[0.06] border-white/[0.05] text-slate-300'
-            }`}
+            onClick={() => setTriageDetailsOpen((prev) => !prev)}
+            className="px-3 py-1 rounded-full text-[11px] font-mono text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer"
           >
-            Micro-Reset {timer.l1DurationMinutes || 5}m
-          </button>
-
-          <span className="text-slate-600 hidden sm:inline">•</span>
-
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic([10]);
-              onSelectL2Minutes(15);
-            }}
-            className={`px-3.5 py-1.5 rounded-full font-mono text-xs border transition cursor-pointer ${
-              timer.mode === 'BREAK_L2'
-                ? 'bg-indigo-500/15 border-indigo-400/40 text-indigo-100'
-                : 'bg-white/[0.025] hover:bg-white/[0.06] border-white/[0.05] text-slate-300'
-            }`}
-          >
-            Switch Buffer {timer.l2DurationMinutes || 15}m
-          </button>
-
-          <span className="text-slate-600 hidden sm:inline">•</span>
-
-          <button
-            id="btn-dock-stress-reset"
-            type="button"
-            onClick={() => {
-              triggerHaptic([20, 40, 20]);
-              onTriggerStressReset('BREATHING_478', 15);
-            }}
-            className={`px-3.5 py-1.5 rounded-full font-mono text-xs border flex items-center gap-1.5 transition cursor-pointer ${
-              timer.mode === 'STRESS_RESET'
-                ? 'bg-amber-500/20 border-amber-400/50 text-amber-100'
-                : 'bg-amber-500/[0.06] hover:bg-amber-500/15 border-amber-400/20 text-amber-200/90'
-            }`}
-          >
-            <Wind className="w-3.5 h-3.5 text-amber-400" />
-            <span>Stress Reset</span>
+            <span>Protocols</span>
+            {triageDetailsOpen ? (
+              <ChevronUp className="w-3 h-3" />
+            ) : (
+              <ChevronDown className="w-3 h-3" />
+            )}
           </button>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setTriageDetailsOpen((prev) => !prev)}
-          className="px-3 py-1 rounded-full text-[11px] font-mono text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer"
-        >
-          <span>Protocols</span>
-          {triageDetailsOpen ? (
-            <ChevronUp className="w-3 h-3" />
-          ) : (
-            <ChevronDown className="w-3 h-3" />
-          )}
-        </button>
+        {editingBreakPill && state.breakOptions && (
+          <InlineBreakOptionsEditor
+            pillType={editingBreakPill}
+            breakOptions={state.breakOptions}
+            onUpdateBreakOptions={(patch) => onUpdateBreakOptions?.(patch)}
+            onClose={() => setEditingBreakPill(null)}
+          />
+        )}
       </section>
 
       {/* Optional Triage Protocol Picker (Only when "Protocols" clicked) */}

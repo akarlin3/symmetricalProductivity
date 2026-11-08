@@ -69,8 +69,11 @@ import {
   getActiveBlockDurationsSeconds,
   getActiveFocusProject,
   getBaselineCognitiveDemand,
+  getBaselineSlotCompletedBlocks,
+  getBaselineSlotTargetBlocks,
   getLogicalDayKey,
   getPreExamTaperSuggestion,
+  isBaselineSlotEarlyClearanceEligible,
   loadExternalStateBackups,
   getProjectCognitiveDemand,
   parseFromStateInput,
@@ -81,14 +84,17 @@ import {
   validateAndRestoreStateSnapshot,
 } from './state/defaultState';
 import {
+  applyPresetToState,
+  ApplyPresetOptions,
   buildStateForPreset,
-  CustomArchitectureDraft,
   getStoredArchitectModeUnlocked,
   getVisibleProfilePresets,
   isArchitectDomain,
   ONBOARDING_COMPLETED_KEY,
   PROFILE_PRESET_METADATA,
   setStoredArchitectModeUnlocked,
+  syncCategoryCardsToLegacyRecharge,
+  UniversalPresetDefinition,
 } from './state/profilePresets';
 import {
   cancelAllScheduledStageAlarms,
@@ -202,7 +208,7 @@ export function App() {
             !initialUnlockInfo.unlocked &&
             parsed.profilePresetId === 'AVERY_DEFAULT'
           ) {
-            const publicDefault = buildStateForPreset('ACADEMIC_RESEARCHER');
+            const publicDefault = buildStateForPreset('BALANCED_CORE');
             return {
               ...publicDefault,
               dailyHistory: syncTodayIntoDailyHistory(publicDefault),
@@ -228,7 +234,7 @@ export function App() {
     if (initialUnlockInfo.unlocked) {
       return DEFAULT_SYMMETRY_STATE;
     }
-    const publicFallback = buildStateForPreset('ACADEMIC_RESEARCHER');
+    const publicFallback = buildStateForPreset('BALANCED_CORE');
     return {
       ...publicFallback,
       dailyHistory: syncTodayIntoDailyHistory(publicFallback),
@@ -603,7 +609,7 @@ export function App() {
           'PRESET_SWITCH',
           'Before Locking Architect Mode'
         );
-        const publicDefault = buildStateForPreset('ACADEMIC_RESEARCHER', {
+        const publicDefault = buildStateForPreset('BALANCED_CORE', {
           logicalDayRolloverHour: prev.logicalDayRolloverHour ?? 4,
           earlyEveningShutdownTime: prev.earlyEveningShutdownTime ?? '6:00 PM',
         });
@@ -622,33 +628,37 @@ export function App() {
   }, []);
 
   const handleApplyProfilePreset = (
-    presetId: ProfilePresetId,
-    options?: {
-      logicalDayRolloverHour?: number;
-      earlyEveningShutdownTime?: string;
-      customDraft?: CustomArchitectureDraft;
-    }
+    presetOrId: ProfilePresetId | UniversalPresetDefinition,
+    options?: ApplyPresetOptions
   ) => {
     triggerHaptic([15]);
     soundEngine.playTactileClick('MODE_TOGGLE');
+    const resolvedId =
+      typeof presetOrId === 'string' ? presetOrId : presetOrId.id;
+    const resolvedTitle =
+      typeof presetOrId === 'string'
+        ? PROFILE_PRESET_METADATA.find((p) => p.id === presetOrId)?.title ||
+          presetOrId
+        : presetOrId.title;
+
     setState((prev) => {
       const updatedBackups = pushStateBackup(
         prev,
         'PRESET_SWITCH',
-        `Before switching profile to ${presetId}`
+        `Before switching profile to ${resolvedTitle}`
       );
-      const nextState = buildStateForPreset(presetId, {
+      const nextState = applyPresetToState(prev, presetOrId, {
+        ...options,
         logicalDayRolloverHour:
           options?.logicalDayRolloverHour ?? prev.logicalDayRolloverHour ?? 4,
         earlyEveningShutdownTime:
           options?.earlyEveningShutdownTime ??
           prev.earlyEveningShutdownTime ??
           '6:00 PM',
-        customDraft: options?.customDraft,
       });
       pushUndoSnapshot(
         prev,
-        `Switched Profile Archetype → ${nextState.profileName || presetId}`
+        `Switched Profile Archetype → ${nextState.profileName || resolvedTitle}`
       );
       return {
         ...nextState,
@@ -664,12 +674,24 @@ export function App() {
     }
     setIsFirstVisitOnboarding(false);
     setOnboardingWizardOpen(false);
-    const meta = PROFILE_PRESET_METADATA.find((p) => p.id === presetId);
-    showNotice(
-      `Applied Profile Template: ${
-        options?.customDraft?.profileName || meta?.title || presetId
-      } (Snapshot saved to Auto-Backups).`
-    );
+    if (
+      resolvedId === 'MODULAR_BLANK_CANVAS' ||
+      resolvedId === 'BLANK_CUSTOM'
+    ) {
+      showNotice(
+        'Loaded Modular Blank Canvas — Click or double-click any slot, project, or track label to edit it inline.'
+      );
+    } else {
+      showNotice(
+        `Applied Preset: ${
+          options?.customDraft?.profileName || resolvedTitle
+        }${
+          options?.keepActiveTasksAndLogs
+            ? ' (Kept active tasks & logged blocks)'
+            : ''
+        } (Snapshot saved to Auto-Backups).`
+      );
+    }
   };
 
   const handleUpdateDayBoundaryPreferences = (
@@ -2295,21 +2317,42 @@ export function App() {
     setState((prev) => {
       const target = prev.baselineBlocks.find((b) => b.id === blockId);
       if (!target) return prev;
-      const nextCompleted = !target.completed;
+      const targetBlocks = getBaselineSlotTargetBlocks(target);
+      const currentDone = Math.floor(getBaselineSlotCompletedBlocks(target));
+      const isCurrentlyFullyComplete =
+        target.completed || currentDone >= targetBlocks;
+
       const stroke: 'INPUT' | 'OUTPUT' =
         target.category === 'SYNTHESIS' ? 'OUTPUT' : 'INPUT';
       const rungNum: 1 | 2 | 3 | 4 = target.category === 'SYNTHESIS' ? 2 : 1;
 
+      let nextDone = currentDone;
+      let nextCompleted = false;
+
+      if (!isCurrentlyFullyComplete) {
+        nextDone = Math.min(targetBlocks, currentDone + 1);
+        nextCompleted = nextDone >= targetBlocks;
+      } else {
+        nextDone = 0;
+        nextCompleted = false;
+      }
+
       const updatedBaseline = prev.baselineBlocks.map((b) =>
         b.id === blockId
-          ? { ...b, completed: nextCompleted, bankedViaEarlyClearance: false }
+          ? {
+              ...b,
+              completed: nextCompleted,
+              completedBlocks: nextDone,
+              partialCredit: 0,
+              bankedViaEarlyClearance: false,
+            }
           : b
       );
 
       let updatedTracks = prev.roadmapTracks;
       let updatedLog = prev.todayBlockLog || [];
 
-      if (nextCompleted) {
+      if (!isCurrentlyFullyComplete) {
         updatedTracks = creditRoadmapTrack(
           updatedTracks,
           target.trackId,
@@ -2318,7 +2361,10 @@ export function App() {
         );
         const newEntry = createTodayLogEntry(prev, {
           category: baselineCategoryToLogCategory(target.category),
-          title: target.title,
+          title:
+            targetBlocks > 1
+              ? `${target.title} (${nextDone}/${targetBlocks})`
+              : target.title,
           durationMinutes: 20,
           roadmapTrack: target.trackId,
           stroke,
@@ -2328,21 +2374,17 @@ export function App() {
         updatedLog = [...updatedLog, newEntry];
         pushUndoSnapshot(prev, `Block Logged: ${target.title} (20m)`);
       } else {
+        const blocksToDebit = Math.max(1, currentDone);
         updatedTracks = debitRoadmapTrack(
           updatedTracks,
           target.trackId,
           stroke,
-          rungNum
+          rungNum,
+          blocksToDebit
         );
-        // Remove the most recent log entry for this baseline block
-        const reverseIdx = [...updatedLog]
-          .reverse()
-          .findIndex((e) => e.sourceBlockId === target.id);
-        if (reverseIdx !== -1) {
-          const removeIdx = updatedLog.length - 1 - reverseIdx;
-          updatedLog = updatedLog.filter((_, idx) => idx !== removeIdx);
-        }
-        pushUndoSnapshot(prev, `Baseline Pill Unchecked: ${target.title} (20m)`);
+        // Remove log entries for this baseline block
+        updatedLog = updatedLog.filter((e) => e.sourceBlockId !== target.id);
+        pushUndoSnapshot(prev, `Baseline Pill Unchecked: ${target.title}`);
       }
 
       return {
@@ -2359,9 +2401,8 @@ export function App() {
     setState((prev) => {
       const nextEnabled = !prev.earlyClearanceEnabled;
       const updatedBaseline = prev.baselineBlocks.map((b) => {
-        const isFlashcard =
-          b.category === 'FLASHCARDS_ANATOMY' || b.category === 'FLASHCARDS_COMP';
-        if (!isFlashcard || b.completed) return b;
+        const isEligible = isBaselineSlotEarlyClearanceEligible(b);
+        if (!isEligible || b.completed) return b;
         return {
           ...b,
           bankedViaEarlyClearance: nextEnabled,
@@ -2370,8 +2411,8 @@ export function App() {
       pushUndoSnapshot(
         prev,
         nextEnabled
-          ? 'Early Clearance Enabled: Unused Flashcards Banked'
-          : 'Early Clearance Disabled: Flashcard Blocks Restored'
+          ? 'Early Clearance Enabled: Unused Eligible Baseline Blocks Banked'
+          : 'Early Clearance Disabled: Baseline Blocks Restored'
       );
       return {
         ...prev,
@@ -2379,7 +2420,7 @@ export function App() {
         baselineBlocks: updatedBaseline,
       };
     });
-    showNotice('Toggled Flashcard Early Clearance banking.');
+    showNotice('Toggled Early Clearance banking.');
   };
 
   const handleLaunchBlockInTimer = (
@@ -2457,6 +2498,265 @@ export function App() {
       };
     });
     showNotice('Logged +1 discretionary project block (Credited to Output).');
+  };
+
+  // ===========================================================================
+  // DIRECT INLINE EDITING HANDLERS (Focus, Evening Recharge, Roadmap)
+  // ===========================================================================
+  const handleUpdateBaselineBlock = (
+    blockId: string,
+    patch: Partial<import('./types/symmetry').BaselineBlock>
+  ) => {
+    setState((prev) => {
+      const updatedBaseline = prev.baselineBlocks.map((b) => {
+        if (b.id !== blockId) return b;
+        const merged = { ...b, ...patch };
+        const nextTarget = getBaselineSlotTargetBlocks(merged);
+        const nextDone = Math.min(
+          nextTarget,
+          patch.completedBlocks !== undefined
+            ? patch.completedBlocks
+            : getBaselineSlotCompletedBlocks(b)
+        );
+        return {
+          ...merged,
+          targetBlocks: nextTarget,
+          completedBlocks: nextDone,
+          completed: nextDone >= nextTarget,
+        };
+      });
+      const updatedSlot = updatedBaseline.find((b) => b.id === blockId);
+      const shouldSyncActiveTimer =
+        prev.timer.activeBlockSourceId === blockId && updatedSlot;
+      return {
+        ...prev,
+        baselineBlocks: updatedBaseline,
+        timer: shouldSyncActiveTimer
+          ? {
+              ...prev.timer,
+              activeTaskTitle: updatedSlot.title,
+              activeStartupPrompt:
+                updatedSlot.startupStep ||
+                updatedSlot.startupPrompt ||
+                prev.timer.activeStartupPrompt,
+            }
+          : prev.timer,
+      };
+    });
+  };
+
+  const handleAddBaselineBlock = () => {
+    setState((prev) => {
+      const nextNum = prev.baselineBlocks.length + 1;
+      const newSlot: import('./types/symmetry').BaselineBlock = {
+        id: `base_inline_${Date.now()}`,
+        category: 'READING',
+        title: `Daily Habit ${nextNum}`,
+        durationMinutes: 20,
+        targetBlocks: 1,
+        completedBlocks: 0,
+        completed: false,
+        bankedViaEarlyClearance: false,
+        earlyClearanceEligible: false,
+        lateNightBlocker: false,
+        trackId: prev.roadmapTracks[0]?.id || 'science',
+        startupStep: 'Open workspace and complete first 5m step',
+        startupPrompt: 'Open workspace and complete first 5m step',
+      };
+      return {
+        ...prev,
+        baselineBlocks: [...prev.baselineBlocks, newSlot],
+      };
+    });
+    showNotice('Added new Daily Baseline slot — click its title or Edit icon to customize.');
+  };
+
+  const handleDeleteBaselineBlock = (blockId: string) => {
+    setState((prev) => {
+      const target = prev.baselineBlocks.find((b) => b.id === blockId);
+      if (target) {
+        pushUndoSnapshot(prev, `Removed Baseline Slot: ${target.title}`);
+      }
+      return {
+        ...prev,
+        baselineBlocks: prev.baselineBlocks.filter((b) => b.id !== blockId),
+      };
+    });
+    showNotice('Removed Daily Baseline slot (Cmd/Ctrl+Z to Undo).');
+  };
+
+  const handleUpdateProjectItem = (
+    projectId: string,
+    patch: Partial<import('./types/symmetry').ProjectItem>
+  ) => {
+    setState((prev) => {
+      const updatedQueue = prev.projectQueue.map((p) => {
+        if (p.id !== projectId) return p;
+        const merged = { ...p, ...patch };
+        const clampedTotal = Math.max(
+          1,
+          Math.min(12, Math.round(merged.totalBlocks || 4))
+        );
+        return {
+          ...merged,
+          totalBlocks: clampedTotal,
+          completedBlocks: Math.min(clampedTotal, merged.completedBlocks),
+        };
+      });
+      const updatedProj = updatedQueue.find((p) => p.id === projectId);
+      const shouldSyncTimer =
+        prev.timer.activeBlockSourceId === projectId && updatedProj;
+      return {
+        ...prev,
+        projectQueue: updatedQueue,
+        timer: shouldSyncTimer
+          ? {
+              ...prev.timer,
+              activeTaskTitle: updatedProj.title,
+              activeStartupPrompt: updatedProj.startupStep,
+            }
+          : prev.timer,
+      };
+    });
+  };
+
+  const handleUpdateActiveTimerTask = (patch: {
+    title?: string;
+    startupPrompt?: string;
+  }) => {
+    setState((prev) => {
+      const srcId = prev.timer.activeBlockSourceId;
+      const updatedBaseline = prev.baselineBlocks.map((b) =>
+        b.id === srcId
+          ? {
+              ...b,
+              title: patch.title ?? b.title,
+              startupStep: patch.startupPrompt ?? b.startupStep,
+              startupPrompt:
+                patch.startupPrompt ?? b.startupPrompt ?? b.startupStep,
+            }
+          : b
+      );
+      const updatedProjects = prev.projectQueue.map((p) =>
+        p.id === srcId
+          ? {
+              ...p,
+              title: patch.title ?? p.title,
+              startupStep: patch.startupPrompt ?? p.startupStep,
+            }
+          : p
+      );
+      return {
+        ...prev,
+        baselineBlocks: updatedBaseline,
+        projectQueue: updatedProjects,
+        timer: {
+          ...prev.timer,
+          activeTaskTitle: patch.title ?? prev.timer.activeTaskTitle,
+          activeStartupPrompt:
+            patch.startupPrompt ?? prev.timer.activeStartupPrompt,
+        },
+      };
+    });
+  };
+
+  const handleUpdateBreakOptions = (
+    patch: Partial<import('./types/symmetry').BreakOptionsConfig>
+  ) => {
+    setState((prev) => ({
+      ...prev,
+      breakOptions: {
+        l1Label:
+          prev.breakOptions?.l1Label ||
+          '3–5m Micro-Reset (Stand, stretch, water)',
+        l2EspressoLabel:
+          prev.breakOptions?.l2EspressoLabel || 'Espresso / Hydration',
+        l2MusicLabel:
+          prev.breakOptions?.l2MusicLabel || '5m Instrument / Tactile Reset',
+        l2PhysicalLabel:
+          prev.breakOptions?.l2PhysicalLabel || '15m Physical Mobility / TENS',
+        stressBreathingLabel:
+          prev.breakOptions?.stressBreathingLabel || '4-7-8 Breathing Pace',
+        stressEspressoLabel:
+          prev.breakOptions?.stressEspressoLabel || 'Espresso / Warm Drink',
+        stressBootsLabel:
+          prev.breakOptions?.stressBootsLabel || 'Compression / Physical Rest',
+        ...(prev.breakOptions || {}),
+        ...patch,
+      },
+    }));
+    showNotice('Updated custom Break recovery options.');
+  };
+
+  const handleUpdateEveningCategoryCards = (
+    cards: import('./types/symmetry').EveningCategoryCardConfig[]
+  ) => {
+    setState((prev) => {
+      const synced = syncCategoryCardsToLegacyRecharge(
+        cards,
+        prev.recharge.stickySlots,
+        prev.recharge.fluidCategories
+      );
+      return {
+        ...prev,
+        recharge: {
+          ...prev.recharge,
+          stickySlots: synced.stickySlots,
+          fluidCategories: synced.fluidCategories,
+          categoryCards: synced.categoryCards,
+        },
+      };
+    });
+  };
+
+  const handleUpdateRoadmapTrack = (
+    trackId: TrackId,
+    patch: Partial<import('./types/symmetry').RoadmapTrack>
+  ) => {
+    setState((prev) => ({
+      ...prev,
+      roadmapTracks: prev.roadmapTracks.map((t) =>
+        t.id === trackId ? { ...t, ...patch } : t
+      ),
+    }));
+  };
+
+  const handleUpdateRoadmapRung = (
+    trackId: TrackId,
+    rungNumber: 1 | 2 | 3 | 4,
+    patch: Partial<import('./types/symmetry').RoadmapRung>
+  ) => {
+    setState((prev) => ({
+      ...prev,
+      roadmapTracks: prev.roadmapTracks.map((t) =>
+        t.id === trackId
+          ? {
+              ...t,
+              rungs: t.rungs.map((r) =>
+                r.rungNumber === rungNumber ? { ...r, ...patch } : r
+              ),
+            }
+          : t
+      ),
+    }));
+  };
+
+  const handleToggleTrackSandboxType = (trackId: TrackId) => {
+    setState((prev) => ({
+      ...prev,
+      roadmapTracks: prev.roadmapTracks.map((t) => {
+        if (t.id !== trackId) return t;
+        const nextSandbox = !t.isSandbox;
+        return {
+          ...t,
+          isSandbox: nextSandbox,
+          categoryLabel: nextSandbox ? 'ZERO-QUOTA SANDBOX' : 'CORE TRACK',
+          inputWeeklyTarget: nextSandbox ? 0 : Math.max(6, t.inputWeeklyTarget || 10),
+          outputWeeklyTarget: nextSandbox ? 0 : Math.max(6, t.outputWeeklyTarget || 10),
+        };
+      }),
+    }));
+    showNotice('Toggled Roadmap Track between Core Track and Zero-Quota Sandbox.');
   };
 
   // Handlers for Today's Log Slide-Over Drawer (Reassign, Edit Title, Delete, + Manual Block)
@@ -3831,7 +4131,7 @@ export function App() {
               );
               const resetBase = architectModeUnlocked
                 ? DEFAULT_SYMMETRY_STATE
-                : buildStateForPreset('ACADEMIC_RESEARCHER');
+                : buildStateForPreset('BALANCED_CORE');
               return {
                 ...resetBase,
                 dailyHistory: syncTodayIntoDailyHistory(resetBase),
@@ -4207,6 +4507,12 @@ export function App() {
               onApplyShockAbsorber={handleApplyShockAbsorber}
               onSetActiveDualSlotNumber={handleSetActiveDualSlotNumber}
               onLaunchBoundedCuriosityBlock={handleLaunchBoundedCuriosityBlock}
+              onUpdateBaselineBlock={handleUpdateBaselineBlock}
+              onAddBaselineBlock={handleAddBaselineBlock}
+              onDeleteBaselineBlock={handleDeleteBaselineBlock}
+              onUpdateProjectItem={handleUpdateProjectItem}
+              onUpdateActiveTimerTask={handleUpdateActiveTimerTask}
+              onUpdateBreakOptions={handleUpdateBreakOptions}
             />
           )}
 
@@ -4961,6 +5267,7 @@ export function App() {
                 });
                 showNotice(`Logged +1 5m start on ${key}.`);
               }}
+              onUpdateEveningCategoryCards={handleUpdateEveningCategoryCards}
             />
           )}
 
@@ -4998,6 +5305,9 @@ export function App() {
                   ),
                 }))
               }
+              onUpdateRoadmapTrack={handleUpdateRoadmapTrack}
+              onUpdateRoadmapRung={handleUpdateRoadmapRung}
+              onToggleTrackSandboxType={handleToggleTrackSandboxType}
             />
           )}
         </main>
