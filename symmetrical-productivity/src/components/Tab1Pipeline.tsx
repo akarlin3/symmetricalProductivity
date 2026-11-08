@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   Activity,
   AlertTriangle,
@@ -51,8 +52,13 @@ import { BreathingVisualizer478 } from './BreathingVisualizer478';
 import { InteractivePipelineTable } from './PipelineDrawer';
 import { SmartIntakeBar } from './SmartIntakeBar';
 import { triggerHaptic } from '../utils/haptics';
-import { motion } from 'framer-motion';
 import { soundEngine } from '../utils/soundEngine';
+
+const SPRING_PHYSICS = {
+  type: 'spring' as const,
+  stiffness: 420,
+  damping: 32,
+};
 
 interface PendingIntakeDeliverable {
   title: string;
@@ -71,6 +77,9 @@ interface Tab1PipelineProps {
   onSetSmartIntakePreview: (plan: SmartIntakePlanResult | null) => void;
   onApplySmartIntakePlan: (plan: SmartIntakePlanResult) => void;
   onOpenStateModal: () => void;
+  onOpenCommandDock?: () => void;
+  cinemaFocusMode?: boolean;
+  onToggleCinemaFocusMode?: () => void;
   apiKeyVersion: number;
   onSelectLoadMode: (mode: LoadMode, targetBlocks: number, cruisePlus?: boolean) => void;
   onTogglePreExamTaper: (forceValue?: boolean) => void;
@@ -142,6 +151,9 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   onSetSmartIntakePreview,
   onApplySmartIntakePlan,
   onOpenStateModal,
+  onOpenCommandDock,
+  cinemaFocusMode = false,
+  onToggleCinemaFocusMode,
   apiKeyVersion,
   onSelectLoadMode,
   onTogglePreExamTaper,
@@ -181,6 +193,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
 }) => {
   const metrics = computeShiftMetrics(state);
   const { timer } = state;
+  const isCinemaReceding = Boolean(cinemaFocusMode);
 
   const [sequentialViewOpen, setSequentialViewOpen] = useState(false);
   const [recalibrateWizardOpen, setRecalibrateWizardOpen] = useState(false);
@@ -384,14 +397,24 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
         onSetPreviewPlan={onSetSmartIntakePreview}
         onApplyPlan={onApplySmartIntakePlan}
         onOpenSettingsModal={onOpenStateModal}
+        onOpenCommandDock={onOpenCommandDock}
         apiKeyVersion={apiKeyVersion}
+        className={
+          isCinemaReceding
+            ? 'opacity-15 blur-[2px] hover:opacity-100 hover:blur-0 transition-all duration-500'
+            : ''
+        }
       />
 
       {/* Auto-Suggest Banner when within 3 days of Nov 12 or Dec 8 */}
       {(examSuggestion.isWithin3Days || state.preExamTaperActive) && (
         <div
           id="pre-exam-taper-banner"
-          className="p-3.5 rounded-2xl bg-indigo-950/60 border border-indigo-400/50 text-indigo-100 flex flex-wrap items-center justify-between gap-3"
+          className={`p-3.5 rounded-2xl bg-indigo-950/60 border border-indigo-400/50 text-indigo-100 flex flex-wrap items-center justify-between gap-3 transition-all duration-500 ${
+            isCinemaReceding
+              ? 'opacity-15 blur-[2px] hover:opacity-100 hover:blur-0'
+              : ''
+          }`}
         >
           <div className="flex items-center gap-2.5">
             <GraduationCap className="w-5 h-5 text-indigo-300 shrink-0" />
@@ -491,10 +514,16 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         {/* =====================================================================
             LEFT COLUMN (5 COLS, STICKY): CENTERPIECE 280x280 DUAL-RING TIMER HUD
+            Remains in 100% Sharp Focus during Cinema Focus Mode
            ===================================================================== */}
-        <aside
+        <motion.aside
+          layout
           aria-label="Centerpiece Dual-Ring Timer HUD"
-          className="lg:col-span-5 lg:sticky lg:top-24 rounded-3xl bento-surface p-5 sm:p-6 flex flex-col justify-between space-y-5"
+          className={`lg:col-span-5 lg:sticky lg:top-24 rounded-3xl bento-surface bg-gradient-to-b from-white/[0.045] to-white/[0.01] backdrop-blur-2xl border p-5 sm:p-6 flex flex-col justify-between space-y-5 transition-all duration-300 ${
+            isCinemaReceding
+              ? 'border-sky-400/45 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_0_55px_-12px_rgba(56,189,248,0.32)] ring-1 ring-sky-400/25'
+              : 'border-white/[0.07] hover:border-white/[0.14] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)]'
+          }`}
         >
           {/* Top HUD Status Bar */}
           <div className="flex items-center justify-between gap-2">
@@ -541,19 +570,22 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
             </div>
           </div>
 
-          {/* Centerpiece 280x280 Dual-Ring SVG Timer with Radial Ambient Glow */}
+          {/* Centerpiece 280x280 Precision Chronograph SVG Timer */}
           <div className="py-1 flex items-center justify-center">
             <DualRingTimerSvg
               timer={timer}
               isEveningTheme={metrics.isZeroWorkLeft}
               formattedTime={formatMMSS(timer.secondsLeft)}
               stageBadgeText={stageBadgeText}
+              durationPrefix={metrics.durationPrefix}
               onToggleRun={() => {
                 triggerHaptic([15]);
                 onToggleTimerRun();
               }}
               onOpenMiniHudPip={onOpenMiniHudPip}
               isMiniHudOpen={isMiniHudOpen}
+              cinemaFocusMode={cinemaFocusMode}
+              onToggleCinemaFocusMode={onToggleCinemaFocusMode}
             />
           </div>
 
@@ -600,7 +632,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 onFastForwardCurrentStage();
               }}
               className="col-span-3 py-3 px-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.1] text-cyan-200 font-mono font-semibold text-xs flex items-center justify-center gap-1 cursor-pointer"
-              title="Skip to next stage (5m Startup → 15m Momentum → Break Router)"
+              title="Skip to next stage (5m Startup → 15m Momentum → Break Router) [S]"
             >
               <FastForward className="w-3.5 h-3.5" />
               <span>Skip</span>
@@ -614,7 +646,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 onResetCurrentStage();
               }}
               className="col-span-2 py-3 rounded-2xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] text-slate-300 flex items-center justify-center cursor-pointer"
-              title="Reset current stage timer"
+              title="Reset current stage timer [R]"
             >
               <RotateCcw className="w-3.5 h-3.5" />
             </button>
@@ -623,7 +655,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
           {/* Active 5-Minute Startup Micro-Script Card Right Below Play Button */}
           <div
             id="hud-active-startup-script"
-            className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.09] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] space-y-2"
+            className="p-4 rounded-2xl bg-white/[0.035] border border-white/[0.09] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12)] space-y-2"
           >
             <div className="flex items-center justify-between gap-2">
               <span className="text-[10px] font-mono uppercase tracking-widest text-amber-300 font-bold flex items-center gap-1.5">
@@ -674,7 +706,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 <span className="text-[10px] font-mono uppercase tracking-wider font-bold text-emerald-300">
                   POST-RESET 5M FLASHCARD RAMP
                 </span>
-                <span className="font-mono font-bold text-sm tabular-nums text-emerald-200">
+                <span className="font-mono font-bold text-sm tracking-tight tabular-nums text-emerald-200">
                   {formatMMSS(timer.recoveryFlashcardSecondsLeft)}
                 </span>
               </div>
@@ -696,7 +728,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               </div>
             </div>
           )}
-        </aside>
+        </motion.aside>
 
         {/* =====================================================================
             RIGHT COLUMN (7 COLS): 3-ROW BENTO GRID
@@ -705,10 +737,15 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
           {/* -------------------------------------------------------------------
               TOP BENTO ROW: "UP NEXT" AUTO-ROUTER HERO CARD + LOAD MODE PILL
              ------------------------------------------------------------------- */}
-          <section
+          <motion.section
+            layout
             id="bento-up-next-hero"
             aria-label="Up Next Auto-Router and Load Mode"
-            className="rounded-3xl bento-hero-border p-5 space-y-4 overflow-hidden"
+            className={`rounded-3xl bento-hero-border p-5 space-y-4 overflow-hidden transition-all duration-500 ${
+              isCinemaReceding
+                ? 'opacity-15 blur-[2px] hover:opacity-100 hover:blur-0'
+                : ''
+            }`}
           >
             <motion.div
               drag="x"
@@ -792,9 +829,9 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               </button>
             </motion.div>
 
-            {/* Compact Load Mode & Duration-Only Countdown Bar (includes Pre-Exam Taper toggle) */}
+            {/* Compact Load Mode Selector with Spring-Animated Pill (layoutId="activeLoadModePill") */}
             <div className="pt-3 border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-2.5">
-              <div className="flex flex-wrap items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-2xl bg-black/35 border border-white/[0.07]">
                 {(
                   [
                     {
@@ -828,15 +865,22 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       onClick={() =>
                         onSelectLoadMode(item.mode, item.defaultBlocks, false)
                       }
-                      className={`px-2.5 py-1 rounded-xl font-mono text-[11px] font-semibold border transition cursor-pointer ${
+                      className={`relative px-2.5 py-1 rounded-xl font-mono text-[11px] font-semibold transition cursor-pointer ${
                         active
-                          ? 'bg-cyan-500/20 border-cyan-400/60 text-cyan-100'
+                          ? 'text-cyan-50'
                           : surgeLocked
-                          ? 'bg-red-950/30 border-red-800/40 text-red-300/60 cursor-not-allowed'
-                          : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.08] text-slate-300'
+                          ? 'bg-red-950/30 border border-red-800/40 text-red-300/60 cursor-not-allowed'
+                          : 'hover:bg-white/[0.05] text-slate-300'
                       }`}
                     >
-                      {item.label}
+                      {active && (
+                        <motion.div
+                          layoutId="activeLoadModePill"
+                          transition={SPRING_PHYSICS}
+                          className="absolute inset-0 rounded-xl bg-gradient-to-b from-cyan-400/25 to-indigo-500/15 border border-cyan-400/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_2px_12px_rgba(6,182,212,0.2)] pointer-events-none"
+                        />
+                      )}
+                      <span className="relative z-10">{item.label}</span>
                     </button>
                   );
                 })}
@@ -850,20 +894,27 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     onTogglePreExamTaper();
                   }}
                   title="Pre-Exam Taper Auto-Mode: Cancels heavy prose/synthesis, caps workload at 7–9 blocks, and routes strictly to Exam Review & Active Recall (auto-suggested within 3d of Nov 12 or Dec 8)"
-                  className={`px-2.5 py-1 rounded-xl font-mono text-[11px] font-bold border transition cursor-pointer flex items-center gap-1 ${
+                  className={`relative px-2.5 py-1 rounded-xl font-mono text-[11px] font-bold transition cursor-pointer flex items-center gap-1 ${
                     state.preExamTaperActive
-                      ? 'bg-indigo-500/30 border-indigo-400 text-indigo-100 shadow-[0_0_12px_rgba(129,140,248,0.3)]'
+                      ? 'text-indigo-50'
                       : examSuggestion.isWithin3Days
-                      ? 'bg-indigo-500/15 border-indigo-400/60 text-indigo-200 animate-pulse'
-                      : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.08] text-slate-300'
+                      ? 'bg-indigo-500/15 border border-indigo-400/60 text-indigo-200 animate-pulse'
+                      : 'hover:bg-white/[0.05] text-slate-300'
                   }`}
                 >
-                  <GraduationCap className="w-3.5 h-3.5 text-indigo-300" />
-                  <span>
+                  {state.preExamTaperActive && (
+                    <motion.div
+                      layoutId="activeLoadModePill"
+                      transition={SPRING_PHYSICS}
+                      className="absolute inset-0 rounded-xl bg-indigo-500/30 border border-indigo-400 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.18),0_0_12px_rgba(129,140,248,0.3)] pointer-events-none"
+                    />
+                  )}
+                  <GraduationCap className="relative z-10 w-3.5 h-3.5 text-indigo-300" />
+                  <span className="relative z-10">
                     Pre-Exam Taper{state.preExamTaperActive ? ' (ON)' : ''}
                   </span>
                   {examSuggestion.isWithin3Days && !state.preExamTaperActive && (
-                    <span className="px-1 py-0.2 rounded bg-indigo-400/25 text-[9px] text-indigo-200">
+                    <span className="relative z-10 px-1 py-0.2 rounded bg-indigo-400/25 text-[9px] text-indigo-200">
                       Suggested
                     </span>
                   )}
@@ -871,7 +922,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               </div>
 
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="px-2.5 py-1 rounded-xl bg-black/40 border border-cyan-500/35 font-mono text-xs font-bold tabular-nums text-cyan-200">
+                <span className="px-2.5 py-1 rounded-xl bg-black/40 border border-cyan-500/35 font-mono text-xs font-bold tracking-tight tabular-nums text-cyan-200">
                   {metrics.durationPrefix}
                 </span>
 
@@ -1130,7 +1181,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 </div>
               </div>
             )}
-          </section>
+          </motion.section>
 
           {/* -------------------------------------------------------------------
               SEQUENTIAL 20M CHECKLIST VIEW (INTERLEAVED BLOCKS + AUTO-BREAKS + RUNNING COUNTDOWN)

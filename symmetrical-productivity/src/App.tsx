@@ -93,6 +93,7 @@ import { HeaderBar } from './components/HeaderBar';
 import { InsightsModal } from './components/InsightsModal';
 import { KeyboardShortcutModal } from './components/KeyboardShortcutModal';
 import { MobileBottomSheet } from './components/MobileBottomSheet';
+import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { OnboardingWizardModal } from './components/OnboardingWizardModal';
 import { PipelineDrawer } from './components/PipelineDrawer';
 import { PlanningAssistantDrawer } from './components/PlanningAssistantDrawer';
@@ -140,7 +141,8 @@ export function App() {
   const [insightsModalOpen, setInsightsModalOpen] = useState(false);
   const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
   const [spotlightTourOpen, setSpotlightTourOpen] = useState(false);
-  const [cinemaFocusOpen, setCinemaFocusOpen] = useState(false);
+  const [commandDockOpen, setCommandDockOpen] = useState(false);
+  const [cinemaFocusMode, setCinemaFocusMode] = useState(false);
   const [stateIoText, setStateIoText] = useState('');
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
   const [notificationLog, setNotificationLog] = useState<NotificationLogEntry[]>([]);
@@ -813,18 +815,19 @@ export function App() {
   // Global Keyboard Shortcuts: ? (Cheat-Sheet), Cmd+K (Command Bar), F (Cinema Focus Mode), R (Break), S (Stress Reset), Cmd+/ (AI Assistant), Cmd+J (Smart Intake), Cmd+Z (Undo), Space (Start/Pause)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === '/') {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         triggerHaptic([12]);
-        setAssistantDrawerOpen((prev) => !prev);
+        soundEngine.playTactileClick('MODE_TOGGLE');
+        setCommandDockOpen((prev) => !prev);
         return;
       }
 
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      if ((e.metaKey || e.ctrlKey) && e.key === '/') {
         e.preventDefault();
-        triggerHaptic([10]);
+        triggerHaptic([12]);
         soundEngine.playTactileClick('MODE_TOGGLE');
-        setShortcutsModalOpen((prev) => !prev);
+        setAssistantDrawerOpen((prev) => !prev);
         return;
       }
 
@@ -855,8 +858,13 @@ export function App() {
           target.isContentEditable);
 
       if (e.key === 'Escape') {
-        if (cinemaFocusOpen) {
-          setCinemaFocusOpen(false);
+        if (commandDockOpen) {
+          e.preventDefault();
+          setCommandDockOpen(false);
+          return;
+        }
+        if (cinemaFocusMode) {
+          setCinemaFocusMode(false);
           return;
         }
         if (shortcutsModalOpen) {
@@ -902,7 +910,7 @@ export function App() {
         e.preventDefault();
         triggerHaptic([12]);
         soundEngine.playTactileClick('MODE_TOGGLE');
-        setCinemaFocusOpen((prev) => !prev);
+        setCinemaFocusMode((prev) => !prev);
         return;
       }
 
@@ -994,8 +1002,9 @@ export function App() {
   }, [
     activeTab,
     pipelineDrawerOpen,
+    commandDockOpen,
     handleTriggerUndo,
-    cinemaFocusOpen,
+    cinemaFocusMode,
     shortcutsModalOpen,
     spotlightTourOpen,
     insightsModalOpen,
@@ -2968,6 +2977,11 @@ export function App() {
             showNotice('Reset SymmetryManager to default deterministic state (snapshot saved).');
           }}
           isEveningTheme={isEveningTheme}
+          onOpenCommandDock={() => setCommandDockOpen(true)}
+          cinemaFocusMode={cinemaFocusMode}
+          onToggleCinemaFocusMode={() =>
+            setCinemaFocusMode((prev) => !prev)
+          }
         />
 
         {/* Status Toast Notice */}
@@ -3008,6 +3022,11 @@ export function App() {
                 setStateIoText(serializeToStateMarkdown(state));
                 setStateModalOpen(true);
               }}
+              onOpenCommandDock={() => setCommandDockOpen(true)}
+              cinemaFocusMode={cinemaFocusMode}
+              onToggleCinemaFocusMode={() =>
+                setCinemaFocusMode((prev) => !prev)
+              }
               apiKeyVersion={apiKeyVersion}
               onSelectLoadMode={handleSelectLoadMode}
               onTogglePreExamTaper={handleTogglePreExamTaper}
@@ -5124,7 +5143,7 @@ export function App() {
               };
             });
           },
-          onToggleCinemaFocus: () => setCinemaFocusOpen((prev) => !prev),
+          onToggleCinemaFocus: () => setCinemaFocusMode((prev) => !prev),
           onTriggerBreak: () => {
             const now = Date.now();
             setState((prev) => {
@@ -5194,114 +5213,86 @@ export function App() {
         isEvening={isEveningTheme}
       />
 
-      {/* Cinema Focus Mode Overlay (Hotkey: F) */}
-      {cinemaFocusOpen && (
-        <div
-          id="cinema-focus-mode-overlay"
-          className="fixed inset-0 z-50 bg-[#05070c]/95 backdrop-blur-2xl flex flex-col items-center justify-center p-6 text-slate-100"
-        >
-          <div className="max-w-xl w-full p-6 sm:p-8 rounded-3xl bg-slate-950/90 border border-cyan-500/40 shadow-[0_25px_80px_rgba(6,182,212,0.22)] space-y-6 text-center font-mono">
-            <div className="flex items-center justify-between gap-2">
-              <span className="px-2.5 py-1 rounded-full bg-cyan-500/15 border border-cyan-400/40 text-cyan-300 text-xs font-bold uppercase tracking-wider">
-                Cinema Focus Mode • {metrics.durationPrefix}
-              </span>
-              <button
-                id="btn-close-cinema-focus"
-                type="button"
-                onClick={() => setCinemaFocusOpen(false)}
-                className="px-2.5 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1 cursor-pointer"
-              >
-                <Minimize2 className="w-3.5 h-3.5" />
-                <span>Exit [F / Esc]</span>
-              </button>
-            </div>
-
-            <div className="space-y-1">
-              <div className="text-xs uppercase tracking-widest text-amber-300 font-bold">
-                {state.timer.mode === 'WORK_20M'
-                  ? state.timer.workStage === 'IGNITION_5M'
-                    ? 'Stage 1: 5m Startup Step (IGNITION_5M)'
-                    : 'Stage 2: 15m Momentum (MOMENTUM_15M)'
-                  : state.timer.mode === 'STRESS_RESET'
-                  ? '15–20m 4-7-8 Stress / Fatigue Reset'
-                  : `Break (${state.timer.mode})`}
-              </div>
-              <h2 className="text-lg sm:text-xl font-extrabold text-white">
-                {state.timer.activeTaskTitle}
-              </h2>
-              <p className="text-xs text-cyan-200/90">
-                5m Startup Step: {state.timer.activeStartupPrompt}
-              </p>
-            </div>
-
-            <div className="text-6xl sm:text-7xl font-extrabold tabular-nums tracking-tight text-cyan-300 py-2">
-              {`${String(Math.floor(state.timer.secondsLeft / 60)).padStart(
-                2,
-                '0'
-              )}:${String(state.timer.secondsLeft % 60).padStart(2, '0')}`}
-            </div>
-
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              <button
-                id="btn-cinema-start-pause"
-                type="button"
-                onClick={() => {
-                  soundEngine.playTactileClick('MODE_TOGGLE');
-                  const now = Date.now();
-                  setState((prev) => {
-                    const nextRunning = !prev.timer.isRunning;
-                    const currentSec =
-                      prev.timer.isRunning && prev.timer.targetEndTimeMs
-                        ? Math.max(
-                            0,
-                            Math.ceil((prev.timer.targetEndTimeMs - now) / 1000)
-                          )
-                        : prev.timer.secondsLeft;
-                    return {
-                      ...prev,
-                      timer: {
-                        ...prev.timer,
-                        isRunning: nextRunning,
-                        secondsLeft: currentSec,
-                        targetEndTimeMs: nextRunning
-                          ? now + currentSec * 1000
-                          : null,
-                      },
-                    };
-                  });
-                }}
-                className={`px-6 py-3 rounded-2xl font-extrabold text-sm flex items-center gap-2 cursor-pointer ${
-                  state.timer.isRunning
-                    ? 'bg-amber-400 text-slate-950'
-                    : 'bg-cyan-400 text-slate-950'
-                }`}
-              >
-                {state.timer.isRunning ? (
-                  <>
-                    <Pause className="w-4 h-4 fill-current" />
-                    <span>Pause [Space]</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-4 h-4 fill-current" />
-                    <span>Start [Space]</span>
-                  </>
-                )}
-              </button>
-
-              <button
-                id="btn-cinema-skip-stage"
-                type="button"
-                onClick={handleFastForwardTimerStage}
-                className="px-4 py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
-              >
-                <FastForward className="w-4 h-4 text-cyan-400" />
-                <span>Advance Stage</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Raycast-Style Command Dock & Smart Intake Palette (Cmd/Ctrl + K) */}
+      <CommandPaletteModal
+        isOpen={commandDockOpen}
+        onClose={() => setCommandDockOpen(false)}
+        state={state}
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        onToggleTimerRun={() => {
+          const now = Date.now();
+          setState((prev) => {
+            const nextRunning = !prev.timer.isRunning;
+            const currentSecondsLeft =
+              prev.timer.isRunning && prev.timer.targetEndTimeMs
+                ? Math.max(0, Math.ceil((prev.timer.targetEndTimeMs - now) / 1000))
+                : prev.timer.secondsLeft;
+            return {
+              ...prev,
+              timer: {
+                ...prev.timer,
+                isRunning: nextRunning,
+                secondsLeft: currentSecondsLeft,
+                targetEndTimeMs: nextRunning
+                  ? now + currentSecondsLeft * 1000
+                  : null,
+              },
+            };
+          });
+        }}
+        onResetCurrentStage={() =>
+          setState((prev) => ({
+            ...prev,
+            timer: {
+              ...prev.timer,
+              isRunning: false,
+              targetEndTimeMs: null,
+              secondsLeft:
+                prev.timer.mode === 'WORK_20M'
+                  ? prev.timer.workStage === 'IGNITION_5M'
+                    ? 300
+                    : 900
+                  : prev.timer.mode === 'BREAK_L1'
+                  ? prev.timer.l1DurationMinutes * 60
+                  : prev.timer.mode === 'BREAK_L2'
+                  ? prev.timer.l2DurationMinutes * 60
+                  : prev.timer.mode === 'BREAK_L3'
+                  ? prev.timer.l3DurationMinutes * 60
+                  : prev.timer.stressDurationMinutes * 60,
+            },
+          }))
+        }
+        onFastForwardCurrentStage={handleFastForwardTimerStage}
+        cinemaFocusMode={cinemaFocusMode}
+        onToggleCinemaFocusMode={() => setCinemaFocusMode((prev) => !prev)}
+        onSelectLoadMode={(mode, targetBlocks) =>
+          handleSelectLoadMode(mode, targetBlocks, false)
+        }
+        onTriggerStressReset={() => {
+          const now = Date.now();
+          setState((prev) => ({
+            ...prev,
+            timer: {
+              ...prev.timer,
+              mode: 'STRESS_RESET',
+              stressProtocol: 'BREATHING_478',
+              stressDurationMinutes: 15,
+              secondsLeft: 900,
+              targetEndTimeMs: now + 900 * 1000,
+              isRunning: true,
+            },
+          }));
+          showNotice(
+            'Suspended heavy reading/writing → Started 15m 4-7-8 Stress / Fatigue Reset.'
+          );
+        }}
+        smartIntakeText={smartIntakeText}
+        onChangeSmartIntakeText={setSmartIntakeText}
+        smartIntakePreview={smartIntakePreview}
+        onSetSmartIntakePreview={setSmartIntakePreview}
+        onApplySmartIntakePlan={handleApplySmartIntakePlan}
+      />
     </div>
   );
 }
