@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import {
   Activity,
   Bell,
@@ -10,7 +10,6 @@ import {
   RotateCcw,
   ShieldAlert,
   Smartphone,
-  Wind,
   Zap,
 } from 'lucide-react';
 import {
@@ -25,6 +24,8 @@ import {
   NotificationLogEntry,
   SymmetryNotificationEvent,
 } from '../services/notifications';
+import { DualRingTimerSvg } from './DualRingTimerSvg';
+import { BreathingVisualizer478 } from './BreathingVisualizer478';
 
 interface Tab2TimerTriageProps {
   state: SymmetryState;
@@ -74,45 +75,27 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
   const { timer } = state;
   const metrics = computeShiftMetrics(state);
 
-  // 4-7-8 Breathing Visual Pacer local cycle counter (4s inhale + 7s hold + 8s exhale = 19s cycle)
-  const [breathTick, setBreathTick] = useState(0);
-
-  useEffect(() => {
-    if (timer.mode !== 'STRESS_RESET' || timer.stressProtocol !== 'BREATHING_478') {
-      return;
-    }
-    const cycleAnchorMs = Date.now();
-    const updateBreathFromTimestamp = () => {
-      const elapsedSec = Math.max(0, Math.floor((Date.now() - cycleAnchorMs) / 1000));
-      setBreathTick(elapsedSec % 19);
-    };
-    updateBreathFromTimestamp();
-    const id = window.setInterval(updateBreathFromTimestamp, 250);
-    return () => window.clearInterval(id);
-  }, [timer.mode, timer.stressProtocol]);
-
   const formatMMSS = (totalSec: number) => {
     const m = Math.floor(totalSec / 60);
     const s = totalSec % 60;
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
-  // Determine 4-7-8 phase from breathTick (0..18)
-  let breathPhaseLabel = 'Inhale (4s)';
-  let breathPhaseSecLeft = 4 - breathTick;
-  let breathProgressPct = ((breathTick + 1) / 4) * 100;
-  if (breathTick >= 4 && breathTick < 11) {
-    breathPhaseLabel = 'Hold (7s)';
-    breathPhaseSecLeft = 11 - breathTick;
-    breathProgressPct = ((breathTick - 4 + 1) / 7) * 100;
-  } else if (breathTick >= 11) {
-    breathPhaseLabel = 'Exhale (8s)';
-    breathPhaseSecLeft = 19 - breathTick;
-    breathProgressPct = ((breathTick - 11 + 1) / 8) * 100;
-  }
+  const stageBadgeText =
+    timer.mode === 'WORK_20M'
+      ? timer.workStage === 'IGNITION_5M'
+        ? '5m Startup Step (IGNITION_5M)'
+        : '15m Momentum (MOMENTUM_15M)'
+      : timer.mode === 'BREAK_L1'
+      ? `Level 1 Same-Task Micro-Reset (${timer.l1DurationMinutes}m)`
+      : timer.mode === 'BREAK_L2'
+      ? `Level 2 Task-Switch Buffer (${timer.l2DurationMinutes}m)`
+      : timer.mode === 'BREAK_L3'
+      ? `Level 3 Mid-Day Reset (${timer.l3DurationMinutes}m)`
+      : `Stress / Fatigue Reset (${timer.stressDurationMinutes}m)`;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-tab-enter">
       {/* Queued 5m Flashcard Block Banner (Triggered after Stress / Fatigue Reset completes) */}
       {timer.queuedRecoveryFlashcard5m && (
         <div
@@ -134,7 +117,7 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
           </div>
 
           <div className="flex items-center gap-2.5">
-            <div className="px-3.5 py-2 rounded-xl bg-slate-950 border border-emerald-600/60 font-mono text-lg font-bold text-emerald-300">
+            <div className="px-3.5 py-2 rounded-xl bg-slate-950 border border-emerald-600/60 font-mono tabular-nums text-lg font-bold text-emerald-300">
               {formatMMSS(timer.recoveryFlashcardSecondsLeft)}
             </div>
             <button
@@ -167,9 +150,9 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
         </div>
       )}
 
-      {/* Main Grid: Left = Two-Stage 20m Timer Console, Right = Break Triage & Stress Reset */}
+      {/* Main Grid: Left = Two-Stage 20m Dual-Ring Timer Console, Right = Break Triage & Stress Reset */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-        {/* Left Column: Primary Two-Stage Timer & Active Mode Console */}
+        {/* Left Column: Primary Two-Stage Dual-Ring SVG Timer & Active Mode Console */}
         <section
           aria-labelledby="active-timer-console-heading"
           className="lg:col-span-7 p-5 sm:p-6 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-col justify-between space-y-5"
@@ -196,7 +179,7 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
                       timer.mode === m.id
                         ? m.id === 'STRESS_RESET'
                           ? 'bg-amber-500 text-slate-950 font-bold'
-                          : 'bg-sky-500 text-slate-950 font-bold'
+                          : 'bg-cyan-500 text-slate-950 font-bold'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
@@ -205,9 +188,9 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
                 ))}
               </div>
 
-              <span className="font-mono text-xs text-slate-400">
+              <span className="font-mono tabular-nums text-xs text-slate-400">
                 Chained Blocks:{' '}
-                <strong className="text-sky-300">
+                <strong className="text-cyan-300">
                   [{timer.chainedBlocksCount} / 2] ({timer.chainedBlocksCount * 20}m)
                 </strong>
               </span>
@@ -220,16 +203,16 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
                   id="stage-indicator-ignition-5m"
                   className={`p-3 rounded-xl border transition ${
                     timer.workStage === 'IGNITION_5M'
-                      ? 'bg-sky-950/70 border-sky-500 text-sky-100'
+                      ? 'bg-amber-950/60 border-amber-500/80 text-amber-100'
                       : 'bg-slate-950/50 border-slate-800 text-slate-400'
                   }`}
                 >
-                  <div className="flex items-center justify-between font-mono text-xs">
+                  <div className="flex items-center justify-between font-mono tabular-nums text-xs">
                     <span className="font-bold">STAGE 1: IGNITION_5M</span>
                     <span>05:00</span>
                   </div>
                   <div className="text-[11px] mt-1">
-                    5-Minute Startup Step (Auto-rolls into Momentum)
+                    Inner Amber Arc — 5m Startup Step (Auto-rolls into Momentum)
                   </div>
                 </div>
 
@@ -237,87 +220,59 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
                   id="stage-indicator-momentum-15m"
                   className={`p-3 rounded-xl border transition ${
                     timer.workStage === 'MOMENTUM_15M'
-                      ? 'bg-emerald-950/70 border-emerald-500 text-emerald-100'
+                      ? 'bg-cyan-950/70 border-cyan-500/80 text-cyan-100'
                       : 'bg-slate-950/50 border-slate-800 text-slate-400'
                   }`}
                 >
-                  <div className="flex items-center justify-between font-mono text-xs">
+                  <div className="flex items-center justify-between font-mono tabular-nums text-xs">
                     <span className="font-bold">STAGE 2: MOMENTUM_15M</span>
                     <span>15:00</span>
                   </div>
                   <div className="text-[11px] mt-1">
-                    15-Minute Momentum Execution (Completes 20m Block)
+                    Outer Cyan/Indigo Arc — 15m Momentum Execution
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Central Digital Clock Display */}
-            <div className="p-6 rounded-2xl bg-slate-950 border border-slate-800 text-center space-y-3">
+            {/* Central Dual-Ring SVG Timer & Task Prompt */}
+            <div className="p-5 sm:p-6 rounded-2xl bg-slate-950 border border-slate-800 text-center space-y-4">
               <div className="flex items-center justify-center gap-2">
-                <span className="px-2.5 py-0.5 rounded-md bg-slate-900 border border-slate-700 font-mono text-xs text-sky-300 uppercase">
-                  {timer.mode === 'WORK_20M'
-                    ? timer.workStage === 'IGNITION_5M'
-                      ? '5m Startup Step (IGNITION_5M)'
-                      : '15m Momentum (MOMENTUM_15M)'
-                    : timer.mode === 'BREAK_L1'
-                    ? `Level 1 Same-Task Micro-Reset (${timer.l1DurationMinutes}m)`
-                    : timer.mode === 'BREAK_L2'
-                    ? `Level 2 Task-Switch Buffer (${timer.l2DurationMinutes}m)`
-                    : timer.mode === 'BREAK_L3'
-                    ? `Level 3 Mid-Day Reset (${timer.l3DurationMinutes}m)`
-                    : `Stress / Fatigue Reset (${timer.stressDurationMinutes}m)`}
+                <span className="px-2.5 py-0.5 rounded-md bg-slate-900 border border-slate-800 font-mono text-xs text-cyan-300 uppercase">
+                  {stageBadgeText}
                 </span>
               </div>
 
-              <div
-                id="main-timer-digits"
-                className="text-5xl sm:text-6xl font-mono font-bold tracking-tight text-slate-100 py-1"
-              >
-                {formatMMSS(timer.secondsLeft)}
-              </div>
+              <DualRingTimerSvg
+                timer={timer}
+                isEveningTheme={metrics.isZeroWorkLeft}
+                formattedTime={formatMMSS(timer.secondsLeft)}
+                stageBadgeText={stageBadgeText}
+              />
 
               {timer.mode === 'WORK_20M' && (
-                <div className="max-w-lg mx-auto space-y-1">
+                <div className="max-w-lg mx-auto space-y-1.5 pt-1">
                   <div className="text-xs sm:text-sm font-bold text-slate-200">
                     Active Task: {timer.activeTaskTitle}
                   </div>
                   <div className="text-xs text-slate-400 bg-slate-900/90 border border-slate-800 rounded-xl px-3 py-2">
-                    <strong className="text-sky-300 font-mono">5m Startup Step:</strong>{' '}
+                    <strong className="text-amber-300 font-mono">5m Startup Step:</strong>{' '}
                     {timer.activeStartupPrompt}
                   </div>
                 </div>
               )}
 
-              {/* 4-7-8 Breathing Visual Pacer when in STRESS_RESET mode */}
-              {timer.mode === 'STRESS_RESET' &&
-                timer.stressProtocol === 'BREATHING_478' && (
-                  <div
+              {/* Toggleable 4-7-8 Breathing Visualizer when Stress / Fatigue Reset is active */}
+              {timer.mode === 'STRESS_RESET' && (
+                <div className="max-w-md mx-auto pt-1 text-left">
+                  <BreathingVisualizer478
                     id="breathing-478-visual-pacer"
-                    className="max-w-md mx-auto p-4 rounded-xl bg-slate-900 border border-amber-600/50 space-y-2"
-                  >
-                    <div className="flex items-center justify-between text-xs font-mono">
-                      <span className="text-amber-300 font-bold flex items-center gap-1.5">
-                        <Wind className="w-4 h-4" />
-                        <span>4-7-8 Breathing Visual Pacer</span>
-                      </span>
-                      <span className="text-slate-200 font-bold">
-                        {breathPhaseLabel} — {breathPhaseSecLeft}s
-                      </span>
-                    </div>
-                    <div className="w-full h-2.5 rounded-full bg-slate-950 overflow-hidden">
-                      <div
-                        className="h-full bg-amber-400 transition-all duration-500"
-                        style={{ width: `${breathProgressPct}%` }}
-                      />
-                    </div>
-                    <div className="flex justify-between text-[10px] font-mono text-slate-400">
-                      <span>Inhale 4s</span>
-                      <span>Hold 7s</span>
-                      <span>Exhale 8s</span>
-                    </div>
-                  </div>
-                )}
+                    isActiveContext={timer.mode === 'STRESS_RESET'}
+                    defaultExpanded={true}
+                    variant={metrics.isZeroWorkLeft ? 'evening' : 'slate'}
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -329,7 +284,7 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
                 type="button"
                 disabled={metrics.isZeroWorkLeft && timer.mode === 'WORK_20M'}
                 onClick={onToggleTimerRun}
-                className="px-4 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-400 disabled:opacity-40 text-slate-950 font-bold text-xs sm:text-sm flex items-center gap-2 cursor-pointer"
+                className="px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-950 font-bold text-xs sm:text-sm flex items-center gap-2 cursor-pointer"
               >
                 {timer.isRunning ? (
                   <>
@@ -357,7 +312,7 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
                 className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs flex items-center gap-1.5 cursor-pointer"
                 title="Advance current stage to 00:00 (Tests auto-roll from 5m Startup -> 15m Momentum -> Break Router)"
               >
-                <FastForward className="w-3.5 h-3.5 text-sky-400" />
+                <FastForward className="w-3.5 h-3.5 text-cyan-400" />
                 <span>
                   {timer.mode === 'WORK_20M'
                     ? timer.workStage === 'IGNITION_5M'
@@ -404,7 +359,7 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
             {/* Level 1: Same-Task Micro-Reset (3-5m) */}
             <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="font-mono text-xs font-bold text-sky-300">
+                <span className="font-mono text-xs font-bold text-cyan-300">
                   Level 1: Same-Task Micro-Reset (3–5m)
                 </span>
                 <div className="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-800">
@@ -413,9 +368,9 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
                       key={m}
                       type="button"
                       onClick={() => onSelectL1Minutes(m)}
-                      className={`px-2 py-0.5 rounded font-mono text-xs cursor-pointer ${
+                      className={`px-2 py-0.5 rounded font-mono tabular-nums text-xs cursor-pointer ${
                         timer.l1DurationMinutes === m && timer.mode === 'BREAK_L1'
-                          ? 'bg-sky-500 text-slate-950 font-bold'
+                          ? 'bg-cyan-500 text-slate-950 font-bold'
                           : 'text-slate-400 hover:text-slate-200'
                       }`}
                     >
@@ -441,7 +396,7 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
                       key={m}
                       type="button"
                       onClick={() => onSelectL2Minutes(m)}
-                      className={`px-2 py-0.5 rounded font-mono text-xs cursor-pointer ${
+                      className={`px-2 py-0.5 rounded font-mono tabular-nums text-xs cursor-pointer ${
                         timer.l2DurationMinutes === m && timer.mode === 'BREAK_L2'
                           ? 'bg-emerald-500 text-slate-950 font-bold'
                           : 'text-slate-400 hover:text-slate-200'
@@ -510,7 +465,7 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
                       key={m}
                       type="button"
                       onClick={() => onSelectL3Minutes(m)}
-                      className={`px-2 py-0.5 rounded font-mono text-xs cursor-pointer ${
+                      className={`px-2 py-0.5 rounded font-mono tabular-nums text-xs cursor-pointer ${
                         timer.l3DurationMinutes === m && timer.mode === 'BREAK_L3'
                           ? 'bg-amber-500 text-slate-950 font-bold'
                           : 'text-slate-400 hover:text-slate-200'
@@ -602,19 +557,19 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
-              <Smartphone className="w-4 h-4 text-sky-400" />
+              <Smartphone className="w-4 h-4 text-cyan-400" />
               <h2
                 id="lockscreen-notifications-heading"
                 className="text-sm font-bold uppercase tracking-wider font-mono text-slate-200"
               >
                 Android Lock-Screen Notifications &amp; Offline PWA Engine
               </h2>
-              <span className="px-2 py-0.5 rounded bg-sky-950 border border-sky-700/60 text-sky-300 font-mono text-[10px]">
+              <span className="px-2 py-0.5 rounded bg-cyan-950 border border-cyan-700/60 text-cyan-300 font-mono text-[10px]">
                 Channel: {ANDROID_CHANNEL_ID} (IMPORTANCE_HIGH / VISIBILITY_PUBLIC)
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">
-              Fires Capacitor LocalNotifications (<code className="text-sky-300">allowWhileIdle: true</code>) and Service Worker lock-screen alerts on 5m Startup Step rollover, 20m Check-In chimes, and 60m Mandatory Break alerts.
+              Fires Capacitor LocalNotifications (<code className="text-cyan-300">allowWhileIdle: true</code>) and Service Worker lock-screen alerts on 5m Startup Step rollover, 20m Check-In chimes, and 60m Mandatory Break alerts.
             </p>
           </div>
 
@@ -631,7 +586,7 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
               onClick={onRequestNotificationPermissions}
               className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-mono text-xs flex items-center gap-1.5 cursor-pointer"
             >
-              <Bell className="w-3.5 h-3.5 text-sky-400" />
+              <Bell className="w-3.5 h-3.5 text-cyan-400" />
               <span>
                 {notificationsGranted
                   ? 'Lock-Screen Alerts: GRANTED'
@@ -653,9 +608,9 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
                 `Auto-rolling into 15m Momentum (MOMENTUM_15M) for "${timer.activeTaskTitle}".`
               )
             }
-            className="p-3 rounded-xl bg-slate-950 hover:bg-slate-800/80 border border-sky-700/50 text-left transition cursor-pointer"
+            className="p-3 rounded-xl bg-slate-950 hover:bg-slate-800/80 border border-cyan-700/50 text-left transition cursor-pointer"
           >
-            <div className="font-mono text-xs font-bold text-sky-300">
+            <div className="font-mono text-xs font-bold text-cyan-300">
               1. 5m Startup Step Rollover
             </div>
             <div className="text-[11px] text-slate-400 mt-0.5">
@@ -720,7 +675,7 @@ export const Tab2TimerTriage: React.FC<Tab2TimerTriageProps> = ({
                   className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs"
                 >
                   <div>
-                    <span className="font-mono font-bold text-sky-300 mr-2">
+                    <span className="font-mono font-bold text-cyan-300 mr-2">
                       [{entry.eventType}]
                     </span>
                     <strong className="text-slate-100">{entry.title}:</strong>{' '}

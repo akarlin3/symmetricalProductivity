@@ -17,6 +17,7 @@ import {
   SymmetryState,
 } from '../types/symmetry';
 import { computeShiftMetrics } from '../state/defaultState';
+import { BreathingVisualizer478 } from './BreathingVisualizer478';
 
 interface Tab3RechargeProps {
   state: SymmetryState;
@@ -88,17 +89,17 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
       : null;
 
   return (
-    <div className="space-y-6 text-amber-50">
+    <div className="space-y-6 text-amber-50 animate-tab-enter">
       {/* Gate Banner if work blocks still remain */}
       {!metrics.isZeroWorkLeft && (
         <div
           id="evening-lock-gate-notice"
-          className="p-4 sm:p-5 rounded-2xl bg-stone-900/95 border border-amber-700/60 flex flex-wrap items-center justify-between gap-4"
+          className="p-4 sm:p-5 rounded-2xl bg-stone-900/95 border border-amber-700/50 flex flex-wrap items-center justify-between gap-4"
         >
           <div className="flex items-start gap-3">
             <Lock className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
             <div>
-              <h2 className="text-sm font-bold uppercase tracking-wider font-mono text-amber-300">
+              <h2 className="text-sm font-bold uppercase tracking-wider font-mono tabular-nums text-amber-300">
                 End-of-Shift Bridge ({metrics.remainingWorkFormatted} remaining)
               </h2>
               <p className="text-xs text-stone-300 mt-0.5">
@@ -123,7 +124,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
         {/* Flow Extension Gate & Count-Up Timer */}
         <section
           aria-labelledby="flow-extension-heading"
-          className="lg:col-span-7 p-5 rounded-2xl bg-stone-900/90 border border-amber-900/60 space-y-4"
+          className="lg:col-span-7 p-5 rounded-2xl bg-stone-900/90 border border-amber-900/45 space-y-4"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -205,7 +206,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                       key={n}
                       type="button"
                       onClick={() => onSetWeeklyExtensionsUsed(n)}
-                      className={`px-1 rounded text-[10px] cursor-pointer ${
+                      className={`px-1 rounded text-[10px] font-mono tabular-nums cursor-pointer ${
                         recharge.weeklyExtensionsUsed === n
                           ? 'bg-amber-500 text-stone-950 font-bold'
                           : 'bg-stone-800 text-stone-300'
@@ -216,7 +217,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                   ))}
                 </div>
               </div>
-              <div className="mt-1 text-[11px]">
+              <div className="mt-1 text-[11px] font-mono tabular-nums">
                 Used: {recharge.weeklyExtensionsUsed} / 2 this week
               </div>
             </div>
@@ -237,7 +238,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
               </button>
 
               {tomorrowDay && tomorrowDay.deductedBlocksFromExtension > 0 && (
-                <span className="font-mono text-xs text-amber-300">
+                <span className="font-mono tabular-nums text-xs text-amber-300">
                   Tomorrow Quota Deduction: -{tomorrowDay.deductedBlocksFromExtension} proj blks
                 </span>
               )}
@@ -245,14 +246,14 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
           ) : (
             <div
               id="flow-extension-active-console"
-              className="p-4 rounded-xl bg-stone-950 border border-amber-600/70 space-y-3"
+              className="p-4 rounded-xl bg-stone-950 border border-amber-600/60 space-y-3"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <div className="text-xs font-mono uppercase text-amber-300 font-bold">
                     Open Count-Up Flow Extension Timer (20m Chimes / 60m Break)
                   </div>
-                  <div className="text-[11px] text-stone-400">
+                  <div className="text-[11px] text-stone-400 font-mono tabular-nums">
                     Extension Blocks Logged Today:{' '}
                     <strong className="text-amber-200">
                       {recharge.flowExtensionBlocksLoggedToday} blocks
@@ -266,7 +267,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                 </div>
                 <div
                   id="flow-extension-countup-readout"
-                  className="text-2xl sm:text-3xl font-mono font-bold text-amber-200"
+                  className="text-2xl sm:text-3xl font-mono tabular-nums font-bold text-amber-200"
                 >
                   {formatMMSS(recharge.flowExtensionElapsedSeconds)}
                 </div>
@@ -310,7 +311,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
         {/* Option 0: Rest / Stillness Timer (20m, 2-Window Cap -> 40m Fork Check) */}
         <section
           aria-labelledby="option-0-rest-heading"
-          className="lg:col-span-5 p-5 rounded-2xl bg-stone-900/90 border border-amber-900/60 flex flex-col justify-between space-y-4"
+          className="lg:col-span-5 p-5 rounded-2xl bg-stone-900/90 border border-amber-900/45 flex flex-col justify-between space-y-4"
         >
           <div className="space-y-3">
             <div className="flex items-center justify-between">
@@ -320,7 +321,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
               >
                 Option 0: Rest / Stillness (20m)
               </h2>
-              <span className="px-2 py-0.5 rounded bg-stone-950 border border-amber-800/60 font-mono text-xs text-amber-200">
+              <span className="px-2 py-0.5 rounded bg-stone-950 border border-amber-800/50 font-mono tabular-nums text-xs text-amber-200">
                 Windows: [{recharge.option0ConsecutiveWindows} / 2] (Max 40m)
               </span>
             </div>
@@ -336,7 +337,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                 </div>
                 <div
                   id="option0-timer-digits"
-                  className="text-3xl font-mono font-bold text-amber-200 mt-0.5"
+                  className="text-3xl font-mono tabular-nums font-bold text-amber-200 mt-0.5"
                 >
                   {formatMMSS(recharge.option0SecondsLeft)}
                 </div>
@@ -365,12 +366,21 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                   id="btn-option0-complete-window"
                   type="button"
                   onClick={onCompleteOption0Window}
-                  className="px-3 py-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 border border-stone-700 text-stone-300 font-mono text-[11px] cursor-pointer"
+                  className="px-3 py-1.5 rounded-lg bg-stone-900 hover:bg-stone-800 border border-stone-700 text-stone-300 font-mono tabular-nums text-[11px] cursor-pointer"
                 >
                   Complete 20m Window ({recharge.option0ConsecutiveWindows + 1}/2)
                 </button>
               </div>
             </div>
+
+            {/* Optional Toggleable 4-7-8 Breathing Visualizer for Option 0 Rest */}
+            <BreathingVisualizer478
+              id="option0-breathing-478-visualizer"
+              isActiveContext={true}
+              defaultExpanded={recharge.option0Running}
+              variant="evening"
+              compact={true}
+            />
           </div>
 
           <div className="text-[11px] font-mono text-stone-400 border-t border-stone-800 pt-2.5 flex items-center justify-between">
@@ -383,7 +393,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
       {/* Section 2: 5 Evening Recharge Categories & Pacing Console (Rule 8) */}
       <section
         aria-labelledby="recharge-categories-heading"
-        className="p-5 rounded-2xl bg-stone-900/90 border border-amber-900/60 space-y-5"
+        className="p-5 rounded-2xl bg-stone-900/90 border border-amber-900/45 space-y-5"
       >
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -397,7 +407,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
               Pacing: 5m Startup Step → 20m &amp; 40m Check-In (&ldquo;Keep going, switch, or rest?&rdquo;) → Mandatory 5–10m physical break at 60m.
             </p>
           </div>
-          <span className="font-mono text-xs text-amber-200 bg-stone-950 px-3 py-1 rounded-xl border border-amber-800/60">
+          <span className="font-mono tabular-nums text-xs text-amber-200 bg-stone-950 px-3 py-1 rounded-xl border border-amber-800/50">
             Sticky Swap Rule: [X / 3] 5m Starts OR Immediate Swap at 20m Check-In
           </span>
         </div>
@@ -415,7 +425,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
           >
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="px-2 py-0.5 rounded bg-sky-950 border border-sky-700/60 text-sky-300 font-mono text-[10px] font-bold">
+                <span className="px-2 py-0.5 rounded bg-amber-950/80 border border-amber-700/50 text-amber-300 font-mono text-[10px] font-bold">
                   1. MUSIC [FLUID]
                 </span>
                 <Music className="w-4 h-4 text-amber-400" />
@@ -452,7 +462,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                 <span className="px-2 py-0.5 rounded bg-amber-950 border border-amber-700/60 text-amber-300 font-mono text-[10px] font-bold">
                   2. MAKER / HARDWARE [STICKY]
                 </span>
-                <span className="font-mono text-xs font-bold text-amber-300">
+                <span className="font-mono tabular-nums text-xs font-bold text-amber-300">
                   [{recharge.stickySlots.CAT2_MAKER.fiveMinStarts} / 3] Starts
                 </span>
               </div>
@@ -510,7 +520,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                 <span className="px-2 py-0.5 rounded bg-amber-950 border border-amber-700/60 text-amber-300 font-mono text-[10px] font-bold">
                   3. MEDIA [STICKY TRIPLE-TRACK]
                 </span>
-                <span className="font-mono text-xs font-bold text-amber-300">
+                <span className="font-mono tabular-nums text-xs font-bold text-amber-300">
                   [{recharge.stickySlots[recharge.activeMediaTab].fiveMinStarts} / 3] Starts
                 </span>
               </div>
@@ -552,7 +562,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                           key={spd}
                           type="button"
                           onClick={() => onSelectFictionSpeed(spd)}
-                          className={`px-1.5 py-0.5 rounded font-mono text-[10px] cursor-pointer ${
+                          className={`px-1.5 py-0.5 rounded font-mono tabular-nums text-[10px] cursor-pointer ${
                             recharge.fictionSpeed === spd
                               ? 'bg-amber-500 text-stone-950 font-bold'
                               : 'text-stone-400'
@@ -613,7 +623,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
           >
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="px-2 py-0.5 rounded bg-sky-950 border border-sky-700/60 text-sky-300 font-mono text-[10px] font-bold">
+                <span className="px-2 py-0.5 rounded bg-amber-950/80 border border-amber-700/50 text-amber-300 font-mono text-[10px] font-bold">
                   4. COMFORT SHOW [FLUID]
                 </span>
                 <Tv className="w-4 h-4 text-amber-400" />
@@ -650,7 +660,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                 <span className="px-2 py-0.5 rounded bg-amber-950 border border-amber-700/60 text-amber-300 font-mono text-[10px] font-bold">
                   5. GAMING [STICKY]
                 </span>
-                <span className="font-mono text-xs font-bold text-amber-300">
+                <span className="font-mono tabular-nums text-xs font-bold text-amber-300">
                   [{recharge.stickySlots.CAT5_GAMING.fiveMinStarts} / 3] Starts
                 </span>
               </div>
@@ -696,7 +706,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
           {/* Active Recharge Pacing Console Card (5m -> 20m Check-In -> 40m Check-In -> 60m Break) */}
           <div
             id="recharge-pacing-console"
-            className="p-4 rounded-xl bg-stone-950 border border-amber-600/70 flex flex-col justify-between space-y-3"
+            className="p-4 rounded-xl bg-stone-950 border border-amber-600/60 flex flex-col justify-between space-y-3"
           >
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
@@ -708,7 +718,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                 </span>
               </div>
 
-              <div className="text-2xl font-mono font-bold text-amber-100">
+              <div className="text-2xl font-mono tabular-nums font-bold text-amber-100">
                 {formatMMSS(recharge.categorySecondsLeft)}
               </div>
 

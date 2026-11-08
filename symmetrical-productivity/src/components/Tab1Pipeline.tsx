@@ -377,7 +377,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               >
                 Duration-Only Pipeline Readout
               </h2>
-              <span className="text-xs font-mono text-sky-400">
+              <span className="text-xs font-mono tabular-nums text-cyan-400">
                 {metrics.totalCompletedBlocks} / {metrics.totalTargetBlocks} blocks done
               </span>
             </div>
@@ -390,7 +390,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 </div>
                 <div
                   id="pipeline-main-duration-readout"
-                  className="text-lg sm:text-xl font-mono font-bold text-sky-300 mt-0.5"
+                  className="text-lg sm:text-xl font-mono tabular-nums font-bold text-cyan-300 mt-0.5"
                 >
                   {metrics.durationPrefix}
                 </div>

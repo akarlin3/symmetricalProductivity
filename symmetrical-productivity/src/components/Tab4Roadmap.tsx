@@ -27,7 +27,7 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
   const outputSharePct = 100 - inputSharePct;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-tab-enter">
       {/* Top Summary Card: 50% Input / 50% Output Symmetrical Ledger */}
       <section
         aria-labelledby="roadmap-ledger-heading"
@@ -39,7 +39,7 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
               id="roadmap-ledger-heading"
               className="text-sm font-bold uppercase tracking-wider font-mono text-slate-200 flex items-center gap-2"
             >
-              <Layers className="w-4 h-4 text-sky-400" />
+              <Layers className="w-4 h-4 text-cyan-400" />
               <span>4-Rung Roadmap (50% Input + 50% Output Tracker)</span>
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
@@ -47,8 +47,8 @@ export const Tab4Roadmap: React.FC<Tab4RoadmapProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-2 font-mono text-xs">
-            <span className="px-2.5 py-1 rounded-lg bg-sky-950 border border-sky-700/60 text-sky-300">
+          <div className="flex items-center gap-2 font-mono tabular-nums text-xs">
+            <span className="px-2.5 py-1 rounded-lg bg-cyan-950 border border-cyan-700/60 text-cyan-300">
               Input: {totalInputBlocks} blks ({inputSharePct}%)
             </span>
             <span className="px-2.5 py-1 rounded-lg bg-emerald-950 border border-emerald-700/60 text-emerald-300">

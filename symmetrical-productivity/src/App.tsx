@@ -223,6 +223,74 @@ export function App() {
   const metrics = computeShiftMetrics(state);
   const isEveningTheme = metrics.isZeroWorkLeft || activeTab === 'RECHARGE';
 
+  // Dual-Theme State Shift: Sync body background and theme-color meta tag smoothly
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const bgHex = isEveningTheme ? '#0c0a09' : '#090d16';
+    document.body.style.backgroundColor = bgHex;
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (metaTheme) {
+      metaTheme.setAttribute('content', bgHex);
+    }
+  }, [isEveningTheme]);
+
+  // Dynamic browser document.title update while any timer is running
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const fmt = (sec: number) => {
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    };
+
+    if (state.timer.isRunning) {
+      const stageTag =
+        state.timer.mode === 'WORK_20M'
+          ? state.timer.workStage === 'IGNITION_5M'
+            ? '5m Startup'
+            : '15m Momentum'
+          : state.timer.mode === 'BREAK_L1'
+          ? 'L1 Break'
+          : state.timer.mode === 'BREAK_L2'
+          ? 'L2 Buffer'
+          : state.timer.mode === 'BREAK_L3'
+          ? 'L3 Mid-Day'
+          : 'Stress Reset';
+      document.title = `(${fmt(state.timer.secondsLeft)}) [${stageTag}] Symmetrical`;
+    } else if (state.timer.recoveryFlashcardRunning) {
+      document.title = `(${fmt(state.timer.recoveryFlashcardSecondsLeft)}) [5m Cards] Symmetrical`;
+    } else if (state.recharge.option0Running) {
+      document.title = `(${fmt(state.recharge.option0SecondsLeft)}) [Option 0 Rest] Symmetrical`;
+    } else if (state.recharge.categoryRunning) {
+      const stageLabel =
+        state.recharge.pacingStage === 'STARTUP_5M'
+          ? '5m Recharge'
+          : state.recharge.pacingStage === 'MANDATORY_BREAK_60M'
+          ? '60m Break'
+          : 'Recharge';
+      document.title = `(${fmt(state.recharge.categorySecondsLeft)}) [${stageLabel}] Symmetrical`;
+    } else if (state.recharge.flowExtensionRunning) {
+      document.title = `(+${fmt(state.recharge.flowExtensionElapsedSeconds)}) [Flow Extension] Symmetrical`;
+    } else {
+      document.title = `Symmetrical Productivity — ${metrics.durationPrefix}`;
+    }
+  }, [
+    state.timer.isRunning,
+    state.timer.mode,
+    state.timer.workStage,
+    state.timer.secondsLeft,
+    state.timer.recoveryFlashcardRunning,
+    state.timer.recoveryFlashcardSecondsLeft,
+    state.recharge.option0Running,
+    state.recharge.option0SecondsLeft,
+    state.recharge.categoryRunning,
+    state.recharge.pacingStage,
+    state.recharge.categorySecondsLeft,
+    state.recharge.flowExtensionRunning,
+    state.recharge.flowExtensionElapsedSeconds,
+    metrics.durationPrefix,
+  ]);
+
   // Helper to credit Roadmap Input (50%) or Output (50%)
   const creditRoadmapTrack = (
     prevTracks: SymmetryState['roadmapTracks'],
@@ -1352,6 +1420,7 @@ export function App() {
                 });
               }}
               onCompleteRecoveryFlashcard5m={() => {
+                triggerHaptic([15]);
                 dispatchLockScreenAlert(
                   'WORK_BLOCK_COMPLETE',
                   '5m Flashcard Recovery Block Complete',
@@ -1410,6 +1479,7 @@ export function App() {
                 }))
               }
               onConfirmFlowExtension={() => {
+                triggerHaptic([15]);
                 const now = Date.now();
                 setState((prev) => ({
                   ...prev,
@@ -1456,6 +1526,7 @@ export function App() {
                 });
               }}
               onLogFlowExtensionBlock20m={() => {
+                triggerHaptic([15]);
                 const now = Date.now();
                 setState((prev) => {
                   const newBlocksLogged =
@@ -1522,6 +1593,7 @@ export function App() {
                 }))
               }
               onToggleOption0Timer={() => {
+                triggerHaptic([15]);
                 const now = Date.now();
                 setState((prev) => {
                   const nextRunning = !prev.recharge.option0Running;
@@ -1549,6 +1621,7 @@ export function App() {
                 });
               }}
               onCompleteOption0Window={() => {
+                triggerHaptic([15]);
                 dispatchLockScreenAlert(
                   'WORK_BLOCK_COMPLETE',
                   'Option 0 Stillness Window Complete',
@@ -1618,6 +1691,7 @@ export function App() {
                 }))
               }
               onStartCategory5mStep={() => {
+                triggerHaptic([15]);
                 const now = Date.now();
                 setState((prev) => {
                   const r = prev.recharge;
@@ -1692,10 +1766,12 @@ export function App() {
                   };
                 });
               }}
-              onAdvanceCategoryPacingMilestone={() =>
-                setState((prev) => advanceCategoryMilestoneInternal(prev, Date.now()))
-              }
+              onAdvanceCategoryPacingMilestone={() => {
+                triggerHaptic([15]);
+                setState((prev) => advanceCategoryMilestoneInternal(prev, Date.now()));
+              }}
               onResolveCheckInPrompt={(decision) => {
+                triggerHaptic([15]);
                 const now = Date.now();
                 setState((prev) => ({
                   ...prev,
@@ -1716,6 +1792,7 @@ export function App() {
                 }));
               }}
               onSwapStickyItemFromBacklog={(key: StickyKey) => {
+                triggerHaptic([15]);
                 setState((prev) => {
                   const slot = prev.recharge.stickySlots[key];
                   if (!slot || slot.backlogQueue.length === 0) return prev;
@@ -1745,7 +1822,8 @@ export function App() {
           {activeTab === 'ROADMAP' && (
             <Tab4Roadmap
               state={state}
-              onIncrementRungBlock={(trackId, rungNumber) =>
+              onIncrementRungBlock={(trackId, rungNumber) => {
+                triggerHaptic([15]);
                 setState((prev) => {
                   const track = prev.roadmapTracks.find((t) => t.id === trackId);
                   const rung = track?.rungs.find((r) => r.rungNumber === rungNumber);
@@ -1759,8 +1837,8 @@ export function App() {
                       rungNumber
                     ),
                   };
-                })
-              }
+                });
+              }}
               onToggleSandboxActiveWeek={(trackId) =>
                 setState((prev) => ({
                   ...prev,
@@ -1777,12 +1855,94 @@ export function App() {
       </div>
 
       {/* Footer */}
-      <footer className="max-w-6xl w-full mx-auto px-3 sm:px-6 py-4 border-t border-slate-800/70 text-[11px] font-mono text-slate-400 flex flex-wrap items-center justify-between gap-2">
+      <footer
+        className={`max-w-6xl w-full mx-auto px-3 sm:px-6 py-4 border-t text-[11px] font-mono tabular-nums flex flex-wrap items-center justify-between gap-2 transition-colors duration-500 ${
+          isEveningTheme
+            ? 'border-amber-900/40 text-stone-400'
+            : 'border-slate-800/70 text-slate-400'
+        }`}
+      >
         <span>SymmetryManager PWA • Web &amp; Capacitor Android Ready</span>
         <span>
           Persistence: localStorage + state.md • Header: {metrics.durationPrefix}
         </span>
       </footer>
+
+      {/* Glassmorphic Sticky Bottom Navigation for Mobile Thumb Reach */}
+      <nav
+        id="mobile-sticky-bottom-nav"
+        aria-label="Mobile Thumb Navigation"
+        className={`sm:hidden fixed bottom-0 inset-x-0 z-40 border-t backdrop-blur-xl transition-colors duration-500 ${
+          isEveningTheme
+            ? 'bg-[#0c0a09]/85 border-amber-900/50 text-amber-100'
+            : 'bg-[#090d16]/85 border-slate-800/90 text-slate-100'
+        }`}
+      >
+        <div className="grid grid-cols-4 gap-1 px-2 py-1.5">
+          {(
+            [
+              {
+                id: 'PIPELINE' as TabId,
+                label: 'Pipeline',
+                icon: ListChecks,
+                badge: `${metrics.totalCompletedBlocks}/${metrics.totalTargetBlocks}`,
+              },
+              {
+                id: 'TIMER' as TabId,
+                label: 'Timer',
+                icon: Timer,
+                badge: `${String(Math.floor(state.timer.secondsLeft / 60)).padStart(2, '0')}:${String(
+                  state.timer.secondsLeft % 60
+                ).padStart(2, '0')}`,
+              },
+              {
+                id: 'RECHARGE' as TabId,
+                label: 'Recharge',
+                icon: Moon,
+                badge: metrics.isZeroWorkLeft ? 'OPEN' : '0m',
+              },
+              {
+                id: 'ROADMAP' as TabId,
+                label: 'Roadmap',
+                icon: Layers,
+                badge: '4-Rung',
+              },
+            ] as const
+          ).map((item) => {
+            const Icon = item.icon;
+            const active = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  triggerHaptic([15]);
+                  setActiveTab(item.id);
+                }}
+                className={`py-1.5 px-1 rounded-xl flex flex-col items-center justify-center gap-0.5 transition cursor-pointer ${
+                  active
+                    ? isEveningTheme
+                      ? 'bg-amber-500/20 text-amber-200 border border-amber-500/50'
+                      : 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/50'
+                    : isEveningTheme
+                    ? 'text-stone-400 hover:text-amber-200'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <div className="flex items-center gap-1">
+                  <Icon className="w-3.5 h-3.5 shrink-0" />
+                  <span className="text-[10px] font-mono tabular-nums font-bold">
+                    {item.badge}
+                  </span>
+                </div>
+                <span className="text-[11px] font-semibold leading-tight">
+                  {item.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
 
       {/* 7-Day Pipeline Table Drawer */}
       <PipelineDrawer

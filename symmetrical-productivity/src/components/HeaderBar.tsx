@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { FixedEventType, SymmetryState, TabId } from '../types/symmetry';
 import { computeShiftMetrics } from '../state/defaultState';
+import { triggerHaptic } from '../utils/haptics';
 
 interface HeaderBarProps {
   state: SymmetryState;
@@ -72,10 +73,10 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
 
   return (
     <header
-      className={`sticky top-0 z-30 border-b transition-colors duration-300 ${
+      className={`sticky top-0 z-30 border-b transition-colors duration-500 ${
         isEveningTheme
-          ? 'bg-stone-950/95 border-amber-900/50 text-amber-50'
-          : 'bg-slate-950/95 border-slate-800 text-slate-100'
+          ? 'bg-[#0c0a09]/90 border-amber-900/40 text-amber-50'
+          : 'bg-[#090d16]/90 border-slate-800 text-slate-100'
       } backdrop-blur-md`}
     >
       <div className="max-w-6xl mx-auto px-3 sm:px-6 py-3">
@@ -83,10 +84,10 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-2.5">
           <div className="flex items-center gap-2.5">
             <div
-              className={`w-9 h-9 rounded-xl flex items-center justify-center border font-mono font-bold text-sm ${
+              className={`w-9 h-9 rounded-xl flex items-center justify-center border font-mono font-bold text-sm transition-colors duration-500 ${
                 isEveningTheme
-                  ? 'bg-amber-950/70 border-amber-700/60 text-amber-300'
-                  : 'bg-sky-950/70 border-sky-700/60 text-sky-300'
+                  ? 'bg-amber-950/70 border-amber-700/50 text-amber-300'
+                  : 'bg-cyan-950/60 border-cyan-500/40 text-cyan-300'
               }`}
             >
               SM
@@ -97,16 +98,22 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                   SymmetryManager
                 </h1>
                 <span
-                  className={`text-[11px] font-mono uppercase px-2 py-0.5 rounded-md border ${
+                  className={`text-[11px] font-mono uppercase px-2 py-0.5 rounded-md border transition-colors duration-500 ${
                     isEveningTheme
-                      ? 'bg-amber-900/40 border-amber-700/60 text-amber-200'
-                      : 'bg-slate-900 border-slate-700 text-slate-300'
+                      ? 'bg-amber-900/35 border-amber-700/50 text-amber-200'
+                      : 'bg-slate-900 border-slate-800 text-cyan-200'
                   }`}
                 >
-                  {isEveningTheme ? 'End-of-Shift Lock' : `${state.loadMode}${state.cruisePlus ? '+' : ''} Mode`}
+                  {isEveningTheme
+                    ? 'End-of-Shift Lock'
+                    : `${state.loadMode}${state.cruisePlus ? '+' : ''} Mode`}
                 </span>
               </div>
-              <p className="text-xs text-slate-400 hidden sm:block">
+              <p
+                className={`text-xs hidden sm:block ${
+                  isEveningTheme ? 'text-stone-400' : 'text-slate-400'
+                }`}
+              >
                 Duration-Only Focus Pipeline &amp; Deterministic State Machine
               </p>
             </div>
@@ -116,25 +123,29 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
           <div className="flex flex-wrap items-center gap-2">
             <div
               id="duration-only-header-badge"
-              className={`px-3 py-1.5 rounded-xl border font-mono text-xs sm:text-sm font-bold tracking-tight flex items-center gap-2 shadow-inner ${
-                metrics.isZeroWorkLeft
-                  ? 'bg-amber-950/80 border-amber-600/70 text-amber-200'
-                  : 'bg-slate-900 border-sky-600/50 text-sky-200'
+              className={`px-3 py-1.5 rounded-xl border font-mono tabular-nums text-xs sm:text-sm font-bold tracking-tight flex items-center gap-2 shadow-inner transition-colors duration-500 ${
+                metrics.isZeroWorkLeft || isEveningTheme
+                  ? 'bg-amber-950/75 border-amber-600/60 text-amber-200'
+                  : 'bg-slate-900/95 border-cyan-500/50 text-cyan-200'
               }`}
               title="Duration-Only Display (No wall-clock timestamps unless Fixed Event logged)"
             >
               {metrics.isZeroWorkLeft ? (
                 <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
               ) : (
-                <Zap className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                <Zap
+                  className={`w-3.5 h-3.5 shrink-0 ${
+                    isEveningTheme ? 'text-amber-400' : 'text-cyan-400'
+                  }`}
+                />
               )}
-              <span>{metrics.durationPrefix}</span>
+              <span className="tabular-nums">{metrics.durationPrefix}</span>
             </div>
 
             {fixedEventDisplay && (
               <div
                 id="fixed-event-timestamp-pill"
-                className="px-2.5 py-1.5 rounded-xl bg-amber-950/50 border border-amber-700/50 text-amber-200 font-mono text-xs flex items-center gap-1.5"
+                className="px-2.5 py-1.5 rounded-xl bg-amber-950/50 border border-amber-700/50 text-amber-200 font-mono tabular-nums text-xs flex items-center gap-1.5"
               >
                 <Calendar className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                 <span>{fixedEventDisplay}</span>
@@ -150,8 +161,8 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               onClick={onOpenPipelineDrawer}
               className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${
                 isEveningTheme
-                  ? 'bg-stone-900 hover:bg-stone-800 border-amber-800/60 text-amber-100'
-                  : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
+                  ? 'bg-stone-900 hover:bg-stone-800 border-amber-800/50 text-amber-100'
+                  : 'bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-200'
               }`}
             >
               <Sliders className="w-3.5 h-3.5" />
@@ -161,10 +172,13 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             <button
               id="btn-toggle-zero-work-sim"
               type="button"
-              onClick={onToggleZeroWorkSimulation}
+              onClick={() => {
+                triggerHaptic([15]);
+                onToggleZeroWorkSimulation();
+              }}
               className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${
                 metrics.isZeroWorkLeft
-                  ? 'bg-sky-950/80 hover:bg-sky-900 border-sky-700 text-sky-200'
+                  ? 'bg-cyan-950/80 hover:bg-cyan-900 border-cyan-700 text-cyan-200'
                   : 'bg-amber-950/70 hover:bg-amber-900/80 border-amber-700/60 text-amber-200'
               }`}
               title="Toggle between On-Duty remaining blocks and 0m work left (End-of-Shift Lock)"
@@ -188,8 +202,8 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               onClick={onOpenStateModal}
               className={`px-2.5 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition cursor-pointer ${
                 isEveningTheme
-                  ? 'bg-stone-900 hover:bg-stone-800 border-amber-800/60 text-amber-100'
-                  : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
+                  ? 'bg-stone-900 hover:bg-stone-800 border-amber-800/50 text-amber-100'
+                  : 'bg-slate-900 hover:bg-slate-800 border-slate-800 text-slate-200'
               }`}
               title="Open State Sync modal (Copy State JSON / Markdown, Import State JSON, New Day Reset)"
             >
@@ -201,7 +215,11 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               id="btn-reset-default-state"
               type="button"
               onClick={onResetDefault}
-              className="p-1.5 rounded-lg border border-slate-800 bg-slate-900/70 hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition cursor-pointer"
+              className={`p-1.5 rounded-lg border transition cursor-pointer ${
+                isEveningTheme
+                  ? 'border-stone-800 bg-stone-900/70 hover:bg-stone-800 text-stone-400 hover:text-amber-200'
+                  : 'border-slate-800 bg-slate-900/70 hover:bg-slate-800 text-slate-400 hover:text-slate-200'
+              }`}
               title="Reset to default state"
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -212,15 +230,23 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
         {/* Upcoming Milestones Banner */}
         <div
           id="upcoming-milestones-banner"
-          className={`mt-2.5 px-3 py-1.5 rounded-xl border text-xs font-mono flex flex-wrap items-center justify-between gap-2 ${
+          className={`mt-2.5 px-3 py-1.5 rounded-xl border text-xs font-mono tabular-nums flex flex-wrap items-center justify-between gap-2 transition-colors duration-500 ${
             isEveningTheme
-              ? 'bg-stone-900/80 border-amber-800/50 text-amber-200'
-              : 'bg-slate-900/90 border-sky-800/60 text-sky-200'
+              ? 'bg-stone-900/80 border-amber-800/40 text-amber-200'
+              : 'bg-slate-900/90 border-slate-800 text-cyan-200'
           }`}
         >
           <div className="flex items-center gap-2">
-            <Calendar className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-            <span className="uppercase font-bold tracking-wider text-[11px] text-slate-300">
+            <Calendar
+              className={`w-3.5 h-3.5 shrink-0 ${
+                isEveningTheme ? 'text-amber-400' : 'text-cyan-400'
+              }`}
+            />
+            <span
+              className={`uppercase font-bold tracking-wider text-[11px] ${
+                isEveningTheme ? 'text-stone-300' : 'text-slate-300'
+              }`}
+            >
               Upcoming Milestones:
             </span>
           </div>
@@ -233,8 +259,8 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                 key={idx}
                 className={`px-2.5 py-0.5 rounded-md font-bold text-xs border ${
                   isEveningTheme
-                    ? 'bg-amber-950/70 border-amber-700/60 text-amber-200'
-                    : 'bg-sky-950/80 border-sky-600/60 text-sky-200'
+                    ? 'bg-amber-950/70 border-amber-700/50 text-amber-200'
+                    : 'bg-indigo-950/70 border-indigo-500/40 text-cyan-200'
                 }`}
               >
                 {milestone}
@@ -259,11 +285,11 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                 className={`px-3 py-2 rounded-xl border text-xs sm:text-sm font-semibold flex items-center justify-between gap-1.5 transition cursor-pointer ${
                   isActive
                     ? isEveningTheme
-                      ? 'bg-amber-900/50 border-amber-500/80 text-amber-100 shadow-sm'
-                      : 'bg-sky-950/90 border-sky-500/80 text-sky-100 shadow-sm'
+                      ? 'bg-amber-900/45 border-amber-500/75 text-amber-100 shadow-sm'
+                      : 'bg-cyan-950/80 border-cyan-500/70 text-cyan-100 shadow-sm'
                     : isEveningTheme
-                    ? 'bg-stone-900/60 hover:bg-stone-900 border-stone-800 text-stone-400'
-                    : 'bg-slate-900/60 hover:bg-slate-900 border-slate-800/90 text-slate-400'
+                    ? 'bg-stone-900/60 hover:bg-stone-900 border-stone-800/90 text-stone-400'
+                    : 'bg-slate-900/60 hover:bg-slate-900 border-slate-800 text-slate-400'
                 }`}
               >
                 <span className="truncate">
@@ -272,11 +298,13 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                 </span>
                 {t.badge && (
                   <span
-                    className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${
+                    className={`text-[10px] font-mono tabular-nums px-1.5 py-0.5 rounded ${
                       isActive
                         ? isEveningTheme
                           ? 'bg-amber-800/80 text-amber-100'
-                          : 'bg-sky-800/80 text-sky-100'
+                          : 'bg-cyan-800/80 text-cyan-100'
+                        : isEveningTheme
+                        ? 'bg-stone-800 text-stone-400'
                         : 'bg-slate-800 text-slate-400'
                     }`}
                   >
