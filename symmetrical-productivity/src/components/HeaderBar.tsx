@@ -6,6 +6,7 @@ import {
   Calendar,
   ClipboardPaste,
   Clock,
+  Columns2,
   Command,
   Download,
   HelpCircle,
@@ -27,6 +28,7 @@ import {
 import {
   AudioEngineSettings,
   FixedEventType,
+  LayoutMode,
   SoundscapeMode,
   SymmetryState,
   TabId,
@@ -45,6 +47,8 @@ interface HeaderBarProps {
   state: SymmetryState;
   activeTab: TabId;
   onSelectTab: (tab: TabId) => void;
+  layoutMode?: LayoutMode;
+  onToggleLayoutMode?: () => void;
   onOpenTodayLogDrawer: () => void;
   onOpenPipelineDrawer: () => void;
   onOpenStateModal: () => void;
@@ -76,6 +80,8 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   state,
   activeTab,
   onSelectTab,
+  layoutMode = 'WIDGET',
+  onToggleLayoutMode,
   onOpenTodayLogDrawer,
   onOpenPipelineDrawer,
   onOpenStateModal,
@@ -162,48 +168,39 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   ];
 
   const compactDurationText = metrics.isZeroWorkLeft
-    ? '0m left'
-    : `${metrics.remainingWorkFormatted} left`;
+    ? '[0m left]'
+    : `[${metrics.remainingWorkFormatted} left]`;
 
   return (
     <>
-      <header className="sticky top-0 z-30 pt-2 pb-1 px-4 pointer-events-none">
+      <header className="sticky top-0 z-30 pointer-events-none">
         <div
-          className={`max-w-4xl mx-auto min-h-11 px-3 py-1.5 pointer-events-auto rounded-2xl sm:rounded-full border backdrop-blur-2xl flex flex-wrap items-center justify-between gap-2 transition-all duration-500 ${
+          className={`w-full h-10 px-3 pointer-events-auto rounded-full border backdrop-blur-2xl flex items-center justify-between gap-1.5 transition-all duration-500 ${
             isEveningTheme
               ? 'bg-[#090706]/85 border-white/[0.05] text-amber-50 shadow-[inset_0_1px_0_0_rgba(255,251,235,0.06),0_12px_28px_-14px_rgba(0,0,0,0.85)]'
-              : 'bg-[#06080d]/80 border-white/[0.05] text-slate-100 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.07),0_12px_28px_-14px_rgba(0,0,0,0.85)]'
+              : 'bg-[#06080d]/85 border-white/[0.05] text-slate-100 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.07),0_12px_28px_-14px_rgba(0,0,0,0.85)]'
           }`}
         >
-          {/* 1. LEFT: Small Square Emblem (28px / w-7 h-7) + Full Title + Compact Duration-Only Pill */}
-          <div className="flex items-center gap-2 shrink-0">
+          {/* 1. LEFT: 26px (w-6.5 h-6.5) Circular Emblem + Compact [Xh YYm left] Pill */}
+          <div className="flex items-center gap-1.5 min-w-0 shrink-0">
             <AveryCorpEmblem
               id="header-brand-prism-trigger"
-              size={28}
+              size={26}
               variant="image"
               cropMode="mark-only"
               isTimerActive={isWorkTimerRunning}
               architectUnlocked={architectModeUnlocked}
               showPreviewPopover
               onClick={handleBrandPrismTap}
-              className="w-7 h-7"
+              className="w-6.5 h-6.5"
               ariaLabel="AveryCorp Institute Header Emblem (5-Tap Architect Trigger)"
             />
-
-            <h1
-              id="header-app-title-trigger"
-              onClick={handleBrandPrismTap}
-              className={`text-xs font-medium tracking-tight cursor-pointer select-none whitespace-nowrap shrink-0 transition-opacity duration-500 ${
-                isCinemaReceding ? 'opacity-20 hover:opacity-100' : ''
-              } ${isEveningTheme ? 'text-amber-100/90' : 'text-slate-200'}`}
-            >
-              Symmetry Productivity
-            </h1>
 
             {/* Compact Duration-Only Pill (Remains sharp during Cinema Focus) */}
             <div
               id="duration-only-header-badge"
-              className={`px-2 py-0.5 rounded-full border font-mono text-xs font-normal tracking-tight tabular-nums flex items-center gap-1.5 transition-all duration-500 shrink-0 ${
+              onClick={handleBrandPrismTap}
+              className={`px-2 py-0.5 rounded-full border font-mono text-[11px] font-normal tracking-tight tabular-nums flex items-center gap-1 transition-all duration-500 shrink-0 cursor-pointer select-none ${
                 metrics.isZeroWorkLeft || isEveningTheme
                   ? 'bg-amber-500/10 border-amber-400/25 text-amber-200'
                   : 'bg-white/[0.03] border-white/[0.07] text-slate-200'
@@ -211,7 +208,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               title={`${metrics.durationPrefix} — Duration-Only Display (No wall-clock timestamps unless Fixed Event logged)`}
             >
               {metrics.isZeroWorkLeft ? (
-                <Lock className="w-3 h-3 text-amber-400 shrink-0" />
+                <Lock className="w-2.5 h-2.5 text-amber-400 shrink-0" />
               ) : (
                 <span
                   className={`w-1.5 h-1.5 rounded-full shrink-0 ${
@@ -225,9 +222,11 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             {fixedEventDisplay && (
               <div
                 id="fixed-event-timestamp-pill"
-                className="hidden lg:flex px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/25 text-amber-200 font-mono tracking-tight tabular-nums text-[11px] items-center gap-1 shrink-0"
+                className={`${
+                  layoutMode === 'SPLIT' ? 'hidden md:flex' : 'hidden'
+                } px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/25 text-amber-200 font-mono tracking-tight tabular-nums text-[10px] items-center gap-1 shrink-0`}
               >
-                <Calendar className="w-3 h-3 text-amber-400 shrink-0" />
+                <Calendar className="w-2.5 h-2.5 text-amber-400 shrink-0" />
                 <span>{fixedEventDisplay}</span>
               </div>
             )}
@@ -259,7 +258,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                     triggerHaptic([8]);
                     onSelectTab(view.id);
                   }}
-                  className={`relative px-2.5 sm:px-3 py-0.5 rounded-full text-xs font-medium tracking-tight transition-colors cursor-pointer ${
+                  className={`relative px-2.5 py-0.5 rounded-full text-xs font-medium tracking-tight transition-colors cursor-pointer ${
                     isActive
                       ? isEveningTheme
                         ? 'text-amber-50'
@@ -286,14 +285,43 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             })}
           </nav>
 
-          {/* 3. RIGHT: Only 2 Quiet Icon Buttons: Command / Intake (Cmd+K) & Menu / Settings Drawer */}
+          {/* 3. RIGHT: Layout Toggle, Cmd+K, and Menu Icons */}
           <div
-            className={`flex items-center gap-1 transition-all duration-500 ${
+            className={`flex items-center gap-1 shrink-0 transition-all duration-500 ${
               isCinemaReceding
                 ? 'opacity-20 blur-[1px] hover:opacity-100 hover:blur-0'
                 : ''
             }`}
           >
+            {onToggleLayoutMode && (
+              <button
+                id="btn-layout-mode-toggle"
+                type="button"
+                onClick={() => {
+                  triggerHaptic([10]);
+                  soundEngine.playTactileClick('MODE_TOGGLE');
+                  onToggleLayoutMode();
+                }}
+                className={`h-7 w-7 rounded-full border flex items-center justify-center cursor-pointer transition ${
+                  layoutMode === 'SPLIT'
+                    ? isEveningTheme
+                      ? 'bg-amber-500/15 border-amber-400/35 text-amber-200'
+                      : 'bg-cyan-500/15 border-cyan-400/35 text-cyan-200'
+                    : isEveningTheme
+                    ? 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.05] text-amber-100/90'
+                    : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.05] text-slate-300'
+                }`}
+                title="Toggle Widget / Split Layout (Cmd+\)"
+                aria-label="Toggle Widget / Split Layout (Cmd+\)"
+              >
+                {layoutMode === 'WIDGET' ? (
+                  <Columns2 className="w-3.5 h-3.5" />
+                ) : (
+                  <Minimize2 className="w-3.5 h-3.5" />
+                )}
+              </button>
+            )}
+
             {onOpenCommandDock && (
               <button
                 id="btn-open-command-dock"
@@ -302,7 +330,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                   triggerHaptic([10]);
                   onOpenCommandDock();
                 }}
-                className={`h-7 px-2 rounded-full border text-xs font-mono flex items-center gap-1 cursor-pointer transition ${
+                className={`h-7 w-7 rounded-full border text-xs font-mono flex items-center justify-center cursor-pointer transition ${
                   isEveningTheme
                     ? 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.05] text-amber-100/90'
                     : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.05] text-slate-200'
@@ -310,13 +338,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                 title="Command & Smart Intake (Cmd/Ctrl + K)"
                 aria-label="Open Command and Smart Intake (Cmd+K)"
               >
-                <Command className="w-3 h-3 text-slate-400" />
-                <span className="hidden md:inline text-xs text-slate-300 font-sans">
-                  Intake
-                </span>
-                <kbd className="hidden sm:inline text-[10px] font-mono text-slate-400">
-                  ⌘K
-                </kbd>
+                <Command className="w-3.5 h-3.5" />
               </button>
             )}
 
@@ -365,20 +387,20 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               animate={{ x: 0 }}
               exit={{ x: '100%' }}
               transition={SPRING_TRANSITION}
-              className={`relative z-10 w-full max-w-sm h-full overflow-y-auto border-l p-4 flex flex-col justify-between space-y-4 ${
+              className={`relative z-10 w-full max-w-sm h-full overflow-y-auto border-l p-6 flex flex-col justify-between space-y-6 ${
                 isEveningTheme
                   ? 'bg-[#0b0908]/95 border-white/[0.05] text-amber-50'
                   : 'bg-[#080b12]/95 border-white/[0.05] text-slate-100'
               } backdrop-blur-2xl shadow-2xl`}
             >
-              <div className="space-y-4">
+              <div className="space-y-6">
                 {/* Drawer Header */}
-                <div className="flex items-center justify-between border-b border-white/[0.05] pb-3">
+                <div className="flex items-center justify-between border-b border-white/[0.05] pb-4">
                   <div>
-                    <span className="text-[11px] font-mono uppercase tracking-widest text-slate-400">
+                    <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400">
                       SYSTEM CONTROLS
                     </span>
-                    <h2 className="font-serif text-lg sm:text-xl leading-snug font-medium tracking-tight text-white">
+                    <h2 className="font-serif text-2xl font-medium tracking-tight text-white">
                       Menu &amp; Settings
                     </h2>
                   </div>

@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, Layers, Plus, X } from 'lucide-react';
-import { RoadmapRung, RoadmapTrack, SymmetryState, TrackId } from '../types/symmetry';
+import { LayoutMode, RoadmapRung, RoadmapTrack, SymmetryState, TrackId } from '../types/symmetry';
 import { InlineEditableText } from './InlineEditableText';
 import { triggerHaptic } from '../utils/haptics';
 
 interface Tab4RoadmapProps {
   state: SymmetryState;
+  layoutMode?: LayoutMode;
   onIncrementRungBlock: (trackId: TrackId, rungNumber: 1 | 2 | 3 | 4) => void;
   onToggleSandboxActiveWeek: (trackId: TrackId) => void;
   onUpdateRoadmapTrack?: (trackId: TrackId, patch: Partial<RoadmapTrack>) => void;

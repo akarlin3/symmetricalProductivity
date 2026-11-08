@@ -32,6 +32,7 @@ import {
   ElasticBlockMultiplier,
   EnergyBandwidthState,
   FixedEventType,
+  LayoutMode,
   Level2BreakProtocol,
   LoadMode,
   PipelineDay,
@@ -81,6 +82,7 @@ interface PendingIntakeDeliverable {
 
 interface Tab1PipelineProps {
   state: SymmetryState;
+  layoutMode?: LayoutMode;
   smartIntakeText: string;
   onChangeSmartIntakeText: (val: string) => void;
   smartIntakePreview: SmartIntakePlanResult | null;

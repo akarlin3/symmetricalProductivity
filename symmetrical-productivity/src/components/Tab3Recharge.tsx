@@ -29,6 +29,7 @@ import {
 import {
   EveningCategoryCardConfig,
   EveningSubTrackConfig,
+  LayoutMode,
   MediaSubTrackId,
   RechargeCategoryId,
   StickyKey,
@@ -45,6 +46,7 @@ import { AveryCorpEmblem } from './AveryCorpEmblem';
 
 interface Tab3RechargeProps {
   state: SymmetryState;
+  layoutMode?: LayoutMode;
   onUnlockZeroWorkLeft: () => void;
   onOpenFlowExtensionPrompt: () => void;
   onCancelFlowExtensionPrompt: () => void;

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   Check,
   Clock,
@@ -36,6 +37,7 @@ import {
   EnergyBandwidthState,
   EveningPulseSensitivity,
   FixedEventType,
+  LayoutMode,
   Level2BreakProtocol,
   LoadMode,
   MediaSubTrackId,
@@ -242,6 +244,34 @@ export function App() {
   });
 
   const [activeTab, setActiveTab] = useState<TabId>('PIPELINE');
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const stored = localStorage.getItem('symmetrical_layout_mode');
+        if (stored === 'SPLIT' || stored === 'WIDGET') {
+          return stored;
+        }
+      }
+    } catch {
+      // Fallback to WIDGET
+    }
+    return 'WIDGET';
+  });
+
+  const handleToggleLayoutMode = useCallback(() => {
+    triggerHaptic([10]);
+    soundEngine.playTactileClick('MODE_TOGGLE');
+    setLayoutMode((prev) => {
+      const next: LayoutMode = prev === 'WIDGET' ? 'SPLIT' : 'WIDGET';
+      try {
+        localStorage.setItem('symmetrical_layout_mode', next);
+      } catch {
+        // Ignore storage errors
+      }
+      return next;
+    });
+  }, []);
+
   const [todayLogDrawerOpen, setTodayLogDrawerOpen] = useState(false);
   const [pipelineDrawerOpen, setPipelineDrawerOpen] = useState(false);
   const [assistantDrawerOpen, setAssistantDrawerOpen] = useState(false);
@@ -1154,9 +1184,15 @@ export function App() {
     return () => window.clearInterval(id);
   }, [undoToast]);
 
-  // Global Keyboard Shortcuts: Cmd/Ctrl+G (Gemini Sync Hub), Cmd/Ctrl+Shift+V (1-Tap Sync from Clipboard), ? (Cheat-Sheet), Cmd+K (Command Bar), F (Cinema Focus Mode), R (Break), S (Stress Reset), Cmd+/ (AI Assistant), Cmd+J (Smart Intake), Cmd+Z (Undo), Space (Start/Pause)
+  // Global Keyboard Shortcuts: Cmd/Ctrl+\ (Toggle Widget/Split Layout), Cmd/Ctrl+G (Gemini Sync Hub), Cmd/Ctrl+Shift+V (1-Tap Sync from Clipboard), ? (Cheat-Sheet), Cmd+K (Command Bar), F (Cinema Focus Mode), R (Break), S (Stress Reset), Cmd+/ (AI Assistant), Cmd+J (Smart Intake), Cmd+Z (Undo), Space (Start/Pause)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === '\\' || e.code === 'Backslash')) {
+        e.preventDefault();
+        handleToggleLayoutMode();
+        return;
+      }
+
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'v') {
         e.preventDefault();
         void handleOneTapSyncFromClipboard();
@@ -1375,6 +1411,7 @@ export function App() {
     commandDockOpen,
     geminiBridgeOpen,
     handleOneTapSyncFromClipboard,
+    handleToggleLayoutMode,
     handleTriggerUndo,
     cinemaFocusMode,
     shortcutsModalOpen,
@@ -4089,11 +4126,19 @@ export function App() {
           : 'theme-on-duty text-slate-100'
       }`}
     >
-      <div>
+      <motion.div
+        layout
+        transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+        className={`w-full mx-auto px-3 py-2.5 flex flex-col gap-2.5 ${
+          layoutMode === 'SPLIT' ? 'max-w-3xl' : 'max-w-[440px]'
+        }`}
+      >
         <HeaderBar
           state={state}
           activeTab={activeTab}
           onSelectTab={setActiveTab}
+          layoutMode={layoutMode}
+          onToggleLayoutMode={handleToggleLayoutMode}
           onOpenTodayLogDrawer={() => setTodayLogDrawerOpen(true)}
           onOpenPipelineDrawer={() => setPipelineDrawerOpen(true)}
           onOpenInsightsModal={() => setInsightsModalOpen(true)}
@@ -4159,10 +4204,10 @@ export function App() {
 
         {/* Status Toast Notice */}
         {statusNotice && (
-          <div className="max-w-3xl mx-auto px-4 pt-2">
+          <div className="w-full">
             <div
               id="status-toast-banner"
-              className={`px-3.5 py-2 rounded-xl border backdrop-blur-xl text-xs font-mono flex items-center justify-between ${
+              className={`px-3.5 py-2 rounded-2xl border backdrop-blur-xl text-xs font-mono flex items-center justify-between ${
                 isEveningTheme
                   ? 'bg-amber-950/80 border-amber-500/40 text-amber-200'
                   : 'bg-cyan-950/80 border-cyan-500/40 text-cyan-200'
@@ -4181,10 +4226,11 @@ export function App() {
         )}
 
         {/* Active Tab Viewport */}
-        <main className="max-w-3xl mx-auto px-4 py-3">
+        <main className="w-full">
           {activeTab === 'PIPELINE' && (
             <Tab1Pipeline
               state={state}
+              layoutMode={layoutMode}
               smartIntakeText={smartIntakeText}
               onChangeSmartIntakeText={setSmartIntakeText}
               smartIntakePreview={smartIntakePreview}
@@ -4781,6 +4827,7 @@ export function App() {
           {activeTab === 'RECHARGE' && (
             <Tab3Recharge
               state={state}
+              layoutMode={layoutMode}
               onUnlockZeroWorkLeft={handleToggleZeroWorkSimulation}
               onOpenFlowExtensionPrompt={() =>
                 setState((prev) => ({
@@ -5274,6 +5321,7 @@ export function App() {
           {activeTab === 'ROADMAP' && (
             <Tab4Roadmap
               state={state}
+              layoutMode={layoutMode}
               onIncrementRungBlock={(trackId, rungNumber) => {
                 triggerHaptic([15]);
                 setState((prev) => {
@@ -5311,18 +5359,18 @@ export function App() {
             />
           )}
         </main>
-      </div>
+      </motion.div>
 
       {/* Footer */}
       <footer
-        className={`max-w-3xl w-full mx-auto px-4 py-2 border-t border-white/[0.05] text-[11px] font-mono tabular-nums flex flex-wrap items-center justify-between gap-2 transition-colors duration-500 ${
-          isEveningTheme ? 'text-stone-400' : 'text-slate-400'
+        className={`${
+          layoutMode === 'SPLIT' ? 'max-w-3xl' : 'max-w-[440px]'
+        } w-full mx-auto px-3 py-2 border-t border-white/[0.04] text-[10px] font-mono tabular-nums flex flex-wrap items-center justify-between gap-2 transition-colors duration-500 ${
+          isEveningTheme ? 'text-stone-500' : 'text-slate-500'
         }`}
       >
-        <span>SymmetryManager PWA • Web &amp; Capacitor Android Ready</span>
-        <span>
-          Persistence: localStorage + state.md • Header: {metrics.durationPrefix}
-        </span>
+        <span>SymmetryManager • {layoutMode}</span>
+        <span>{metrics.durationPrefix}</span>
       </footer>
 
       {/* Glassmorphic Sticky Bottom Navigation for Mobile Thumb Reach */}
