@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
@@ -33,6 +35,26 @@ export default defineConfig({
     },
   },
   plugins: [
+    {
+      name: 'serve-self-contained-dist-html',
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          if (req.url === '/' || req.url === '/index.html') {
+            try {
+              const distHtmlPath = path.resolve(process.cwd(), 'dist/index.html');
+              if (fs.existsSync(distHtmlPath)) {
+                res.setHeader('Content-Type', 'text/html; charset=utf-8');
+                res.end(fs.readFileSync(distHtmlPath, 'utf8'));
+                return;
+              }
+            } catch {
+              // Fallback to default Vite transform
+            }
+          }
+          next();
+        });
+      },
+    },
     {
       name: 'strip-inline-fallback-before-build',
       apply: 'build',
