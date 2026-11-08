@@ -63,7 +63,8 @@
   body {
     font-family: var(--font-sans);
     letter-spacing: -0.015em;
-    line-height: 1.625;
+    line-height: 1.45;
+    font-size: 0.875rem;
     background-color: var(--bg-app);
     color: #f8fafc;
     margin: 0;
@@ -91,6 +92,7 @@
     font-family: var(--font-serif);
     font-weight: 500;
     letter-spacing: -0.02em;
+    line-height: 1.35;
   }
 
   code, pre, .font-mono, .tabular-nums {
