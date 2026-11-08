@@ -76,6 +76,7 @@ import {
   setStoredGeminiApiKey,
 } from './utils/smartIntakePlanner';
 import { HeaderBar } from './components/HeaderBar';
+import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { OnboardingWizardModal } from './components/OnboardingWizardModal';
 import { PipelineDrawer } from './components/PipelineDrawer';
 import { PlanningAssistantDrawer } from './components/PlanningAssistantDrawer';
@@ -106,6 +107,8 @@ export function App() {
   const [stateModalOpen, setStateModalOpen] = useState(false);
   const [onboardingWizardOpen, setOnboardingWizardOpen] = useState(false);
   const [isFirstVisitOnboarding, setIsFirstVisitOnboarding] = useState(false);
+  const [commandDockOpen, setCommandDockOpen] = useState(false);
+  const [cinemaFocusMode, setCinemaFocusMode] = useState(false);
   const [stateIoText, setStateIoText] = useState('');
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
   const [notificationLog, setNotificationLog] = useState<NotificationLogEntry[]>([]);
@@ -584,9 +587,16 @@ export function App() {
     return () => window.clearInterval(id);
   }, [undoToast]);
 
-  // Global Keyboard Shortcuts: Cmd/Ctrl + / for Planning Assistant, Cmd/Ctrl+J for Smart Intake, Cmd/Ctrl+Z for Undo, Spacebar to start/pause timer
+  // Global Keyboard Shortcuts: Cmd/Ctrl + K for Command Dock, Cmd/Ctrl + / for Planning Assistant, Cmd/Ctrl+J for Smart Intake, F for Cinema Focus, Cmd/Ctrl+Z for Undo, Spacebar to start/pause timer
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        triggerHaptic([12]);
+        setCommandDockOpen((prev) => !prev);
+        return;
+      }
+
       if ((e.metaKey || e.ctrlKey) && e.key === '/') {
         e.preventDefault();
         triggerHaptic([12]);
@@ -616,6 +626,12 @@ export function App() {
           target.tagName === 'SELECT' ||
           target.isContentEditable);
 
+      if (e.key === 'Escape' && commandDockOpen) {
+        e.preventDefault();
+        setCommandDockOpen(false);
+        return;
+      }
+
       // Cmd+Z / Ctrl+Z triggers Undo when not typing in an input
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
         if (isEditableInput) return;
@@ -624,6 +640,19 @@ export function App() {
           triggerHaptic([15, 30]);
           handleTriggerUndo();
         }
+        return;
+      }
+
+      if (
+        !e.metaKey &&
+        !e.ctrlKey &&
+        !e.altKey &&
+        e.key.toLowerCase() === 'f' &&
+        !isEditableInput
+      ) {
+        e.preventDefault();
+        triggerHaptic([12]);
+        setCinemaFocusMode((prev) => !prev);
         return;
       }
 
@@ -655,7 +684,7 @@ export function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activeTab, pipelineDrawerOpen, handleTriggerUndo]);
+  }, [activeTab, pipelineDrawerOpen, commandDockOpen, handleTriggerUndo]);
 
   const handleApplySmartIntakePlan = (plan: SmartIntakePlanResult) => {
     setState((prev) => {
@@ -2594,6 +2623,11 @@ export function App() {
             showNotice('Reset SymmetryManager to default deterministic state.');
           }}
           isEveningTheme={isEveningTheme}
+          onOpenCommandDock={() => setCommandDockOpen(true)}
+          cinemaFocusMode={cinemaFocusMode}
+          onToggleCinemaFocusMode={() =>
+            setCinemaFocusMode((prev) => !prev)
+          }
         />
 
         {/* Status Toast Notice */}
@@ -2634,6 +2668,11 @@ export function App() {
                 setStateIoText(serializeToStateMarkdown(state));
                 setStateModalOpen(true);
               }}
+              onOpenCommandDock={() => setCommandDockOpen(true)}
+              cinemaFocusMode={cinemaFocusMode}
+              onToggleCinemaFocusMode={() =>
+                setCinemaFocusMode((prev) => !prev)
+              }
               apiKeyVersion={apiKeyVersion}
               onSelectLoadMode={handleSelectLoadMode}
               onTogglePreExamTaper={handleTogglePreExamTaper}
@@ -4600,6 +4639,87 @@ export function App() {
         }}
         onApplyPreset={handleApplyProfilePreset}
         onUpdateDayBoundaryPreferences={handleUpdateDayBoundaryPreferences}
+      />
+
+      {/* Raycast-Style Command Dock & Smart Intake Palette (Cmd/Ctrl + K) */}
+      <CommandPaletteModal
+        isOpen={commandDockOpen}
+        onClose={() => setCommandDockOpen(false)}
+        state={state}
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        onToggleTimerRun={() => {
+          const now = Date.now();
+          setState((prev) => {
+            const nextRunning = !prev.timer.isRunning;
+            const currentSecondsLeft =
+              prev.timer.isRunning && prev.timer.targetEndTimeMs
+                ? Math.max(0, Math.ceil((prev.timer.targetEndTimeMs - now) / 1000))
+                : prev.timer.secondsLeft;
+            return {
+              ...prev,
+              timer: {
+                ...prev.timer,
+                isRunning: nextRunning,
+                secondsLeft: currentSecondsLeft,
+                targetEndTimeMs: nextRunning
+                  ? now + currentSecondsLeft * 1000
+                  : null,
+              },
+            };
+          });
+        }}
+        onResetCurrentStage={() =>
+          setState((prev) => ({
+            ...prev,
+            timer: {
+              ...prev.timer,
+              isRunning: false,
+              targetEndTimeMs: null,
+              secondsLeft:
+                prev.timer.mode === 'WORK_20M'
+                  ? prev.timer.workStage === 'IGNITION_5M'
+                    ? 300
+                    : 900
+                  : prev.timer.mode === 'BREAK_L1'
+                  ? prev.timer.l1DurationMinutes * 60
+                  : prev.timer.mode === 'BREAK_L2'
+                  ? prev.timer.l2DurationMinutes * 60
+                  : prev.timer.mode === 'BREAK_L3'
+                  ? prev.timer.l3DurationMinutes * 60
+                  : prev.timer.stressDurationMinutes * 60,
+            },
+          }))
+        }
+        onFastForwardCurrentStage={handleFastForwardTimerStage}
+        cinemaFocusMode={cinemaFocusMode}
+        onToggleCinemaFocusMode={() => setCinemaFocusMode((prev) => !prev)}
+        onSelectLoadMode={(mode, targetBlocks) =>
+          handleSelectLoadMode(mode, targetBlocks, false)
+        }
+        onTriggerStressReset={() => {
+          const now = Date.now();
+          setState((prev) => ({
+            ...prev,
+            timer: {
+              ...prev.timer,
+              mode: 'STRESS_RESET',
+              stressProtocol: 'BREATHING_478',
+              stressDurationMinutes: 15,
+              secondsLeft: 900,
+              targetEndTimeMs: now + 900 * 1000,
+              isRunning: true,
+            },
+          }));
+          showNotice(
+            'Suspended heavy reading/writing → Started 15m 4-7-8 Stress / Fatigue Reset.'
+          );
+        }}
+        smartIntakeText={smartIntakeText}
+        onChangeSmartIntakeText={setSmartIntakeText}
+        smartIntakePreview={smartIntakePreview}
+        onSetSmartIntakePreview={setSmartIntakePreview}
+        onApplySmartIntakePlan={handleApplySmartIntakePlan}
       />
     </div>
   );
