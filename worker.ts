@@ -14,12 +14,86 @@ interface WorkerEnv {
   PRO_MODE_PASSWORD?: string;
   PRO_PASSWORD?: string;
   VITE_PRO_MODE_PASSWORD?: string;
+  VITE_FIREBASE_API_KEY?: string;
+  FIREBASE_API_KEY?: string;
+  VITE_FIREBASE_AUTH_DOMAIN?: string;
+  FIREBASE_AUTH_DOMAIN?: string;
+  VITE_FIREBASE_PROJECT_ID?: string;
+  FIREBASE_PROJECT_ID?: string;
+  VITE_FIREBASE_STORAGE_BUCKET?: string;
+  FIREBASE_STORAGE_BUCKET?: string;
+  VITE_FIREBASE_MESSAGING_SENDER_ID?: string;
+  FIREBASE_MESSAGING_SENDER_ID?: string;
+  VITE_FIREBASE_APP_ID?: string;
+  FIREBASE_APP_ID?: string;
   ASSETS?: Fetcher;
 }
+
+const CORS_HEADERS: Record<string, string> = {
+  'Content-Type': 'application/json; charset=utf-8',
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, x-pro-password',
+};
 
 export default {
   async fetch(request: Request, env: WorkerEnv): Promise<Response> {
     const url = new URL(request.url);
+
+    // Route /api/firebase-config to expose public VITE_FIREBASE_* keys configured in Cloudflare Worker vars
+    if (
+      url.pathname === '/api/firebase-config' ||
+      url.pathname === '/api/firebase-config/'
+    ) {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, { status: 204, headers: CORS_HEADERS });
+      }
+      const config = {
+        apiKey: (
+          env.VITE_FIREBASE_API_KEY ||
+          env.FIREBASE_API_KEY ||
+          WORKER_BUILD_ENV.VITE_FIREBASE_API_KEY ||
+          ''
+        ).trim(),
+        authDomain: (
+          env.VITE_FIREBASE_AUTH_DOMAIN ||
+          env.FIREBASE_AUTH_DOMAIN ||
+          WORKER_BUILD_ENV.VITE_FIREBASE_AUTH_DOMAIN ||
+          ''
+        ).trim(),
+        projectId: (
+          env.VITE_FIREBASE_PROJECT_ID ||
+          env.FIREBASE_PROJECT_ID ||
+          WORKER_BUILD_ENV.VITE_FIREBASE_PROJECT_ID ||
+          ''
+        ).trim(),
+        storageBucket: (
+          env.VITE_FIREBASE_STORAGE_BUCKET ||
+          env.FIREBASE_STORAGE_BUCKET ||
+          WORKER_BUILD_ENV.VITE_FIREBASE_STORAGE_BUCKET ||
+          ''
+        ).trim(),
+        messagingSenderId: (
+          env.VITE_FIREBASE_MESSAGING_SENDER_ID ||
+          env.FIREBASE_MESSAGING_SENDER_ID ||
+          WORKER_BUILD_ENV.VITE_FIREBASE_MESSAGING_SENDER_ID ||
+          ''
+        ).trim(),
+        appId: (
+          env.VITE_FIREBASE_APP_ID ||
+          env.FIREBASE_APP_ID ||
+          WORKER_BUILD_ENV.VITE_FIREBASE_APP_ID ||
+          ''
+        ).trim(),
+      };
+      const configured = Boolean(
+        config.apiKey && config.authDomain && config.projectId && config.appId
+      );
+      return new Response(JSON.stringify({ configured, config }), {
+        status: 200,
+        headers: CORS_HEADERS,
+      });
+    }
 
     // Route /api/gemini-pro to the Pro Mode Cloudflare proxy handler
     if (
@@ -49,12 +123,7 @@ export default {
         JSON.stringify({ error: 'Method Not Allowed. Use POST.' }),
         {
           status: 405,
-          headers: {
-            'Content-Type': 'application/json; charset=utf-8',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, x-pro-password',
-          },
+          headers: CORS_HEADERS,
         }
       );
     }

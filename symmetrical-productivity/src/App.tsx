@@ -231,6 +231,9 @@ export function App() {
     user,
     syncStatus,
     isFirebaseConfigured,
+    firebaseSetupModalOpen,
+    setFirebaseSetupModalOpen,
+    connectFirebaseWithConfig,
     signInWithGoogle,
     signOutUser,
     exportStateJson,
@@ -240,6 +243,7 @@ export function App() {
     onNotify: showNotice,
     onPushUndoSnapshot: pushUndoSnapshot,
   });
+  const [firebaseConfigDraft, setFirebaseConfigDraft] = useState<string>('');
 
   const [activeTab, setActiveTab] = useState<TabId>('PIPELINE');
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(() => {
@@ -6634,6 +6638,76 @@ export function App() {
         onShowNotice={showNotice}
         isEveningTheme={isEveningTheme}
       />
+
+      {/* Connect Firebase Cloud Sync Modal (When VITE_FIREBASE_* is not yet set in .env.local or Cloudflare Worker vars) */}
+      {firebaseSetupModalOpen && (
+        <div
+          id="firebase-setup-modal"
+          className="fixed inset-0 z-[75] bg-black/75 backdrop-blur-md flex items-center justify-center p-4"
+        >
+          <div className="w-full max-w-lg rounded-2xl bg-[#080b12] border border-white/10 p-6 space-y-4 shadow-2xl text-slate-100">
+            <div className="flex items-start justify-between gap-3 border-b border-white/[0.06] pb-3">
+              <div>
+                <span className="text-[10px] font-mono uppercase tracking-widest text-sky-400">
+                  CLOUD FIRESTORE SETUP
+                </span>
+                <h3 className="text-lg font-semibold tracking-tight text-white">
+                  Connect Google Sign-In &amp; Cloud Sync
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFirebaseSetupModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] flex items-center justify-center text-slate-300 cursor-pointer"
+                aria-label="Close Firebase Setup Modal"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Paste your Firebase Web App config object (
+              <code className="font-mono text-sky-300">
+                const firebaseConfig = &#123; ... &#125;
+              </code>
+              ) from the Firebase Console, or your{' '}
+              <code className="font-mono text-sky-300">VITE_FIREBASE_*</code>{' '}
+              keys below. You can also set them in{' '}
+              <code className="font-mono text-slate-200">.env.local</code> or
+              Cloudflare Worker variables.
+            </p>
+
+            <textarea
+              id="input-firebase-config-paste"
+              rows={7}
+              value={firebaseConfigDraft}
+              onChange={(e) => setFirebaseConfigDraft(e.target.value)}
+              placeholder={`VITE_FIREBASE_API_KEY=AIzaSy...\nVITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com\nVITE_FIREBASE_PROJECT_ID=your-project\nVITE_FIREBASE_STORAGE_BUCKET=your-project.firebasestorage.app\nVITE_FIREBASE_MESSAGING_SENDER_ID=123456789\nVITE_FIREBASE_APP_ID=1:123456789:web:abcdef`}
+              className="w-full rounded-xl bg-black/50 border border-white/10 p-3 font-mono text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-sky-400/60"
+            />
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setFirebaseSetupModalOpen(false)}
+                className="px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] text-xs font-medium text-slate-300 cursor-pointer"
+              >
+                Continue in Local Mode
+              </button>
+              <button
+                id="btn-save-firebase-config-signin"
+                type="button"
+                onClick={() => {
+                  void connectFirebaseWithConfig(firebaseConfigDraft);
+                }}
+                className="px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+              >
+                <span>Connect &amp; Sign in with Google</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

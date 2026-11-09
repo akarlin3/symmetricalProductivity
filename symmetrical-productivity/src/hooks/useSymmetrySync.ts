@@ -3,8 +3,11 @@ import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import {
   auth,
   db,
-  isFirebaseConfigured,
+  FIREBASE_CONFIG_CHANGE_EVENT,
+  initializeFirebaseInstances,
+  isFirebaseConfigured as initialFirebaseConfigured,
   onAuthStateChanged,
+  parseFirebaseConfigText,
   signInWithGooglePopup,
   signOutFromFirebase,
   type User,
@@ -222,6 +225,9 @@ export interface UseSymmetrySyncReturn {
   user: User | null;
   syncStatus: SymmetrySyncStatus;
   isFirebaseConfigured: boolean;
+  firebaseSetupModalOpen: boolean;
+  setFirebaseSetupModalOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  connectFirebaseWithConfig: (rawConfigText: string) => Promise<boolean>;
   signInWithGoogle: () => Promise<void>;
   signOutUser: () => Promise<void>;
   exportStateJson: () => void;
@@ -299,12 +305,30 @@ export function useSymmetrySync({
 
   const [user, setUser] = useState<User | null>(null);
   const [syncStatus, setSyncStatus] = useState<SymmetrySyncStatus>('LOCAL_MODE');
+  const [isFirebaseConfigured, setIsFirebaseConfigured] = useState<boolean>(
+    initialFirebaseConfigured
+  );
+  const [firebaseSetupModalOpen, setFirebaseSetupModalOpen] =
+    useState<boolean>(false);
 
   // Refs for tracking state & sync loop guards
   const stateRef = useRef<SymmetryState>(state);
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleConfigChange = () => {
+      setIsFirebaseConfigured(Boolean(auth && db));
+    };
+    window.addEventListener(FIREBASE_CONFIG_CHANGE_EVENT, handleConfigChange);
+    return () =>
+      window.removeEventListener(
+        FIREBASE_CONFIG_CHANGE_EVENT,
+        handleConfigChange
+      );
+  }, []);
 
   const isReceivingRemoteSyncRef = useRef<boolean>(false);
   const initialCloudHandshakeDoneRef = useRef<boolean>(false);
@@ -372,7 +396,7 @@ export function useSymmetrySync({
     });
 
     return () => unsubscribeAuth();
-  }, []);
+  }, [isFirebaseConfigured]);
 
   // 3. Firestore Real-Time `onSnapshot` Listener + Timestamp Conflict Resolution
   useEffect(() => {
@@ -499,7 +523,7 @@ export function useSymmetrySync({
         debounceTimerRef.current = null;
       }
     };
-  }, [user]);
+  }, [isFirebaseConfigured, user]);
 
   // 4. Persist to localStorage on EVERY change + Debounced (500ms) Outbound Firestore Write on meaningful transitions
   useEffect(() => {
@@ -583,14 +607,12 @@ export function useSymmetrySync({
           });
       }, FIRESTORE_DEBOUNCE_MS);
     }
-  }, [state, user]);
+  }, [isFirebaseConfigured, state, user]);
 
   // 5. Auth & JSON Backup Actions
   const signInWithGoogle = useCallback(async () => {
-    if (!isFirebaseConfigured) {
-      onNotify?.(
-        'Local Mode Active: Add VITE_FIREBASE_* keys to .env.local to enable Google Cloud Sync.'
-      );
+    if (!isFirebaseConfigured || !auth) {
+      setFirebaseSetupModalOpen(true);
       return;
     }
     try {
@@ -607,7 +629,44 @@ export function useSymmetrySync({
         err instanceof Error ? err.message : 'Google Sign-In cancelled or failed.';
       onNotify?.(`Google Sign-In: ${message}`);
     }
-  }, [onNotify, user]);
+  }, [isFirebaseConfigured, onNotify, user]);
+
+  const connectFirebaseWithConfig = useCallback(
+    async (rawConfigText: string): Promise<boolean> => {
+      const parsed = parseFirebaseConfigText(rawConfigText);
+      if (!parsed) {
+        onNotify?.(
+          'Invalid Firebase config — include apiKey, authDomain, projectId, and appId (or VITE_FIREBASE_* lines).'
+        );
+        return false;
+      }
+      const ok = initializeFirebaseInstances(parsed);
+      if (!ok) {
+        onNotify?.('Could not initialize Firebase with the provided config.');
+        return false;
+      }
+      setIsFirebaseConfigured(true);
+      setFirebaseSetupModalOpen(false);
+      try {
+        setSyncStatus('SYNCING');
+        const cred = await signInWithGooglePopup();
+        if (cred?.user) {
+          onNotify?.(
+            `Connected Firebase & signed in as ${cred.user.displayName || cred.user.email || 'Google User'}.`
+          );
+        }
+      } catch (err) {
+        setSyncStatus('LOCAL_MODE');
+        const message =
+          err instanceof Error
+            ? err.message
+            : 'Saved Firebase config. Click Sign in with Google to authenticate.';
+        onNotify?.(`Firebase Config Saved: ${message}`);
+      }
+      return true;
+    },
+    [onNotify]
+  );
 
   const signOutUser = useCallback(async () => {
     try {
@@ -680,6 +739,9 @@ export function useSymmetrySync({
     user,
     syncStatus,
     isFirebaseConfigured,
+    firebaseSetupModalOpen,
+    setFirebaseSetupModalOpen,
+    connectFirebaseWithConfig,
     signInWithGoogle,
     signOutUser,
     exportStateJson,
