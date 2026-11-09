@@ -135,6 +135,10 @@ import {
   extractGeminiSyncParamFromLocation,
   parseGeminiResponseToStatePatch,
 } from './utils/geminiImporter';
+import {
+  generateGeminiImportPrompt,
+  stripMarkdownJsonFences,
+} from './utils/geminiPromptGenerator';
 import { OnboardingWizardModal } from './components/OnboardingWizardModal';
 import { PipelineDrawer } from './components/PipelineDrawer';
 import { PlanningAssistantDrawer } from './components/PlanningAssistantDrawer';
@@ -297,6 +301,9 @@ export function App() {
   const [commandDockOpen, setCommandDockOpen] = useState(false);
   const [cinemaFocusMode, setCinemaFocusMode] = useState(false);
   const [stateIoText, setStateIoText] = useState('');
+  const [stateModalCustomPromptRequest, setStateModalCustomPromptRequest] =
+    useState('');
+  const [stateModalStep1Copied, setStateModalStep1Copied] = useState(false);
   const [notificationLog, setNotificationLog] = useState<NotificationLogEntry[]>([]);
   const [notificationsGranted, setNotificationsGranted] = useState(false);
   const [swOfflineReady, setSwOfflineReady] = useState(false);
@@ -4086,6 +4093,10 @@ export function App() {
             setGeminiBridgeInitialTab('EXPORT');
             setGeminiBridgeOpen(true);
           }}
+          onOpenGeminiImportTab={() => {
+            setGeminiBridgeInitialTab('IMPORT');
+            setGeminiBridgeOpen(true);
+          }}
           onOneTapSyncFromClipboard={() => {
             void handleOneTapSyncFromClipboard();
           }}
@@ -6108,12 +6119,199 @@ export function App() {
             </div>
           </div>
 
+          {/* 2-Step Guided Gemini JSON Schema Prompt Generator & Importer */}
+          <div
+            id="state-modal-gemini-step1-card"
+            className="p-3.5 rounded-2xl bg-sky-950/25 border border-sky-500/35 space-y-2.5"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-md bg-sky-500/20 border border-sky-400/40 text-sky-300 font-mono text-[10px] font-bold uppercase">
+                  Step 1: Get JSON from Gemini
+                </span>
+                <span className="text-xs font-bold text-slate-100">
+                  1-Click Gemini JSON Schema Prompt Generator
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  id="btn-state-modal-copy-gemini-prompt"
+                  type="button"
+                  onClick={() => {
+                    const promptText = generateGeminiImportPrompt(
+                      state,
+                      stateModalCustomPromptRequest
+                    );
+                    navigator.clipboard?.writeText(promptText);
+                    setStateModalStep1Copied(true);
+                    window.setTimeout(
+                      () => setStateModalStep1Copied(false),
+                      3500
+                    );
+                    showNotice('Copied! Paste into Gemini to get your JSON');
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-mono font-bold text-xs flex items-center gap-1.5 cursor-pointer transition ${
+                    stateModalStep1Copied
+                      ? 'bg-emerald-400 text-slate-950'
+                      : 'bg-sky-400 hover:bg-sky-300 text-slate-950'
+                  }`}
+                >
+                  {stateModalStep1Copied ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
+                      <span>Copied! Paste into Gemini to get your JSON</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 shrink-0" />
+                      <span>Copy Prompt for Gemini</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  id="btn-state-modal-copy-prompt-open-gemini"
+                  type="button"
+                  onClick={async () => {
+                    const promptText = generateGeminiImportPrompt(
+                      state,
+                      stateModalCustomPromptRequest
+                    );
+                    navigator.clipboard?.writeText(promptText);
+                    setStateModalStep1Copied(true);
+                    window.setTimeout(
+                      () => setStateModalStep1Copied(false),
+                      3500
+                    );
+                    showNotice('Copied! Paste into Gemini to get your JSON');
+                    const isMobile =
+                      typeof navigator !== 'undefined' &&
+                      /Android|iPhone|iPad|iPod/i.test(
+                        navigator.userAgent || ''
+                      );
+                    if (
+                      isMobile &&
+                      typeof navigator !== 'undefined' &&
+                      typeof navigator.share === 'function'
+                    ) {
+                      try {
+                        await navigator.share({
+                          title: 'Symmetrical Productivity Gemini Prompt',
+                          text: promptText,
+                        });
+                        return;
+                      } catch {
+                        // Fall back to opening web tab
+                      }
+                    }
+                    if (typeof window !== 'undefined') {
+                      window.open(
+                        'https://gemini.google.com/app',
+                        '_blank',
+                        'noopener,noreferrer'
+                      );
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-sky-400/40 text-sky-200 font-mono font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>Copy Prompt &amp; Open Gemini ↗</span>
+                </button>
+              </div>
+            </div>
+
+            <input
+              id="input-state-modal-custom-gemini-instructions"
+              type="text"
+              value={stateModalCustomPromptRequest}
+              onChange={(e) => setStateModalCustomPromptRequest(e.target.value)}
+              placeholder="Optional: Add specific instructions for Gemini (e.g., 'Plan my week around Thursday's exam')..."
+              className="w-full px-3 py-1.5 rounded-xl bg-slate-950/90 border border-slate-700 focus:border-sky-400 text-xs font-mono text-slate-100 placeholder:text-slate-500 focus:outline-none"
+            />
+
+            <textarea
+              id="textarea-state-modal-gemini-prompt-preview"
+              readOnly
+              rows={5}
+              value={generateGeminiImportPrompt(
+                state,
+                stateModalCustomPromptRequest
+              )}
+              className="w-full p-2.5 rounded-xl bg-slate-950/90 border border-slate-800 text-slate-300 font-mono text-[11px] leading-relaxed focus:outline-none resize-y"
+            />
+          </div>
+
           <p className="text-xs text-slate-400">
-            Compiles and parses the 3-part <code className="text-sky-300">state.md</code> architecture (<strong>Part I: On-Duty Capacity Governor</strong>, <strong>Part II: Off-Duty 5-Pillar Recharge</strong>, <strong>Part III: 4-Rung Master Horizon &amp; Input/Output State</strong>). Copy or download <code className="text-sky-300">state.md</code> for Gemini, paste updated Markdown/JSON to sync, or run a <strong>New Day Reset</strong>.
+            <strong>Step 2: Paste Gemini&apos;s JSON Response</strong> (or 3-part <code className="text-sky-300">state.md</code>) below, or click <strong>Paste from Clipboard &amp; Apply</strong> to strip markdown fences, validate, and apply with a saved Undo snapshot.
           </p>
 
-          {/* Primary 4 State Sync Actions */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+          {/* Primary State Sync Actions */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
+            <button
+              id="btn-state-modal-paste-clipboard-apply"
+              type="button"
+              onClick={async () => {
+                let candidateRaw = stateIoText.trim();
+                try {
+                  if (
+                    typeof navigator !== 'undefined' &&
+                    navigator.clipboard?.readText
+                  ) {
+                    const clip = await navigator.clipboard.readText();
+                    if (clip && clip.trim()) {
+                      candidateRaw = clip.trim();
+                      setStateIoText(candidateRaw);
+                    }
+                  }
+                } catch {
+                  // Fall back to existing stateIoText
+                }
+                if (!candidateRaw) {
+                  showNotice(
+                    'Clipboard is empty — paste Gemini’s JSON response into the textarea first.'
+                  );
+                  return;
+                }
+                try {
+                  const updatedBackups = pushStateBackup(
+                    state,
+                    'JSON_IMPORT',
+                    `Before Gemini JSON Import (${
+                      state.profileName || 'Active State'
+                    })`
+                  );
+                  const stripped = stripMarkdownJsonFences(candidateRaw);
+                  const { nextState, diffSummaryBanner } =
+                    parseGeminiResponseToStatePatch(
+                      stripped.startsWith('{') ? stripped : candidateRaw,
+                      state
+                    );
+                  pushUndoSnapshot(
+                    state,
+                    `Before Gemini Import (${diffSummaryBanner.replace(
+                      ' — Apply?',
+                      ''
+                    )})`
+                  );
+                  setState({
+                    ...nextState,
+                    stateBackups: updatedBackups,
+                  });
+                  setStateModalOpen(false);
+                  showNotice(
+                    `${diffSummaryBanner.replace(
+                      ' — Apply?',
+                      ''
+                    )} (Saved Undo snapshot).`
+                  );
+                } catch {
+                  showNotice('Invalid Gemini JSON or state.md syntax.');
+                }
+              }}
+              className="px-3 py-2.5 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Upload className="w-3.5 h-3.5 shrink-0" />
+              <span>Paste from Clipboard &amp; Apply</span>
+            </button>
+
             <button
               id="btn-copy-state-markdown"
               type="button"
@@ -6162,13 +6360,30 @@ export function App() {
                     'JSON_IMPORT',
                     `Before state.md / JSON Import (${state.profileName || 'Active State'})`
                   );
-                  const restored = parseFromStateInput(stateIoText);
+                  const stripped = stripMarkdownJsonFences(stateIoText);
+                  let restored: SymmetryState;
+                  let summaryMsg =
+                    'Parsed and imported 3-part state.md / JSON into live state (snapshot saved).';
+                  try {
+                    const patchRes = parseGeminiResponseToStatePatch(
+                      stripped.startsWith('{') ? stripped : stateIoText,
+                      state
+                    );
+                    restored = patchRes.nextState;
+                    summaryMsg = `${patchRes.diffSummaryBanner.replace(
+                      ' — Apply?',
+                      ''
+                    )} (snapshot saved).`;
+                  } catch {
+                    restored = parseFromStateInput(stateIoText);
+                  }
+                  pushUndoSnapshot(state, 'Before State Import');
                   setState({
                     ...restored,
                     stateBackups: updatedBackups,
                   });
                   setStateModalOpen(false);
-                  showNotice('Parsed and imported 3-part state.md / JSON into live state (snapshot saved).');
+                  showNotice(summaryMsg);
                 } catch {
                   showNotice('Invalid state.md or JSON syntax.');
                 }
@@ -6355,7 +6570,7 @@ export function App() {
             </div>
 
             <span className="text-[11px] font-mono text-slate-400">
-              Supports direct Markdown edits in Part I, II, &amp; III + JSON payload
+              Supports Gemini JSON Schema, 3-Part state.md, and full JSON payload
             </span>
           </div>
         </div>

@@ -86,6 +86,7 @@ export interface ProjectItem {
   nextStepNote: string;
   cognitiveDemand?: CognitiveDemandTag;
   blockedOnExternalFeedback?: boolean;
+  blockSubSteps?: string[];
 }
 
 export interface PipelineDay {
@@ -101,6 +102,7 @@ export interface PipelineDay {
   earlyMorningAnchor: boolean;
   isToday: boolean;
   primaryDeliverable?: string;
+  mode?: string;
   modeAndAnchors?: string;
   projectBlocksSummary?: string;
   deliverablesCompleted?: string;

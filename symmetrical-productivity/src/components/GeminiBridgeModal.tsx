@@ -35,6 +35,10 @@ import {
   buildGeminiSyncDeepLinkUrl,
   parseGeminiResponseToStatePatch,
 } from '../utils/geminiImporter';
+import {
+  generateGeminiImportPrompt,
+  stripMarkdownJsonFences,
+} from '../utils/geminiPromptGenerator';
 import { triggerHaptic } from '../utils/haptics';
 import { AveryCorpEmblem } from './AveryCorpEmblem';
 
@@ -77,6 +81,9 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
     MODE_B_PROMPT_PRESETS[0].prompt
   );
   const [copiedBanner, setCopiedBanner] = useState<string | null>(null);
+  const [customImportPromptRequest, setCustomImportPromptRequest] =
+    useState<string>('');
+  const [step1CopiedState, setStep1CopiedState] = useState<boolean>(false);
   const [importText, setImportText] = useState<string>(initialImportText || '');
   const [importSourceLabel, setImportSourceLabel] = useState<string | null>(
     initialImportSourceLabel || null
@@ -84,6 +91,16 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
   const [importError, setImportError] = useState<string | null>(null);
   const [isDraggingFile, setIsDraggingFile] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!step1CopiedState) return;
+    const id = window.setTimeout(() => setStep1CopiedState(false), 3500);
+    return () => window.clearTimeout(id);
+  }, [step1CopiedState]);
+
+  const geminiImportSchemaPrompt = useMemo(() => {
+    return generateGeminiImportPrompt(state, customImportPromptRequest);
+  }, [state, customImportPromptRequest]);
 
   useEffect(() => {
     if (isOpen && initialTab) {
@@ -889,8 +906,98 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
                   </div>
                 </>
               ) : (
-                /* Tab 2: Reverse Bridge ("Import Response from Gemini" — 4 One-Click Methods) */
+                /* Tab 2: Reverse Bridge ("Import from Gemini" — 2-Step Guided Workflow + Universal Importer) */
                 <div className="space-y-4">
+                  {/* STEP 1: Get JSON from Gemini (Prompt Generator Box) */}
+                  <div
+                    id="gemini-import-step-1-prompt-card"
+                    className="p-4 rounded-2xl bg-sky-950/25 border border-sky-500/35 space-y-3"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-md bg-sky-500/20 border border-sky-400/40 text-sky-300 font-mono text-[10px] font-bold uppercase">
+                          Step 1 of 2
+                        </span>
+                        <h3 className="text-sm font-bold text-white">
+                          Get JSON from Gemini (1-Click Schema Prompt Generator)
+                        </h3>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          id="btn-step1-copy-prompt-for-gemini"
+                          type="button"
+                          onClick={async () => {
+                            triggerHaptic([12]);
+                            await copyTextToClipboard(geminiImportSchemaPrompt);
+                            setStep1CopiedState(true);
+                            const msg =
+                              'Copied! Paste into Gemini to get your JSON';
+                            setCopiedBanner(msg);
+                            onShowNotice(msg);
+                          }}
+                          className={`px-3 py-1.5 rounded-xl font-mono font-bold text-xs flex items-center gap-1.5 transition cursor-pointer ${
+                            step1CopiedState
+                              ? 'bg-emerald-400 text-slate-950 shadow-[0_0_18px_rgba(52,211,153,0.4)]'
+                              : 'bg-sky-400 hover:bg-sky-300 text-slate-950'
+                          }`}
+                        >
+                          {step1CopiedState ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 shrink-0 stroke-[2.5]" />
+                              <span>
+                                Copied! Paste into Gemini to get your JSON
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5 shrink-0" />
+                              <span>Copy Prompt for Gemini</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          id="btn-step1-copy-prompt-open-gemini"
+                          type="button"
+                          onClick={async () => {
+                            setStep1CopiedState(true);
+                            await launchGeminiWebOrMobileShare(
+                              geminiImportSchemaPrompt,
+                              'Copied! Paste into Gemini to get your JSON',
+                              true
+                            );
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-sky-400/40 text-sky-200 font-mono font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5 text-sky-300 shrink-0" />
+                          <span>Copy Prompt &amp; Open Gemini ↗</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <input
+                        id="input-step1-custom-gemini-instructions"
+                        type="text"
+                        value={customImportPromptRequest}
+                        onChange={(e) =>
+                          setCustomImportPromptRequest(e.target.value)
+                        }
+                        placeholder="Optional: Add specific instructions for Gemini (e.g., 'Plan my week around Thursday's exam')..."
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950/90 border border-slate-700 focus:border-sky-400 text-xs font-mono text-slate-100 placeholder:text-slate-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <textarea
+                      id="textarea-step1-gemini-schema-prompt-preview"
+                      readOnly
+                      rows={7}
+                      value={geminiImportSchemaPrompt}
+                      className="w-full p-3 rounded-xl bg-slate-950/90 border border-slate-800 text-slate-300 font-mono text-[11px] leading-relaxed focus:outline-none resize-y"
+                    />
+                  </div>
+
                   {/* Prominent Visual Diff Preview Banner ("Detected from Gemini: Cruise Mode, 7-Day Pipeline updated, Focus #1 set to '...' — Apply?") */}
                   {liveImportInspection && liveImportInspection.valid && (
                     <div
@@ -938,15 +1045,83 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
                     </div>
                   )}
 
-                  <div className="p-4 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 space-y-3">
+                  {/* STEP 2: Paste Gemini's JSON Response */}
+                  <div
+                    id="gemini-import-step-2-paste-card"
+                    className="p-4 rounded-2xl bg-emerald-950/20 border border-emerald-500/30 space-y-3"
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h3 className="text-sm font-bold text-emerald-200 flex items-center gap-2">
-                        <ClipboardPaste className="w-4 h-4 text-emerald-400" />
-                        <span>
-                          Universal 4-Method Gemini Importer (JSON • state.md • Conversational Plan)
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 font-mono text-[10px] font-bold uppercase">
+                          Step 2 of 2
                         </span>
-                      </h3>
+                        <h3 className="text-sm font-bold text-emerald-200 flex items-center gap-1.5">
+                          <ClipboardPaste className="w-4 h-4 text-emerald-400" />
+                          <span>Paste Gemini&apos;s JSON Response</span>
+                        </h3>
+                      </div>
                       <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          id="btn-step2-paste-clipboard-and-apply"
+                          type="button"
+                          onClick={async () => {
+                            setImportError(null);
+                            let candidateRaw = importText.trim();
+                            try {
+                              if (
+                                typeof navigator !== 'undefined' &&
+                                navigator.clipboard?.readText
+                              ) {
+                                const clip = await navigator.clipboard.readText();
+                                if (clip && clip.trim()) {
+                                  candidateRaw = clip.trim();
+                                  setImportText(candidateRaw);
+                                  setImportSourceLabel(
+                                    'Paste from Clipboard & Apply'
+                                  );
+                                }
+                              }
+                            } catch {
+                              // Fall back to existing textarea text if clipboard read permission denied
+                            }
+                            if (!candidateRaw) {
+                              setImportError(
+                                'Clipboard is empty or blocked — paste Gemini’s JSON response into the box below and click Apply.'
+                              );
+                              return;
+                            }
+                            try {
+                              const stripped =
+                                stripMarkdownJsonFences(candidateRaw);
+                              const { nextState, diffSummaryBanner } =
+                                parseGeminiResponseToStatePatch(
+                                  stripped.startsWith('{')
+                                    ? stripped
+                                    : candidateRaw,
+                                  state
+                                );
+                              triggerHaptic([20, 40]);
+                              onApplyImportedState(nextState, diffSummaryBanner);
+                              onShowNotice(
+                                `${diffSummaryBanner.replace(
+                                  ' — Apply?',
+                                  ''
+                                )} (Saved Undo snapshot — Cmd/Ctrl+Z to revert).`
+                              );
+                              onClose();
+                            } catch (err) {
+                              const message =
+                                err instanceof Error
+                                  ? err.message
+                                  : 'Invalid JSON or unrecognized response format.';
+                              setImportError(message);
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-mono text-xs font-bold flex items-center gap-1.5 shadow-[0_0_18px_rgba(52,211,153,0.3)] cursor-pointer"
+                        >
+                          <ClipboardPaste className="w-3.5 h-3.5 shrink-0" />
+                          <span>Paste from Clipboard &amp; Apply</span>
+                        </button>
                         <button
                           id="btn-reverse-bridge-paste-clipboard"
                           type="button"
@@ -959,7 +1134,7 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
                                 const clip = await navigator.clipboard.readText();
                                 if (clip) {
                                   setImportText(clip);
-                                  setImportSourceLabel('1-Tap Clipboard Sync');
+                                  setImportSourceLabel('1-Tap Clipboard Preview');
                                   setImportError(null);
                                   triggerHaptic([12]);
                                 }
@@ -968,16 +1143,16 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
                               // User can Cmd+V manually into textarea
                             }
                           }}
-                          className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-200 font-mono text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                          className="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-200 font-mono text-[11px] font-bold flex items-center gap-1 cursor-pointer"
                         >
                           <ClipboardPaste className="w-3 h-3" />
-                          <span>1-Tap Read Clipboard (Cmd/Ctrl+Shift+V)</span>
+                          <span>Paste to Preview</span>
                         </button>
                         <button
                           id="btn-reverse-bridge-copy-deep-link"
                           type="button"
                           onClick={() => void handleCopyDeepLinkUrl()}
-                          className="px-2.5 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-sky-200 font-mono text-[11px] flex items-center gap-1 cursor-pointer"
+                          className="px-2.5 py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-sky-200 font-mono text-[11px] flex items-center gap-1 cursor-pointer"
                           title="Generate clickable ?geminiSync=<base64> Deep-Link URL from current text or state"
                         >
                           <Link2 className="w-3 h-3" />
@@ -995,9 +1170,9 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
                             setImportSourceLabel('Live state.md');
                             setImportError(null);
                           }}
-                          className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-mono text-[11px] cursor-pointer"
+                          className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-mono text-[11px] cursor-pointer"
                         >
-                          Load Current state.md to Edit
+                          Load Current state.md
                         </button>
                         {importText && (
                           <button
@@ -1007,7 +1182,7 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
                               setImportSourceLabel(null);
                               setImportError(null);
                             }}
-                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 font-mono text-[11px] cursor-pointer"
+                            className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 font-mono text-[11px] cursor-pointer"
                           >
                             Clear
                           </button>
@@ -1016,14 +1191,7 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
                     </div>
 
                     <p className="text-xs text-slate-300 leading-relaxed">
-                      Supports <strong>Format A</strong> (<code className="text-emerald-300">```json</code> or{' '}
-                      <code className="text-emerald-300">```symmetrical-sync</code> code blocks),{' '}
-                      <strong>Format B</strong> (<code className="text-emerald-300">state.md</code>{' '}
-                      <code className="text-emerald-300"># Part I / II / III</code>), and{' '}
-                      <strong>Format C</strong> (conversational Gemini replies with{' '}
-                      <code className="text-emerald-300">Day | Mode &amp; Fixed Anchors...</code> tables,{' '}
-                      <code className="text-emerald-300">[20m | ... work left]</code> checklists, or{' '}
-                      <code className="text-emerald-300">Tier 1 Cruise / Tier 2 Surge / Tier 3 Taper</code>).
+                      Strips surrounding <code className="text-emerald-300">```json ... ```</code> markdown fences automatically, validates the JSON schema (or <code className="text-emerald-300">state.md</code> / conversational tables), previews detected changes above, and saves a pre-import snapshot to the Undo buffer.
                     </p>
                   </div>
 
@@ -1083,13 +1251,13 @@ export const GeminiBridgeModal: React.FC<GeminiBridgeModalProps> = ({
 
                   <textarea
                     id="textarea-gemini-reverse-bridge-input"
-                    rows={10}
+                    rows={8}
                     value={importText}
                     onChange={(e) => {
                       setImportText(e.target.value);
                       setImportError(null);
                     }}
-                    placeholder="Paste ANY Gemini response here (Format A JSON/symmetrical-sync block, Format B state.md, or Format C conversational 7-Day Pipeline table & [20m | ... work left] checklist)..."
+                    placeholder="Paste Gemini's JSON response here (```json ... ``` code block, state.md, or conversational 7-Day Pipeline table)..."
                     className="w-full p-4 rounded-2xl bg-slate-950 border border-slate-800 focus:border-emerald-400 text-slate-100 font-mono text-xs leading-relaxed focus:outline-none"
                   />
 

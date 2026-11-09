@@ -18,6 +18,7 @@ import {
   validateAndRestoreStateSnapshot,
 } from '../state/defaultState';
 import { applySmartIntakePlanToState } from './smartIntakePlanner';
+import { applyGeminiJsonSchemaToState } from './geminiPromptGenerator';
 
 export type GeminiDetectedFormat =
   | 'FORMAT_A_JSON_SYNC'
@@ -298,72 +299,62 @@ export function parseGeminiResponseToStatePatch(
           };
         }
 
-        // Case A2: Full or Partial AppState / SymmetryState JSON patch
-        const mergedCandidate: Record<string, unknown> = {
-          ...workingState,
-          ...parsedJson,
-        };
+        // Case A2: Gemini JSON Schema Payload or Full/Partial SymmetryState JSON patch
+        const schemaApplied = applyGeminiJsonSchemaToState(
+          workingState,
+          parsedJson
+        );
+        appliedChanges.push(...schemaApplied.appliedChanges);
 
-        // Support alias keys `sevenDayPipeline` -> `pipelineDays` and `activeQueue` -> `projectQueue`
-        if (
-          Array.isArray(parsedJson.sevenDayPipeline) &&
-          !Array.isArray(parsedJson.pipelineDays)
-        ) {
-          mergedCandidate.pipelineDays = workingState.pipelineDays.map(
-            (existingDay, idx) => {
-              const patchDay = (
-                parsedJson.sevenDayPipeline as Record<string, unknown>[]
-              )[idx];
-              if (!patchDay || typeof patchDay !== 'object') return existingDay;
-              const rawModeStr = String(
-                patchDay.loadMode || patchDay.mode || existingDay.loadMode
-              );
-              const modeNormalized = normalizeLoadModeToken(rawModeStr);
-              return {
-                ...existingDay,
-                ...patchDay,
-                dayLabel: String(
-                  patchDay.dayLabel || patchDay.day || existingDay.dayLabel
-                ),
-                loadMode: modeNormalized
-                  ? modeNormalized.mode
-                  : existingDay.loadMode,
-                cruisePlus: modeNormalized
-                  ? modeNormalized.cruisePlus
-                  : Boolean(patchDay.cruisePlus ?? existingDay.cruisePlus),
-              };
-            }
-          );
-          highlights.pipelineDaysUpdated = (
-            parsedJson.sevenDayPipeline as unknown[]
-          ).length;
-          appliedChanges.push(
-            `Updated 7-Day Pipeline (${highlights.pipelineDaysUpdated} days)`
-          );
-        }
+        const mergedCandidate: Record<string, unknown> = {
+          ...schemaApplied.nextState,
+          ...parsedJson,
+          loadMode: schemaApplied.nextState.loadMode,
+          cruisePlus: schemaApplied.nextState.cruisePlus,
+          surgeConsecutiveDays: schemaApplied.nextState.surgeConsecutiveDays,
+          energyBandwidth: schemaApplied.nextState.energyBandwidth,
+          bandwidth: schemaApplied.nextState.bandwidth,
+          baselineBlocks: Array.isArray(parsedJson.baselineBlocks)
+            ? parsedJson.baselineBlocks
+            : schemaApplied.nextState.baselineBlocks,
+          projectQueue: Array.isArray(parsedJson.projectQueue)
+            ? parsedJson.projectQueue
+            : schemaApplied.nextState.projectQueue,
+          openListBacklog: schemaApplied.nextState.openListBacklog,
+          projectBacklog: schemaApplied.nextState.projectBacklog,
+          pipelineDays: Array.isArray(parsedJson.pipelineDays)
+            ? parsedJson.pipelineDays
+            : schemaApplied.nextState.pipelineDays,
+          recharge: schemaApplied.nextState.recharge,
+        };
 
         if (
           Array.isArray(parsedJson.activeQueue) &&
-          !Array.isArray(parsedJson.projectQueue)
+          !Array.isArray(parsedJson.projectQueue) &&
+          !Array.isArray(parsedJson.closedList)
         ) {
           mergedCandidate.projectQueue = (
             parsedJson.activeQueue as Record<string, unknown>[]
           )
             .slice(0, 3)
             .map((item, idx) => {
-              const slotNum = ((idx + 1) as 1 | 2 | 3);
+              const slotNum = (idx + 1) as 1 | 2 | 3;
               const existing = workingState.projectQueue[idx];
               return {
                 id: String(item.id || existing?.id || `proj_${slotNum}`),
                 slot: slotNum,
-                title: String(item.title || existing?.title || `Item #${slotNum}`),
+                title: String(
+                  item.title || existing?.title || `Item #${slotNum}`
+                ),
                 presetType: (item.presetType ||
                   existing?.presetType ||
                   'PAPER_8') as ProjectPresetType,
                 completedBlocks: Number(
                   item.completedBlocks ?? existing?.completedBlocks ?? 0
                 ),
-                totalBlocks: Number(item.totalBlocks ?? existing?.totalBlocks ?? 8),
+                totalBlocks: Number(
+                  item.totalBlocks ?? existing?.totalBlocks ?? 8
+                ),
                 trackId: (item.trackId ||
                   existing?.trackId ||
                   'science') as TrackId,
@@ -381,45 +372,32 @@ export function parseGeminiResponseToStatePatch(
             });
         }
 
-        if (typeof parsedJson.loadMode === 'string') {
-          const norm = normalizeLoadModeToken(parsedJson.loadMode);
-          if (norm) {
-            mergedCandidate.loadMode = norm.mode;
-            if (norm.cruisePlus) mergedCandidate.cruisePlus = true;
-            highlights.loadModeLabel = formatModeBannerName(
-              norm.mode,
-              Boolean(mergedCandidate.cruisePlus)
-            );
-            appliedChanges.push(`Load Mode → ${highlights.loadModeLabel}`);
-          }
-        }
-
         const restored = validateAndRestoreStateSnapshot(
           JSON.stringify(mergedCandidate)
         );
-        if (Array.isArray(parsedJson.pipelineDays)) {
+        if (
+          Array.isArray(parsedJson.pipelineDays) ||
+          Array.isArray(parsedJson.sevenDayPipeline)
+        ) {
           highlights.pipelineDaysUpdated = restored.pipelineDays.length;
-          appliedChanges.push(
-            `Updated 7-Day Pipeline (${restored.pipelineDays.length} days)`
-          );
         }
         if (
           Array.isArray(parsedJson.projectQueue) ||
-          Array.isArray(parsedJson.activeQueue)
+          Array.isArray(parsedJson.activeQueue) ||
+          Array.isArray(parsedJson.closedList)
         ) {
           if (restored.projectQueue[0]?.title) {
             highlights.focusSlot1Title = restored.projectQueue[0].title;
-            appliedChanges.push(
-              `Focus #1 set to "${restored.projectQueue[0].title}"`
-            );
           }
         }
-        if (!highlights.loadModeLabel) {
-          highlights.loadModeLabel = formatModeBannerName(
-            restored.loadMode,
-            restored.cruisePlus
-          );
+        if (Array.isArray(parsedJson.eveningCategories)) {
+          highlights.rechargeCategoriesUpdated =
+            parsedJson.eveningCategories.length;
         }
+        highlights.loadModeLabel = formatModeBannerName(
+          restored.loadMode,
+          restored.cruisePlus
+        );
         if (appliedChanges.length === 0) {
           appliedChanges.push(
             `Merged JSON state block (${Object.keys(parsedJson).length} keys)`
@@ -432,7 +410,7 @@ export function parseGeminiResponseToStatePatch(
         };
         return {
           detectedFormat: 'FORMAT_A_JSON_SYNC',
-          formatLabel: 'Format A — Embedded JSON / Sync Block',
+          formatLabel: 'Format A — Gemini JSON Schema / State Payload',
           nextState: syncedRestored,
           statePatch: parsedJson as Partial<SymmetryState>,
           appliedChanges,

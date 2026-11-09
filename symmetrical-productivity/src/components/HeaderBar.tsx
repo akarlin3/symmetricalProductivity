@@ -73,6 +73,7 @@ interface HeaderBarProps {
   isEveningTheme: boolean;
   onOpenCommandDock?: () => void;
   onOpenGeminiBridgeModal?: () => void;
+  onOpenGeminiImportTab?: () => void;
   onOneTapSyncFromClipboard?: () => void;
   cinemaFocusMode?: boolean;
   onToggleCinemaFocusMode?: () => void;
@@ -115,6 +116,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   isEveningTheme,
   onOpenCommandDock,
   onOpenGeminiBridgeModal,
+  onOpenGeminiImportTab,
   onOneTapSyncFromClipboard,
   cinemaFocusMode = false,
   onToggleCinemaFocusMode,
@@ -539,17 +541,21 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               </button>
             )}
 
-            {onImportJsonBackupFile && (
+            {(onOpenGeminiImportTab || onImportJsonBackupFile) && (
               <button
                 id="btn-header-json-import"
                 type="button"
                 onClick={() => {
                   triggerHaptic([10]);
                   soundEngine.playTactileClick('UI_TAP');
-                  jsonFileInputRef.current?.click();
+                  if (onOpenGeminiImportTab) {
+                    onOpenGeminiImportTab();
+                  } else {
+                    jsonFileInputRef.current?.click();
+                  }
                 }}
-                title="1-Click Import JSON State Backup"
-                aria-label="Import JSON Backup"
+                title="Import State JSON / 1-Click Gemini Schema Prompt Generator"
+                aria-label="Import State JSON"
                 className={`h-7 px-2 rounded-full border text-[10px] font-mono flex items-center gap-1 cursor-pointer transition shrink-0 ${
                   isEveningTheme
                     ? 'bg-white/[0.03] hover:bg-white/[0.08] border-white/[0.07] text-amber-100/90'
