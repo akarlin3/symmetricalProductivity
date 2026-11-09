@@ -507,7 +507,24 @@ export interface SymmetryState {
   timer: TimerConsoleState;
   recharge: RechargeState;
   roadmapTracks: RoadmapTrack[];
+  // Unified Local + Cloud Firestore Sync Schema Fields
+  tier?: LoadMode;
+  completedBlocks?: {
+    discretionaryBlocksCompletedToday: number;
+    todayBlockLog: TodayBlockLogEntry[];
+    completedDeliverablesLog: CompletedDeliverableEntry[];
+  } | number;
+  examFloor?: BaselineBlock[];
+  closedList?: ProjectItem[];
+  openList?: Omit<ProjectItem, 'slot'>[];
+  sanctuaryPillars?: RechargeState;
+  hemingwayBridge?: string;
+  watchmansRest?: boolean;
+  lastUpdated?: number;
 }
+
+export type SymmetrySyncStatus = 'LOCAL_MODE' | 'SYNCING' | 'SYNCED' | 'ERROR';
+
 
 
 

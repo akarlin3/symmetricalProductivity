@@ -1868,17 +1868,80 @@ export function parseFromStateInput(rawText: string): SymmetryState {
       ? parsed.openListBacklog
       : Array.isArray(parsed.projectBacklog)
       ? parsed.projectBacklog
+      : Array.isArray(parsed.openList)
+      ? parsed.openList
       : DEFAULT_SYMMETRY_STATE.openListBacklog;
 
     const resolvedCompleted = Array.isArray(parsed.completedDeliverablesLog)
       ? parsed.completedDeliverablesLog
       : Array.isArray(parsed.completedDeliverablesArchive)
       ? parsed.completedDeliverablesArchive
+      : Array.isArray(parsed.completedBlocks?.completedDeliverablesLog)
+      ? parsed.completedBlocks.completedDeliverablesLog
       : DEFAULT_SYMMETRY_STATE.completedDeliverablesLog;
+
+    const resolvedLoadMode: LoadMode =
+      parsed.loadMode === 'CRUISE' ||
+      parsed.loadMode === 'SURGE' ||
+      parsed.loadMode === 'TAPER'
+        ? parsed.loadMode
+        : parsed.tier === 'CRUISE' ||
+          parsed.tier === 'SURGE' ||
+          parsed.tier === 'TAPER'
+        ? parsed.tier
+        : DEFAULT_SYMMETRY_STATE.loadMode;
+
+    const resolvedBaselineBlocks =
+      Array.isArray(parsed.baselineBlocks) && parsed.baselineBlocks.length > 0
+        ? parsed.baselineBlocks
+        : Array.isArray(parsed.examFloor) && parsed.examFloor.length > 0
+        ? parsed.examFloor
+        : DEFAULT_SYMMETRY_STATE.baselineBlocks;
+
+    const resolvedProjectQueue: ProjectItem[] = Array.isArray(parsed.projectQueue)
+      ? parsed.projectQueue
+      : Array.isArray(parsed.closedList)
+      ? parsed.closedList
+      : DEFAULT_SYMMETRY_STATE.projectQueue;
+
+    if (
+      typeof parsed.hemingwayBridge === 'string' &&
+      parsed.hemingwayBridge.trim() &&
+      resolvedProjectQueue.length > 0
+    ) {
+      resolvedProjectQueue[0] = {
+        ...resolvedProjectQueue[0],
+        nextStepNote:
+          resolvedProjectQueue[0].nextStepNote || parsed.hemingwayBridge.trim(),
+      };
+    }
+
+    const resolvedDiscretionaryBlocks =
+      typeof parsed.discretionaryBlocksCompletedToday === 'number'
+        ? parsed.discretionaryBlocksCompletedToday
+        : typeof parsed.completedBlocks === 'number'
+        ? parsed.completedBlocks
+        : typeof parsed.completedBlocks?.discretionaryBlocksCompletedToday ===
+          'number'
+        ? parsed.completedBlocks.discretionaryBlocksCompletedToday
+        : DEFAULT_SYMMETRY_STATE.discretionaryBlocksCompletedToday;
+
+    const resolvedTodayBlockLog = Array.isArray(parsed.todayBlockLog)
+      ? parsed.todayBlockLog
+      : Array.isArray(parsed.completedBlocks?.todayBlockLog)
+      ? parsed.completedBlocks.todayBlockLog
+      : DEFAULT_SYMMETRY_STATE.todayBlockLog;
+
+    const parsedRechargeSource =
+      parsed.recharge || parsed.sanctuaryPillars || {};
+    const parsedStickyFromSource =
+      parsedRechargeSource.stickySlots || parsedSticky || {};
 
     baseState = {
       ...DEFAULT_SYMMETRY_STATE,
       ...parsed,
+      loadMode: resolvedLoadMode,
+      discretionaryBlocksCompletedToday: resolvedDiscretionaryBlocks,
       profilePresetId: parsed.profilePresetId || DEFAULT_SYMMETRY_STATE.profilePresetId,
       profileName: parsed.profileName || DEFAULT_SYMMETRY_STATE.profileName,
       energyBandwidth:
@@ -1919,21 +1982,14 @@ export function parseFromStateInput(rawText: string): SymmetryState {
         ...(parsed.breakOptions || {}),
       },
       preExamTaperActive: Boolean(parsed.preExamTaperActive),
-      todayBlockLog: Array.isArray(parsed.todayBlockLog)
-        ? parsed.todayBlockLog
-        : DEFAULT_SYMMETRY_STATE.todayBlockLog,
+      todayBlockLog: resolvedTodayBlockLog,
       upcomingMilestones:
         Array.isArray(parsed.upcomingMilestones) &&
         parsed.upcomingMilestones.length > 0
           ? parsed.upcomingMilestones
           : DEFAULT_SYMMETRY_STATE.upcomingMilestones,
-      baselineBlocks:
-        Array.isArray(parsed.baselineBlocks) && parsed.baselineBlocks.length > 0
-          ? parsed.baselineBlocks
-          : DEFAULT_SYMMETRY_STATE.baselineBlocks,
-      projectQueue: Array.isArray(parsed.projectQueue)
-        ? parsed.projectQueue
-        : DEFAULT_SYMMETRY_STATE.projectQueue,
+      baselineBlocks: resolvedBaselineBlocks,
+      projectQueue: resolvedProjectQueue,
       projectBacklog: resolvedBacklog,
       openListBacklog: resolvedBacklog,
       completedDeliverablesLog: resolvedCompleted,
@@ -1975,43 +2031,50 @@ export function parseFromStateInput(rawText: string): SymmetryState {
       },
       recharge: {
         ...DEFAULT_SYMMETRY_STATE.recharge,
-        ...(parsed.recharge || {}),
+        ...parsedRechargeSource,
+        manualEveningPreview:
+          typeof parsed.watchmansRest === 'boolean' &&
+          parsedRechargeSource.manualEveningPreview === undefined
+            ? parsed.watchmansRest
+            : Boolean(parsedRechargeSource.manualEveningPreview),
         fluidCategories: {
           CAT1_MUSIC: {
             ...DEFAULT_SYMMETRY_STATE.recharge.fluidCategories!.CAT1_MUSIC,
-            ...(parsed.recharge?.fluidCategories?.CAT1_MUSIC || {}),
+            ...(parsedRechargeSource?.fluidCategories?.CAT1_MUSIC || {}),
           },
           CAT4_COMFORT: {
             ...DEFAULT_SYMMETRY_STATE.recharge.fluidCategories!.CAT4_COMFORT,
-            ...(parsed.recharge?.fluidCategories?.CAT4_COMFORT || {}),
+            ...(parsedRechargeSource?.fluidCategories?.CAT4_COMFORT || {}),
           },
         },
-        completedLog: Array.isArray(parsed.recharge?.completedLog)
-          ? parsed.recharge.completedLog
+        completedLog: Array.isArray(parsedRechargeSource?.completedLog)
+          ? parsedRechargeSource.completedLog
           : DEFAULT_SYMMETRY_STATE.recharge.completedLog,
         stickySlots: {
           CAT2_MAKER: normalizeSticky(
             defaultSticky.CAT2_MAKER,
-            parsedSticky.CAT2_MAKER
+            parsedStickyFromSource.CAT2_MAKER
           ),
           '3A_FICTION': normalizeSticky(
             defaultSticky['3A_FICTION'],
-            parsedSticky['3A_FICTION']
+            parsedStickyFromSource['3A_FICTION']
           ),
           '3B_NONFICTION': normalizeSticky(
             defaultSticky['3B_NONFICTION'],
-            parsedSticky['3B_NONFICTION']
+            parsedStickyFromSource['3B_NONFICTION']
           ),
           '3C_VIDEO': normalizeSticky(
             defaultSticky['3C_VIDEO'],
-            parsedSticky['3C_VIDEO']
+            parsedStickyFromSource['3C_VIDEO']
           ),
           CAT5_GAMING: normalizeSticky(
             defaultSticky.CAT5_GAMING,
-            parsedSticky.CAT5_GAMING
+            parsedStickyFromSource.CAT5_GAMING
           ),
         },
       },
+      lastUpdated:
+        typeof parsed.lastUpdated === 'number' ? parsed.lastUpdated : undefined,
     };
   }
 

@@ -4,14 +4,18 @@ import {
   BarChart3,
   Bot,
   Calendar,
+  CheckCircle2,
   ClipboardPaste,
   Clock,
-  Columns2,
+  Cloud,
+  CloudOff,
   Command,
   Download,
   HelpCircle,
   ListChecks,
+  Loader2,
   Lock,
+  LogOut,
   Maximize2,
   Minimize2,
   Moon,
@@ -20,17 +24,19 @@ import {
   Sparkles,
   Sun,
   Timer,
+  Upload,
   Volume2,
   VolumeX,
   X,
-  Zap,
 } from 'lucide-react';
+import type { User } from 'firebase/auth';
 import {
   AudioEngineSettings,
   FixedEventType,
   LayoutMode,
   SoundscapeMode,
   SymmetryState,
+  SymmetrySyncStatus,
   TabId,
 } from '../types/symmetry';
 import {
@@ -73,6 +79,14 @@ interface HeaderBarProps {
   architectModeUnlocked?: boolean;
   onUnlockArchitectMode?: (source: string) => void;
   proModeUnlocked?: boolean;
+  // Cloud Firestore & Auth Sync Props
+  user?: User | null;
+  syncStatus?: SymmetrySyncStatus;
+  isFirebaseConfigured?: boolean;
+  onSignInWithGoogle?: () => void;
+  onSignOutUser?: () => void;
+  onExportJsonBackup?: () => void;
+  onImportJsonBackupFile?: (file: File) => void;
 }
 
 const SPRING_TRANSITION = {
@@ -107,8 +121,16 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   architectModeUnlocked = false,
   onUnlockArchitectMode,
   proModeUnlocked,
+  user = null,
+  syncStatus = 'LOCAL_MODE',
+  isFirebaseConfigured = false,
+  onSignInWithGoogle,
+  onSignOutUser,
+  onExportJsonBackup,
+  onImportJsonBackupFile,
 }) => {
   const tapTimestampsRef = useRef<number[]>([]);
+  const jsonFileInputRef = useRef<HTMLInputElement | null>(null);
   const [menuDrawerOpen, setMenuDrawerOpen] = useState(false);
   const [localProUnlocked, setLocalProUnlocked] = useState<boolean>(() =>
     isProModeUnlocked()
@@ -243,16 +265,16 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               </span>
             )}
 
-            {/* Compact Duration-Only Pill (Remains sharp during Cinema Focus) */}
+            {/* Compact Duration-Only & Daily Capacity Pill (Remains sharp during Cinema Focus) */}
             <div
               id="duration-only-header-badge"
               onClick={handleBrandPrismTap}
-              className={`px-2 py-0.5 rounded-full border font-mono text-[11px] font-normal tracking-tight tabular-nums flex items-center gap-1 transition-all duration-500 shrink-0 cursor-pointer select-none ${
+              className={`px-2 py-0.5 rounded-full border font-mono text-[11px] font-normal tracking-tight tabular-nums flex items-center gap-1.5 transition-all duration-500 shrink-0 cursor-pointer select-none ${
                 metrics.isZeroWorkLeft || isEveningTheme
                   ? 'bg-amber-500/10 border-amber-400/25 text-amber-200'
                   : 'bg-white/[0.03] border-white/[0.07] text-slate-200'
               }`}
-              title={`${metrics.durationPrefix} — Duration-Only Display (No wall-clock timestamps unless Fixed Event logged)`}
+              title={`${metrics.durationPrefix} (${metrics.totalCompletedBlocks}/${metrics.totalTargetBlocks} blocks) — Duration-Only Display (No wall-clock timestamps unless Fixed Event logged)`}
             >
               {metrics.isZeroWorkLeft ? (
                 <Lock className="w-2.5 h-2.5 text-amber-400 shrink-0" />
@@ -263,6 +285,9 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                   }`}
                 />
               )}
+              <span className="hidden sm:inline text-[10px] opacity-75">
+                {metrics.totalCompletedBlocks}/{metrics.totalTargetBlocks} •
+              </span>
               <span>{compactDurationText}</span>
             </div>
 
@@ -332,14 +357,238 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             })}
           </nav>
 
-          {/* 3. RIGHT: Layout Toggle, Cmd+K, and Menu Icons */}
+          {/* 3. RIGHT: Cloud Sync & Google Auth Cluster, Evening Lock Toggle, Layout Toggle, Cmd+K, and Menu Icons */}
           <div
-            className={`flex items-center gap-1 shrink-0 transition-all duration-500 ${
+            className={`flex items-center gap-1.5 shrink-0 flex-wrap transition-all duration-500 ${
               isCinemaReceding
                 ? 'opacity-20 blur-[1px] hover:opacity-100 hover:blur-0'
                 : ''
             }`}
           >
+            {/* Hidden 1-Click JSON File Input */}
+            <input
+              ref={jsonFileInputRef}
+              type="file"
+              accept=".json,.md,application/json,text/markdown"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file && onImportJsonBackupFile) {
+                  onImportJsonBackupFile(file);
+                }
+                e.target.value = '';
+              }}
+            />
+
+            {/* Live Sync Status Badge ("Synced" | "Syncing..." | "Local Mode") */}
+            <span
+              id="header-sync-status-badge"
+              title={
+                syncStatus === 'SYNCED'
+                  ? 'Real-time Cloud Firestore + localStorage sync active'
+                  : syncStatus === 'SYNCING'
+                  ? 'Syncing state with Cloud Firestore...'
+                  : 'Instant zero-login localStorage persistence active'
+              }
+              className={`px-2 py-0.5 rounded-full border font-mono text-[10px] flex items-center gap-1 select-none shrink-0 ${
+                syncStatus === 'SYNCED'
+                  ? 'bg-emerald-500/15 border-emerald-400/35 text-emerald-200'
+                  : syncStatus === 'SYNCING'
+                  ? 'bg-sky-500/15 border-sky-400/35 text-sky-200'
+                  : isEveningTheme
+                  ? 'bg-white/[0.03] border-white/[0.07] text-stone-300'
+                  : 'bg-white/[0.03] border-white/[0.07] text-slate-300'
+              }`}
+            >
+              {syncStatus === 'SYNCED' ? (
+                <>
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                  <span>Synced</span>
+                </>
+              ) : syncStatus === 'SYNCING' ? (
+                <>
+                  <Loader2 className="w-3 h-3 text-sky-400 animate-spin shrink-0" />
+                  <span>Syncing...</span>
+                </>
+              ) : (
+                <>
+                  <CloudOff className="w-3 h-3 text-slate-400 shrink-0" />
+                  <span>Local Mode</span>
+                </>
+              )}
+            </span>
+
+            {/* Google Auth Controls: Signed Out vs Signed In */}
+            {!user ? (
+              <button
+                id="btn-google-sign-in"
+                type="button"
+                onClick={() => {
+                  triggerHaptic([10]);
+                  soundEngine.playTactileClick('UI_TAP');
+                  onSignInWithGoogle?.();
+                }}
+                title={
+                  isFirebaseConfigured
+                    ? 'Sign in with Google for real-time Cloud Firestore sync'
+                    : 'Sign in with Google (Configure VITE_FIREBASE_* in .env.local to enable Cloud Sync)'
+                }
+                className={`h-7 px-2.5 rounded-full border text-[11px] font-medium flex items-center gap-1.5 cursor-pointer transition shrink-0 ${
+                  isEveningTheme
+                    ? 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/30 text-amber-100'
+                    : 'bg-sky-500/15 hover:bg-sky-500/25 border-sky-400/30 text-sky-100'
+                }`}
+              >
+                <svg
+                  className="w-3.5 h-3.5 shrink-0"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    fill="#EA4335"
+                    d="M12 10.2v3.6h5.1c-.2 1.2-.9 2.2-1.9 2.9l3.1 2.4c1.8-1.7 2.8-4.1 2.8-7 0-.7-.1-1.3-.2-1.9H12z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M6.5 14.3l-.7.5-2.5 1.9C5 19.8 8.2 22 12 22c2.7 0 5-.9 6.6-2.4l-3.1-2.4c-.9.6-2 1-3.5 1-2.7 0-5-1.8-5.8-4.3l.3-.6z"
+                  />
+                  <path
+                    fill="#4A90E2"
+                    d="M3.3 7.3C2.5 8.7 2 10.3 2 12s.5 3.3 1.3 4.7l3.2-2.5c-.2-.7-.3-1.4-.3-2.2s.1-1.5.3-2.2L3.3 7.3z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M12 5.8c1.5 0 2.8.5 3.9 1.5l2.9-2.9C17 2.8 14.7 2 12 2 8.2 2 5 4.2 3.3 7.3l3.2 2.5C7 7.6 9.3 5.8 12 5.8z"
+                  />
+                </svg>
+                <span>Sign in with Google</span>
+              </button>
+            ) : (
+              <div
+                id="header-google-user-cluster"
+                className="flex items-center gap-1 shrink-0"
+              >
+                <div
+                  className={`h-7 px-2 rounded-full border flex items-center gap-1.5 text-[11px] font-medium ${
+                    isEveningTheme
+                      ? 'bg-white/[0.04] border-white/[0.08] text-amber-100'
+                      : 'bg-white/[0.04] border-white/[0.08] text-slate-200'
+                  }`}
+                  title={user.email || user.displayName || 'Signed in with Google'}
+                >
+                  {user.photoURL ? (
+                    <img
+                      src={user.photoURL}
+                      alt={user.displayName || 'User avatar'}
+                      referrerPolicy="no-referrer"
+                      className="w-4 h-4 rounded-full object-cover shrink-0"
+                    />
+                  ) : (
+                    <span className="w-4 h-4 rounded-full bg-sky-500/30 border border-sky-400/40 text-[9px] font-mono font-bold flex items-center justify-center text-sky-200 shrink-0">
+                      {(user.displayName || user.email || 'U')
+                        .charAt(0)
+                        .toUpperCase()}
+                    </span>
+                  )}
+                  <span className="max-w-[96px] truncate hidden sm:inline">
+                    {user.displayName || user.email?.split('@')[0] || 'Account'}
+                  </span>
+                </div>
+
+                <button
+                  id="btn-google-sign-out"
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic([10]);
+                    soundEngine.playTactileClick('UI_TAP');
+                    onSignOutUser?.();
+                  }}
+                  title="Sign Out of Google Cloud Sync"
+                  className={`h-7 px-2 rounded-full border text-[10px] font-mono flex items-center gap-1 cursor-pointer transition shrink-0 ${
+                    isEveningTheme
+                      ? 'bg-white/[0.03] hover:bg-white/[0.08] border-white/[0.07] text-stone-300 hover:text-amber-100'
+                      : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/[0.07] text-slate-300 hover:text-white'
+                  }`}
+                >
+                  <LogOut className="w-3 h-3 shrink-0" />
+                  <span className="hidden md:inline">Sign Out</span>
+                </button>
+              </div>
+            )}
+
+            {/* 1-Click JSON Export / Import Backup Buttons */}
+            {onExportJsonBackup && (
+              <button
+                id="btn-header-json-export"
+                type="button"
+                onClick={() => {
+                  triggerHaptic([10]);
+                  soundEngine.playTactileClick('UI_TAP');
+                  onExportJsonBackup();
+                }}
+                title="1-Click Export JSON State Backup"
+                aria-label="Export JSON Backup"
+                className={`h-7 px-2 rounded-full border text-[10px] font-mono flex items-center gap-1 cursor-pointer transition shrink-0 ${
+                  isEveningTheme
+                    ? 'bg-white/[0.03] hover:bg-white/[0.08] border-white/[0.07] text-amber-100/90'
+                    : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/[0.07] text-slate-200'
+                }`}
+              >
+                <Download className="w-3 h-3 shrink-0" />
+                <span className="hidden lg:inline">Export</span>
+              </button>
+            )}
+
+            {onImportJsonBackupFile && (
+              <button
+                id="btn-header-json-import"
+                type="button"
+                onClick={() => {
+                  triggerHaptic([10]);
+                  soundEngine.playTactileClick('UI_TAP');
+                  jsonFileInputRef.current?.click();
+                }}
+                title="1-Click Import JSON State Backup"
+                aria-label="Import JSON Backup"
+                className={`h-7 px-2 rounded-full border text-[10px] font-mono flex items-center gap-1 cursor-pointer transition shrink-0 ${
+                  isEveningTheme
+                    ? 'bg-white/[0.03] hover:bg-white/[0.08] border-white/[0.07] text-amber-100/90'
+                    : 'bg-white/[0.03] hover:bg-white/[0.08] border-white/[0.07] text-slate-200'
+                }`}
+              >
+                <Upload className="w-3 h-3 shrink-0" />
+                <span className="hidden lg:inline">Import</span>
+              </button>
+            )}
+
+            {/* End-of-Shift / Evening Mode Quick Toggle */}
+            <button
+              id="btn-header-evening-lock-toggle"
+              type="button"
+              onClick={() => {
+                triggerHaptic([12]);
+                soundEngine.playTactileClick('MODE_TOGGLE');
+                onToggleZeroWorkSimulation();
+              }}
+              title={
+                metrics.isZeroWorkLeft
+                  ? 'Resume Active Shift'
+                  : 'Toggle End-of-Shift Lock / Evening Recharge Menu'
+              }
+              aria-label="Toggle End-of-Shift Lock"
+              className={`h-7 w-7 rounded-full border flex items-center justify-center cursor-pointer transition shrink-0 ${
+                metrics.isZeroWorkLeft || isEveningTheme
+                  ? 'bg-amber-500/15 border-amber-400/35 text-amber-200'
+                  : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.05] text-slate-300'
+              }`}
+            >
+              {metrics.isZeroWorkLeft ? (
+                <Sun className="w-3.5 h-3.5 text-amber-300" />
+              ) : (
+                <Moon className="w-3.5 h-3.5 text-slate-300" />
+              )}
+            </button>
+
             {onToggleLayoutMode && (
               <button
                 id="btn-layout-mode-toggle"
@@ -459,6 +708,113 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                   >
                     <X className="w-4 h-4" />
                   </button>
+                </div>
+
+                {/* Cloud Firestore Sync & JSON Backup Card */}
+                <div className="p-4 rounded-2xl bg-white/[0.025] border border-white/[0.05] space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+                      <Cloud className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Cloud Sync &amp; Backup</span>
+                    </span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full border font-mono text-[10px] flex items-center gap-1 ${
+                        syncStatus === 'SYNCED'
+                          ? 'bg-emerald-500/15 border-emerald-400/35 text-emerald-200'
+                          : syncStatus === 'SYNCING'
+                          ? 'bg-sky-500/15 border-sky-400/35 text-sky-200'
+                          : 'bg-white/[0.03] border-white/[0.07] text-slate-300'
+                      }`}
+                    >
+                      {syncStatus === 'SYNCED'
+                        ? 'Synced'
+                        : syncStatus === 'SYNCING'
+                        ? 'Syncing...'
+                        : 'Local Mode'}
+                    </span>
+                  </div>
+
+                  {!user ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic([10]);
+                        onSignInWithGoogle?.();
+                      }}
+                      className="w-full px-3.5 py-2 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/30 text-xs font-medium text-sky-100 flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <span>Sign in with Google</span>
+                    </button>
+                  ) : (
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {user.photoURL ? (
+                          <img
+                            src={user.photoURL}
+                            alt={user.displayName || 'User'}
+                            referrerPolicy="no-referrer"
+                            className="w-6 h-6 rounded-full object-cover shrink-0"
+                          />
+                        ) : (
+                          <span className="w-6 h-6 rounded-full bg-sky-500/30 border border-sky-400/40 text-xs font-mono font-bold flex items-center justify-center text-sky-200 shrink-0">
+                            {(user.displayName || user.email || 'U')
+                              .charAt(0)
+                              .toUpperCase()}
+                          </span>
+                        )}
+                        <div className="min-w-0">
+                          <div className="text-xs font-medium text-slate-100 truncate">
+                            {user.displayName || 'Google Account'}
+                          </div>
+                          {user.email && (
+                            <div className="text-[10px] font-mono text-slate-400 truncate">
+                              {user.email}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic([10]);
+                          onSignOutUser?.();
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] text-[11px] font-mono text-slate-300 flex items-center gap-1 cursor-pointer shrink-0"
+                      >
+                        <LogOut className="w-3 h-3" />
+                        <span>Sign Out</span>
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    {onExportJsonBackup && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic([10]);
+                          onExportJsonBackup();
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.05] text-xs font-mono text-slate-200 flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Export JSON</span>
+                      </button>
+                    )}
+                    {onImportJsonBackupFile && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic([10]);
+                          jsonFileInputRef.current?.click();
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.05] text-xs font-mono text-slate-200 flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Upload className="w-3.5 h-3.5 text-sky-400" />
+                        <span>Import JSON</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Shift Status Summary */}

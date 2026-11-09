@@ -78,12 +78,10 @@ import {
   getLogicalDayKey,
   getPreExamTaperSuggestion,
   isBaselineSlotEarlyClearanceEligible,
-  loadExternalStateBackups,
   getProjectCognitiveDemand,
   parseFromStateInput,
   pushStateBackup,
   serializeToStateMarkdown,
-  STORAGE_KEY,
   syncTodayIntoDailyHistory,
   validateAndRestoreStateSnapshot,
 } from './state/defaultState';
@@ -147,8 +145,12 @@ import { Tab1Pipeline } from './components/Tab1Pipeline';
 import { Tab2TimerTriage } from './components/Tab2TimerTriage';
 import { Tab3Recharge } from './components/Tab3Recharge';
 import { Tab4Roadmap } from './components/Tab4Roadmap';
+import {
+  LIVE_SYNC_CHANNEL_NAME,
+  useSymmetrySync,
+} from './hooks/useSymmetrySync';
 
-export const LIVE_SYNC_CHANNEL_NAME = 'symmetrical_live_state';
+export { LIVE_SYNC_CHANNEL_NAME };
 
 function detectInitialArchitectUnlock(): {
   unlocked: boolean;
@@ -199,57 +201,44 @@ export function App() {
   const [architectModeUnlocked, setArchitectModeUnlocked] = useState<boolean>(
     initialUnlockInfo.unlocked
   );
+  const [statusNotice, setStatusNotice] = useState<string | null>(null);
 
-  const [state, setState] = useState<SymmetryState>(() => {
-    try {
-      if (typeof window !== 'undefined') {
-        const externalBackups = loadExternalStateBackups();
-        if (initialUnlockInfo.triggeredViaUrl) {
-          const averyState = buildStateForPreset('AVERY_DEFAULT');
-          return {
-            ...averyState,
-            dailyHistory: syncTodayIntoDailyHistory(averyState),
-            stateBackups: externalBackups,
-          };
-        }
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) {
-          const parsed = parseFromStateInput(saved);
-          if (
-            !initialUnlockInfo.unlocked &&
-            parsed.profilePresetId === 'AVERY_DEFAULT'
-          ) {
-            const publicDefault = buildStateForPreset('BALANCED_CORE');
-            return {
-              ...publicDefault,
-              dailyHistory: syncTodayIntoDailyHistory(publicDefault),
-              stateBackups:
-                parsed.stateBackups && parsed.stateBackups.length > 0
-                  ? parsed.stateBackups
-                  : externalBackups,
-            };
-          }
-          return {
-            ...parsed,
-            dailyHistory: syncTodayIntoDailyHistory(parsed),
-            stateBackups:
-              parsed.stateBackups && parsed.stateBackups.length > 0
-                ? parsed.stateBackups
-                : externalBackups,
-          };
-        }
-      }
-    } catch {
-      // Fallback to default deterministic state
-    }
-    if (initialUnlockInfo.unlocked) {
-      return DEFAULT_SYMMETRY_STATE;
-    }
-    const publicFallback = buildStateForPreset('BALANCED_CORE');
-    return {
-      ...publicFallback,
-      dailyHistory: syncTodayIntoDailyHistory(publicFallback),
-    };
+  // 10-Second Undo Toast Stack & Countdown
+  const undoStackRef = useRef<SymmetryState[]>([]);
+  const [undoToast, setUndoToast] = useState<UndoToastState | null>(null);
+  const [undoSecondsLeft, setUndoSecondsLeft] = useState<number>(10);
+  const toggleMiniHudRef = useRef<() => void>(() => {});
+
+  const pushUndoSnapshot = useCallback((snapshot: SymmetryState, label: string) => {
+    const cloned: SymmetryState = JSON.parse(JSON.stringify(snapshot));
+    undoStackRef.current = [cloned, ...undoStackRef.current.slice(0, 19)];
+    const expiresAtMs = Date.now() + 10_000;
+    setUndoToast({
+      id: `undo_${Date.now()}`,
+      label,
+      expiresAtMs,
+    });
+    setUndoSecondsLeft(10);
+  }, []);
+
+  const showNotice = useCallback((msg: string) => {
+    setStatusNotice(msg);
+  }, []);
+
+  const {
+    state,
+    setState,
+    user,
+    syncStatus,
+    isFirebaseConfigured,
+    signInWithGoogle,
+    signOutUser,
+    exportStateJson,
+    importStateJsonFile,
+  } = useSymmetrySync({
+    initialUnlockInfo,
+    onNotify: showNotice,
+    onPushUndoSnapshot: pushUndoSnapshot,
   });
 
   const [activeTab, setActiveTab] = useState<TabId>('PIPELINE');
@@ -304,7 +293,6 @@ export function App() {
   const [commandDockOpen, setCommandDockOpen] = useState(false);
   const [cinemaFocusMode, setCinemaFocusMode] = useState(false);
   const [stateIoText, setStateIoText] = useState('');
-  const [statusNotice, setStatusNotice] = useState<string | null>(null);
   const [notificationLog, setNotificationLog] = useState<NotificationLogEntry[]>([]);
   const [notificationsGranted, setNotificationsGranted] = useState(false);
   const [swOfflineReady, setSwOfflineReady] = useState(false);
@@ -335,32 +323,6 @@ export function App() {
       window.removeEventListener(PRO_MODE_CHANGE_EVENT, handleProModeChange);
   }, []);
 
-  // Cross-Tab Live Sync (BroadcastChannel) refs
-  const tabIdRef = useRef<string>(
-    `tab_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-  );
-  const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
-  const isReceivingRemoteSyncRef = useRef<boolean>(false);
-  const lastBroadcastSignatureRef = useRef<string>('');
-
-  // 10-Second Undo Toast Stack & Countdown
-  const undoStackRef = useRef<SymmetryState[]>([]);
-  const [undoToast, setUndoToast] = useState<UndoToastState | null>(null);
-  const [undoSecondsLeft, setUndoSecondsLeft] = useState<number>(10);
-  const toggleMiniHudRef = useRef<() => void>(() => {});
-
-  const pushUndoSnapshot = useCallback((snapshot: SymmetryState, label: string) => {
-    const cloned: SymmetryState = JSON.parse(JSON.stringify(snapshot));
-    undoStackRef.current = [cloned, ...undoStackRef.current.slice(0, 19)];
-    const expiresAtMs = Date.now() + 10_000;
-    setUndoToast({
-      id: `undo_${Date.now()}`,
-      label,
-      expiresAtMs,
-    });
-    setUndoSecondsLeft(10);
-  }, []);
-
   const handleTriggerUndo = useCallback(() => {
     const [latestSnapshot, ...rest] = undoStackRef.current;
     if (!latestSnapshot) return;
@@ -369,11 +331,7 @@ export function App() {
     setState(latestSnapshot);
     setUndoToast(null);
     setStatusNotice('Undid last action — restored previous block counter, countdown, and Roadmap totals.');
-  }, []);
-
-  const showNotice = (msg: string) => {
-    setStatusNotice(msg);
-  };
+  }, [setState]);
 
   const handleUpdateAudioSettings = useCallback(
     (patch: Partial<AudioEngineSettings>) => {
@@ -780,103 +738,6 @@ export function App() {
     const id = window.setTimeout(() => setStatusNotice(null), 4200);
     return () => window.clearTimeout(id);
   }, [statusNotice]);
-
-  // System 4: Cross-Tab Live Sync via BroadcastChannel('symmetrical_live_state')
-  useEffect(() => {
-    if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined') {
-      return;
-    }
-    let channel: BroadcastChannel | null = null;
-    try {
-      channel = new BroadcastChannel(LIVE_SYNC_CHANNEL_NAME);
-      broadcastChannelRef.current = channel;
-      channel.onmessage = (event) => {
-        const data = event.data;
-        if (
-          !data ||
-          data.senderTabId === tabIdRef.current ||
-          !data.state ||
-          typeof data.state !== 'object'
-        ) {
-          return;
-        }
-        isReceivingRemoteSyncRef.current = true;
-        const now = Date.now();
-        const incoming = data.state as SymmetryState;
-        // Reconcile running timer against shared targetEndTimeMs so tabs never duplicate or drift
-        const reconciledTimer = {
-          ...incoming.timer,
-          secondsLeft:
-            incoming.timer?.isRunning && incoming.timer?.targetEndTimeMs
-              ? Math.max(
-                  0,
-                  Math.ceil((incoming.timer.targetEndTimeMs - now) / 1000)
-                )
-              : incoming.timer?.secondsLeft ?? 300,
-        };
-        setState({
-          ...incoming,
-          timer: reconciledTimer,
-        });
-      };
-    } catch {
-      // BroadcastChannel unavailable in restricted context
-    }
-    return () => {
-      if (channel) {
-        channel.close();
-      }
-      broadcastChannelRef.current = null;
-    };
-  }, []);
-
-  // Persist to localStorage & broadcast meaningful state transitions across open tabs
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-    } catch {
-      // Ignore storage quota errors
-    }
-
-    if (isReceivingRemoteSyncRef.current) {
-      isReceivingRemoteSyncRef.current = false;
-      return;
-    }
-
-    const signature = JSON.stringify({
-      loadMode: state.loadMode,
-      cruisePlus: state.cruisePlus,
-      preExamTaperActive: state.preExamTaperActive,
-      customModeBlockAdjustment: state.customModeBlockAdjustment,
-      discretionaryBlocksCompletedToday: state.discretionaryBlocksCompletedToday,
-      earlyClearanceEnabled: state.earlyClearanceEnabled,
-      flashcardsReviewedCount: state.flashcardsReviewedCount,
-      baselineBlocks: state.baselineBlocks,
-      projectQueue: state.projectQueue,
-      todayBlockLogLen: state.todayBlockLog?.length || 0,
-      timerRunning: state.timer.isRunning,
-      timerMode: state.timer.mode,
-      timerWorkStage: state.timer.workStage,
-      timerTargetEnd: state.timer.targetEndTimeMs,
-      timerTask: state.timer.activeTaskTitle,
-      recharge: state.recharge,
-      roadmapTracks: state.roadmapTracks,
-      audioSettings: state.audioSettings,
-    });
-
-    if (signature !== lastBroadcastSignatureRef.current) {
-      lastBroadcastSignatureRef.current = signature;
-      try {
-        broadcastChannelRef.current?.postMessage({
-          senderTabId: tabIdRef.current,
-          timestamp: Date.now(),
-          state,
-        });
-      } catch {
-        // Ignore channel post errors
-      }
-    }
-  }, [state]);
 
   // System 2: Keep today's entry in `dailyHistory` synchronized with live shift telemetry
   useEffect(() => {
@@ -4231,6 +4092,19 @@ export function App() {
           architectModeUnlocked={architectModeUnlocked}
           onUnlockArchitectMode={handleUnlockArchitectMode}
           proModeUnlocked={proModeUnlocked}
+          user={user}
+          syncStatus={syncStatus}
+          isFirebaseConfigured={isFirebaseConfigured}
+          onSignInWithGoogle={() => {
+            void signInWithGoogle();
+          }}
+          onSignOutUser={() => {
+            void signOutUser();
+          }}
+          onExportJsonBackup={exportStateJson}
+          onImportJsonBackupFile={(file) => {
+            void importStateJsonFile(file);
+          }}
         />
 
         {/* Status Toast Notice */}
