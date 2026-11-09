@@ -34,17 +34,46 @@ const env: Record<string, string | undefined> =
     ? (import.meta.env as Record<string, string | undefined>)
     : {};
 
+const DEFAULT_FIREBASE_CONFIG: FirebaseEnvConfig = {
+  apiKey: 'AIzaSyDz6sfaU0VJHdDoRG4SRj3LLEYsOmY7vrE',
+  authDomain: 'symmetryproductivity.firebaseapp.com',
+  projectId: 'symmetryproductivity',
+  storageBucket: 'symmetryproductivity.firebasestorage.app',
+  messagingSenderId: '396601505774',
+  appId: '1:396601505774:web:5a1abeec27d6bfbe0900ff',
+};
+
 const buildTimeConfig: FirebaseEnvConfig = {
-  apiKey: (import.meta.env?.VITE_FIREBASE_API_KEY ?? env.VITE_FIREBASE_API_KEY ?? '').trim(),
-  authDomain: (import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN ?? env.VITE_FIREBASE_AUTH_DOMAIN ?? '').trim(),
-  projectId: (import.meta.env?.VITE_FIREBASE_PROJECT_ID ?? env.VITE_FIREBASE_PROJECT_ID ?? '').trim(),
-  storageBucket: (import.meta.env?.VITE_FIREBASE_STORAGE_BUCKET ?? env.VITE_FIREBASE_STORAGE_BUCKET ?? '').trim(),
+  apiKey: (
+    import.meta.env?.VITE_FIREBASE_API_KEY ??
+    env.VITE_FIREBASE_API_KEY ??
+    DEFAULT_FIREBASE_CONFIG.apiKey
+  ).trim(),
+  authDomain: (
+    import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN ??
+    env.VITE_FIREBASE_AUTH_DOMAIN ??
+    DEFAULT_FIREBASE_CONFIG.authDomain
+  ).trim(),
+  projectId: (
+    import.meta.env?.VITE_FIREBASE_PROJECT_ID ??
+    env.VITE_FIREBASE_PROJECT_ID ??
+    DEFAULT_FIREBASE_CONFIG.projectId
+  ).trim(),
+  storageBucket: (
+    import.meta.env?.VITE_FIREBASE_STORAGE_BUCKET ??
+    env.VITE_FIREBASE_STORAGE_BUCKET ??
+    DEFAULT_FIREBASE_CONFIG.storageBucket
+  ).trim(),
   messagingSenderId: (
     import.meta.env?.VITE_FIREBASE_MESSAGING_SENDER_ID ??
     env.VITE_FIREBASE_MESSAGING_SENDER_ID ??
-    ''
+    DEFAULT_FIREBASE_CONFIG.messagingSenderId
   ).trim(),
-  appId: (import.meta.env?.VITE_FIREBASE_APP_ID ?? env.VITE_FIREBASE_APP_ID ?? '').trim(),
+  appId: (
+    import.meta.env?.VITE_FIREBASE_APP_ID ??
+    env.VITE_FIREBASE_APP_ID ??
+    DEFAULT_FIREBASE_CONFIG.appId
+  ).trim(),
 };
 
 export function isValidFirebaseConfig(
