@@ -56,7 +56,8 @@ export function generateGeminiImportPrompt(
       const subSteps = Array.isArray(proj.blockSubSteps)
         ? proj.blockSubSteps.filter(Boolean)
         : [];
-      return `  - #${idx + 1} [${proj.id}] "${proj.title}" (${proj.completedBlocks}/${proj.totalBlocks} blocks done | track="${proj.trackId}") — 5m Startup: "${proj.startupStep}"${
+      const isSov = Boolean(proj.isSovereignDrip || proj.category === 'sovereign');
+      return `  - #${idx + 1} [${proj.id}] "${proj.title}" (${proj.completedBlocks}/${proj.totalBlocks} blocks done | category="${isSov ? 'sovereign' : 'institutional'}" | isSovereignDrip=${isSov} | track="${proj.trackId}") — 5m Startup: "${proj.startupStep}"${
         subSteps.length > 0 ? ` | subSteps: ${JSON.stringify(subSteps)}` : ''
       }`;
     });
@@ -107,6 +108,7 @@ export function generateGeminiImportPrompt(
     '',
     '=== CURRENT ACTIVE STATE SNAPSHOT (Preserve unchanged fields, update modified fields) ===',
     `- loadMode: "${loadModeSchemaValue}" (consecutiveSurgeDays: ${currentState.surgeConsecutiveDays || 0}, currentBandwidth: "${currentBandwidthSchemaValue}")`,
+    `- dailySovereignDripDone: ${Boolean(currentState.dailySovereignDripDone)} (dailySovereignDripTarget: ${currentState.dailySovereignDripTarget ?? 1})`,
     '- baselineSlots (Daily Core Baseline):',
     ...(baselineSummary.length > 0 ? baselineSummary : ['  - (None)']),
     '- closedList (Active Project Queue #1–#3, max 3 items):',
@@ -122,11 +124,13 @@ export function generateGeminiImportPrompt(
     '  "loadMode": "CRUISE" | "SURGE" | "TAPER_LAB",',
     '  "consecutiveSurgeDays": 0,',
     '  "currentBandwidth": "SHARP" | "STEADY" | "LOW",',
+    '  "dailySovereignDripDone": false,',
+    '  "dailySovereignDripTarget": 1,',
     '  "baselineSlots": [',
     '    { "id": "string", "label": "string", "blocksTarget": 1, "blocksDone": 0, "isMechanicalRecall": true, "supportsEarlyClearance": true, "startupStep5m": "string" }',
     '  ],',
     '  "closedList": [',
-    '    { "id": "string", "title": "string", "blocksTotal": 8, "blocksDone": 0, "startupStep5m": "string", "trackId": "string", "blockSubSteps": ["string"] }',
+    '    { "id": "string", "title": "string", "blocksTotal": 8, "blocksDone": 0, "startupStep5m": "string", "trackId": "string", "isSovereignDrip": false, "category": "institutional" | "sovereign", "blockSubSteps": ["string"] }',
     '  ],',
     '  "openList": ["string"],',
     '  "sevenDayPipeline": [',
@@ -244,6 +248,20 @@ export function applyGeminiJsonSchemaToState(
     }
   }
 
+  // 3b. dailySovereignDripDone / dailySovereignDripTarget
+  if (typeof parsedJson.dailySovereignDripDone === 'boolean') {
+    next.dailySovereignDripDone = parsedJson.dailySovereignDripDone;
+    appliedChanges.push(
+      `Daily Sovereign Drip → ${next.dailySovereignDripDone ? '1/1 DONE' : '0/1 PENDING'}`
+    );
+  }
+  if (typeof parsedJson.dailySovereignDripTarget === 'number') {
+    next.dailySovereignDripTarget = Math.max(
+      1,
+      Math.round(parsedJson.dailySovereignDripTarget)
+    );
+  }
+
   // 4. baselineSlots
   if (Array.isArray(parsedJson.baselineSlots) && parsedJson.baselineSlots.length > 0) {
     const rawSlots = parsedJson.baselineSlots as Record<string, unknown>[];
@@ -290,14 +308,17 @@ export function applyGeminiJsonSchemaToState(
         id: slotId || existing.id || `base_${idx + 1}`,
         title: label,
         targetBlocks: blocksTarget,
+        blocksTarget,
         completedBlocks: blocksDone,
         completed: blocksDone >= blocksTarget,
         partialCredit: blocksDone > 0 && blocksDone < blocksTarget ? 0.5 : 0,
         cognitiveDemand: isMechanical ? 'MECHANICAL_RECALL' : 'DEEP_SYNTHESIS',
         earlyClearanceEligible: supportsEarly,
+        supportsEarlyClearance: supportsEarly,
         startupStep,
       };
     });
+    next.baselineSlots = next.baselineBlocks;
     appliedChanges.push(`Daily Core Baseline updated (${next.baselineBlocks.length} slots)`);
   }
 
@@ -318,7 +339,19 @@ export function applyGeminiJsonSchemaToState(
           Number(item.blocksDone ?? item.completedBlocks ?? existing?.completedBlocks ?? 0)
         )
       );
-      const rawTrack = String(item.trackId || existing?.trackId || 'science').toLowerCase();
+      const isSov =
+        typeof item.isSovereignDrip === 'boolean'
+          ? item.isSovereignDrip
+          : item.category === 'sovereign'
+          ? true
+          : item.category === 'institutional'
+          ? false
+          : slotNum === 1
+          ? false
+          : Boolean(existing?.isSovereignDrip || existing?.category === 'sovereign');
+      const rawTrack = String(
+        item.trackId || existing?.trackId || (isSov ? 'coding' : 'science')
+      ).toLowerCase();
       const validTrackIds: TrackId[] = ['science', 'writing', 'personal', 'coding', 'music'];
       const trackId: TrackId = (validTrackIds.includes(rawTrack as TrackId)
         ? rawTrack
@@ -351,6 +384,8 @@ export function applyGeminiJsonSchemaToState(
           item.nextStepNote || existing?.nextStepNote || startupStep
         ),
         blockSubSteps,
+        isSovereignDrip: isSov,
+        category: isSov ? 'sovereign' : 'institutional',
       };
     });
 
@@ -383,16 +418,25 @@ export function applyGeminiJsonSchemaToState(
           );
           if (existing) return existing;
           const isDeck = /slide|deck|presentation/i.test(title);
+          const isSov = /sovereign|sextant|symmetryproductivity|novel|treatise/i.test(title);
+          const blocksMatch = title.match(/\((\d+)b/i);
+          const totalBlocks = blocksMatch
+            ? Math.max(1, Number(blocksMatch[1]))
+            : isDeck
+            ? 4
+            : 8;
           return {
             id: `open_${idx + 1}_${Date.now().toString(36).slice(-3)}`,
             title,
             presetType: isDeck ? 'SLIDES_4' : 'PAPER_8',
             completedBlocks: 0,
-            totalBlocks: isDeck ? 4 : 8,
-            trackId: 'science',
+            totalBlocks,
+            trackId: isSov ? 'coding' : 'science',
             startupStep: 'Open project file and complete first 5m startup step.',
             nextStepNote: 'Queued in Open List backlog.',
             cognitiveDemand: 'DEEP_SYNTHESIS',
+            isSovereignDrip: isSov,
+            category: isSov ? 'sovereign' : 'institutional',
           };
         }
         if (entry && typeof entry === 'object') {
@@ -400,17 +444,24 @@ export function applyGeminiJsonSchemaToState(
           const title = String(obj.title || '').trim();
           if (!title) return null;
           const blocksTotal = Number(obj.blocksTotal ?? obj.totalBlocks ?? 8);
+          const isSov = Boolean(
+            obj.isSovereignDrip ||
+              obj.category === 'sovereign' ||
+              /sovereign\s+drip/i.test(title)
+          );
           return {
             id: String(obj.id || `open_${idx + 1}`),
             title,
             presetType: (obj.presetType as ProjectPresetType) || (blocksTotal <= 4 ? 'SLIDES_4' : 'PAPER_8'),
             completedBlocks: Number(obj.blocksDone ?? obj.completedBlocks ?? 0),
             totalBlocks: blocksTotal,
-            trackId: ((obj.trackId as TrackId) || 'science'),
+            trackId: ((obj.trackId as TrackId) || (isSov ? 'coding' : 'science')),
             startupStep: String(
               obj.startupStep5m || obj.startupStep || 'Open project file and complete first 5m startup step.'
             ),
             nextStepNote: String(obj.nextStepNote || 'Queued in Open List backlog.'),
+            isSovereignDrip: isSov,
+            category: isSov ? 'sovereign' : 'institutional',
           };
         }
         return null;

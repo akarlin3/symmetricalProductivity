@@ -66,8 +66,14 @@ export function cycleCognitiveDemandTag(
 }
 
 export function getBaselineSlotTargetBlocks(block: BaselineBlock): number {
-  if (typeof block.targetBlocks === 'number' && !Number.isNaN(block.targetBlocks)) {
-    return Math.max(1, Math.min(6, Math.round(block.targetBlocks)));
+  const rawTarget =
+    typeof block.targetBlocks === 'number' && !Number.isNaN(block.targetBlocks)
+      ? block.targetBlocks
+      : typeof block.blocksTarget === 'number' && !Number.isNaN(block.blocksTarget)
+      ? block.blocksTarget
+      : undefined;
+  if (typeof rawTarget === 'number') {
+    return Math.max(1, Math.min(6, Math.round(rawTarget)));
   }
   return 1;
 }
@@ -95,6 +101,9 @@ export function isBaselineSlotEarlyClearanceEligible(block: BaselineBlock): bool
   if (typeof block.earlyClearanceEligible === 'boolean') {
     return block.earlyClearanceEligible;
   }
+  if (typeof block.supportsEarlyClearance === 'boolean') {
+    return block.supportsEarlyClearance;
+  }
   return (
     block.category === 'FLASHCARDS_ANATOMY' || block.category === 'FLASHCARDS_COMP'
   );
@@ -107,6 +116,13 @@ export function isBaselineSlotLateNightBlocked(block: BaselineBlock): boolean {
   return (
     block.category === 'FLASHCARDS_ANATOMY' || block.category === 'FLASHCARDS_COMP'
   );
+}
+
+export function isProjectSovereignDrip(
+  project: Pick<ProjectItem, 'isSovereignDrip' | 'category'> | undefined | null
+): boolean {
+  if (!project) return false;
+  return Boolean(project.isSovereignDrip || project.category === 'sovereign');
 }
 
 export function getEffectiveEveningCategoryCards(
@@ -265,6 +281,24 @@ export function getActiveFocusProject(
     return state.projectQueue[1];
   }
   return state.projectQueue[0];
+}
+
+export function getActiveSovereignDripProject(
+  state: SymmetryState
+): ProjectItem | undefined {
+  const sovereignItems = (state.projectQueue || []).filter((p) =>
+    isProjectSovereignDrip(p)
+  );
+  if (sovereignItems.length === 0) return undefined;
+  // Prefer a 1-block Sovereign Drip item with 0/1 completed (e.g. Monday Sovereign Drip sextant-core)
+  const oneBlockReady = sovereignItems.find(
+    (p) => p.completedBlocks < p.totalBlocks && p.totalBlocks === 1
+  );
+  if (oneBlockReady) return oneBlockReady;
+  const anyUncompleted = sovereignItems.find(
+    (p) => p.completedBlocks < p.totalBlocks
+  );
+  return anyUncompleted || sovereignItems[0];
 }
 
 export function getActiveBlockDurationsSeconds(state: SymmetryState): {
@@ -474,40 +508,84 @@ const initialLogicalDay = getLogicalDayKey();
 const DEFAULT_OPEN_LIST_BACKLOG: SymmetryState['openListBacklog'] = [
   {
     id: 'proj_4',
-    title: 'Pharmacology Mechanism Summary Sheet (2-Page Paper)',
+    title: 'SymmetryProductivity v1.0 Live Build & Public Launch (symmetrical.averykarlin.org) (3b — Promotes Mon after sextant-core)',
+    presetType: 'CUSTOM',
+    completedBlocks: 0,
+    totalBlocks: 3,
+    trackId: 'coding',
+    startupStep: 'Run production build check, verify DNS/deployment on symmetrical.averykarlin.org, and ship v1.0.',
+    nextStepNote: 'Promotes Mon after sextant-core v0.1.0 Public Launch & Zenodo DOI Mint completes.',
+    cognitiveDemand: 'DEEP_SYNTHESIS',
+    isSovereignDrip: true,
+    category: 'sovereign',
+  },
+  {
+    id: 'proj_5',
+    title: 'Lab Report #4 (From Tue, Nov 10 Double Lab — Due Tue, Nov 24) (8b)',
     presetType: 'PAPER_8',
     completedBlocks: 0,
     totalBlocks: 8,
     trackId: 'science',
-    startupStep: 'Set up 2-column receptor table and fill first 3 rows.',
-    nextStepNote: 'Ready to promote when an active queue slot opens.',
+    startupStep: 'Import raw measurement tables from Tue Nov 10 Double Lab and plot calibration curves.',
+    nextStepNote: 'Promotes after Practicum Proposal completes on Wed, Nov 11.',
     cognitiveDemand: 'DEEP_SYNTHESIS',
-  },
-  {
-    id: 'proj_5',
-    title: 'Journal Club Presentation (Slide Deck)',
-    presetType: 'SLIDES_4',
-    completedBlocks: 0,
-    totalBlocks: 4,
-    trackId: 'writing',
-    startupStep: 'Paste primary figure panels into slides 2 and 3.',
-    nextStepNote: 'Queued in project backlog.',
-    cognitiveDemand: 'DEEP_SYNTHESIS',
+    isSovereignDrip: false,
+    category: 'institutional',
   },
   {
     id: 'proj_6',
-    title: 'Clinical Case Review Protocol Deck',
-    presetType: 'SLIDES_4',
+    title: 'Practicum Project Phase 1: Coding, Data Pipeline & Figures (Nov 25 – Dec 3) (10b)',
+    presetType: 'CUSTOM',
     completedBlocks: 0,
-    totalBlocks: 4,
+    totalBlocks: 10,
     trackId: 'science',
-    startupStep: 'Draft 4-slide diagnostic differential outline.',
-    nextStepNote: 'Queued in project backlog.',
+    startupStep: 'Initialize practicum analysis notebook and run baseline dataset ingestion script.',
+    nextStepNote: 'Scheduled for Nov 25 – Dec 3 window (10 blocks).',
+    cognitiveDemand: 'DEEP_SYNTHESIS',
+    isSovereignDrip: false,
+    category: 'institutional',
+  },
+  {
+    id: 'proj_7',
+    title: 'Debut Science Fiction Novel — Premise & Worldbuilding Sandbox (Sovereign Drip)',
+    presetType: 'PAPER_8',
+    completedBlocks: 0,
+    totalBlocks: 8,
+    trackId: 'writing',
+    startupStep: 'Open worldbuilding ledger and draft 1 scene beat or character premise paragraph.',
+    nextStepNote: 'Sovereign Ambition Drip creative writing sandbox.',
+    cognitiveDemand: 'DEEP_SYNTHESIS',
+    isSovereignDrip: true,
+    category: 'sovereign',
+  },
+  {
+    id: 'proj_8',
+    title: 'Late-Nov Job Search Cover Letter Pre-Warm (2b/wknd — Master Resume 2/2 Already 100% DONE!)',
+    presetType: 'QUICK_2',
+    completedBlocks: 0,
+    totalBlocks: 2,
+    trackId: 'personal',
+    startupStep: 'Open cover letter template and tailor opening clinical physics paragraph.',
+    nextStepNote: 'Master Resume 2/2 Already 100% DONE! Weekend 2-block cover letter pre-warm.',
     cognitiveDemand: 'LIGHT_ADMIN',
+    isSovereignDrip: false,
+    category: 'institutional',
   },
 ];
 
 const DEFAULT_COMPLETED_DELIVERABLES: SymmetryState['completedDeliverablesLog'] = [
+  {
+    id: 'arch_0',
+    title: 'Master Resume Overhaul & Clinical Physics CV (2/2 — 100% DONE!)',
+    trackId: 'personal',
+    presetType: 'QUICK_2',
+    totalBlocks: 2,
+    blockCount: 2,
+    blocksCompleted: 2,
+    date: '2026-11-08',
+    completedDate: '2026-11-08',
+    completedAt: '2026-11-08',
+  },
   {
     id: 'arch_1',
     title: 'Cardiovascular Pathophysiology Case Deck (4-Block Slide Deck)',
@@ -532,61 +610,9 @@ const DEFAULT_COMPLETED_DELIVERABLES: SymmetryState['completedDeliverablesLog'] 
     completedDate: '2026-11-02',
     completedAt: '2026-11-02',
   },
-  {
-    id: 'arch_3',
-    title: 'Q4 Home Filter & Preventive Maintenance Audit',
-    trackId: 'personal',
-    presetType: 'CUSTOM',
-    totalBlocks: 2,
-    blockCount: 2,
-    blocksCompleted: 2,
-    date: '2026-10-29',
-    completedDate: '2026-10-29',
-    completedAt: '2026-10-29',
-  },
 ];
 
-export const DEFAULT_TODAY_BLOCK_LOG: TodayBlockLogEntry[] = [
-  {
-    id: 'log_init_fc_anat_1',
-    timestamp: '2026-11-07T09:15:00.000Z',
-    logicalDate: initialLogicalDay,
-    category: 'FLOOR_ANATOMY',
-    title: 'Anatomy Flashcards — Block 1/1',
-    durationMinutes: 20,
-    blockUnits: 1.0,
-    roadmapTrack: 'science',
-    stroke: 'INPUT',
-    sourceBlockId: 'fc_anat_1',
-    rungNumber: 1,
-  },
-  {
-    id: 'log_init_fc_comp_1',
-    timestamp: '2026-11-07T09:40:00.000Z',
-    logicalDate: initialLogicalDay,
-    category: 'FLOOR_COMP',
-    title: 'Comp Flashcards — Block 1/3',
-    durationMinutes: 20,
-    blockUnits: 1.0,
-    roadmapTrack: 'science',
-    stroke: 'INPUT',
-    sourceBlockId: 'fc_comp_1',
-    rungNumber: 1,
-  },
-  {
-    id: 'log_init_hc_read_1',
-    timestamp: '2026-11-07T10:15:00.000Z',
-    logicalDate: initialLogicalDay,
-    category: 'FLOOR_READING',
-    title: 'Half-Chapter Reading / Equations — Block 1/2',
-    durationMinutes: 20,
-    blockUnits: 1.0,
-    roadmapTrack: 'science',
-    stroke: 'INPUT',
-    sourceBlockId: 'hc_read_1',
-    rungNumber: 1,
-  },
-];
+export const DEFAULT_TODAY_BLOCK_LOG: TodayBlockLogEntry[] = [];
 
 export function buildDefault90DayHistory(
   anchorLogicalDay: string = initialLogicalDay
@@ -609,11 +635,11 @@ export function buildDefault90DayHistory(
     if (offset === 0) {
       entries.push({
         logicalDate: dateKey,
-        mode: 'CRUISE',
-        blocksCompleted: 5,
-        inputBlocks: 3,
-        outputBlocks: 2,
-        eveningSessions: 3,
+        mode: 'TAPER',
+        blocksCompleted: 0,
+        inputBlocks: 0,
+        outputBlocks: 0,
+        eveningSessions: 0,
       });
       continue;
     }
@@ -691,8 +717,205 @@ export function buildDefault90DayHistory(
 export const DEFAULT_DAILY_HISTORY: DailyHistoryEntry[] =
   buildDefault90DayHistory(initialLogicalDay);
 
+const DEFAULT_BASELINE_SLOTS: BaselineBlock[] = [
+  {
+    id: 'floor_half_ch',
+    title: 'Daily Half-Chapter (29 Remaining to Comp)',
+    category: 'READING',
+    completed: false,
+    targetBlocks: 3,
+    blocksTarget: 3,
+    completedBlocks: 0,
+    bankedViaEarlyClearance: false,
+    earlyClearanceEligible: false,
+    supportsEarlyClearance: false,
+    lateNightBlocker: false,
+    startupStep:
+      'Open assigned half-chapter, read first 2 pages, write down core equations (2b reading + 1b synthesis).',
+    trackId: 'science',
+    cognitiveDemand: 'DEEP_SYNTHESIS',
+  },
+  {
+    id: 'floor_fc_anatomy',
+    title: 'Flashcard Sprints (Anatomy Queue — Pre-Exam 50/50 Split)',
+    category: 'FLASHCARDS_ANATOMY',
+    completed: false,
+    targetBlocks: 2,
+    blocksTarget: 2,
+    completedBlocks: 0,
+    bankedViaEarlyClearance: false,
+    earlyClearanceEligible: true,
+    supportsEarlyClearance: true,
+    lateNightBlocker: true,
+    startupStep:
+      'Open Anatomy Decks 1–4 (Pre-Exam 50/50 Split) and clear first 15 cards.',
+    trackId: 'science',
+    cognitiveDemand: 'MECHANICAL_RECALL',
+  },
+  {
+    id: 'floor_fc_comp',
+    title: 'Flashcard Sprints (Comp Queue — 250-Card Cap)',
+    category: 'FLASHCARDS_COMP',
+    completed: false,
+    targetBlocks: 2,
+    blocksTarget: 2,
+    completedBlocks: 0,
+    bankedViaEarlyClearance: false,
+    earlyClearanceEligible: true,
+    supportsEarlyClearance: true,
+    lateNightBlocker: true,
+    startupStep:
+      'Open Comp flashcard review queue (250-Card Cap) and clear first 20 due cards.',
+    trackId: 'science',
+    cognitiveDemand: 'MECHANICAL_RECALL',
+  },
+];
+
+const DEFAULT_SEVEN_DAY_PIPELINE: SymmetryState['pipelineDays'] = [
+  {
+    dayIndex: 1,
+    dayLabel: 'Mon, Nov 9',
+    loadMode: 'TAPER',
+    mode: 'TAPER_LAB',
+    modeAndAnchors: 'TAPER_LAB (~2h Y-90 Lab + D&D Night Early Stop)',
+    projectBlocksSummary: '3 proj blocks',
+    deliverablesCompleted:
+      'Practicum Proposal (3/6 — 50% DONE) + SOVEREIGN DRIP: sextant-core v0.1.0 Public Launch & DOI (1/1 LIVE!) (28 Half-Ch left)',
+    primaryDeliverable:
+      'Practicum Proposal (3/6 — 50% DONE) + SOVEREIGN DRIP: sextant-core v0.1.0 Public Launch & DOI (1/1 LIVE!) (28 Half-Ch left)',
+    cruisePlus: false,
+    baseTargetBlocks: 10,
+    deductedBlocksFromExtension: 0,
+    completedBlocks: 0,
+    fixedEvent: 'LAB_2H',
+    fixedEventTimeLabel: '~2h Y-90 Lab + D&D Night Early Stop',
+    earlyMorningAnchor: true,
+    isToday: true,
+  },
+  {
+    dayIndex: 2,
+    dayLabel: 'Tue, Nov 10',
+    loadMode: 'TAPER',
+    mode: 'TAPER_LAB',
+    modeAndAnchors: 'TAPER_LAB (Double Lab Incl. Lab #4)',
+    projectBlocksSummary: '3 proj blocks',
+    deliverablesCompleted:
+      'Practicum Proposal (5/6 — 83% DONE) + SOVEREIGN DRIP: Revised Paper #1 Sent (1/3 DONE!) (27 left)',
+    primaryDeliverable:
+      'Practicum Proposal (5/6 — 83% DONE) + SOVEREIGN DRIP: Revised Paper #1 Sent (1/3 DONE!) (27 left)',
+    cruisePlus: false,
+    baseTargetBlocks: 10,
+    deductedBlocksFromExtension: 0,
+    completedBlocks: 0,
+    fixedEvent: 'LAB_2H',
+    fixedEventTimeLabel: 'Double Lab Incl. Lab #4',
+    earlyMorningAnchor: true,
+    isToday: false,
+  },
+  {
+    dayIndex: 3,
+    dayLabel: 'Wed, Nov 11',
+    loadMode: 'TAPER',
+    mode: 'TAPER_LAB',
+    modeAndAnchors: 'TAPER_LAB (Pre-Exam Taper — Half-Ch Canceled)',
+    projectBlocksSummary: '2 proj blocks',
+    deliverablesCompleted:
+      'Practicum Proposal (6/6 — 100% DONE!) + SOVEREIGN DRIP: Revised Paper #2 Sent (2/3 DONE!) (27 left)',
+    primaryDeliverable:
+      'Practicum Proposal (6/6 — 100% DONE!) + SOVEREIGN DRIP: Revised Paper #2 Sent (2/3 DONE!) (27 left)',
+    cruisePlus: false,
+    baseTargetBlocks: 9,
+    deductedBlocksFromExtension: 0,
+    completedBlocks: 0,
+    fixedEvent: 'LAB_2H',
+    fixedEventTimeLabel: 'Pre-Exam Taper — Half-Ch Canceled',
+    earlyMorningAnchor: true,
+    isToday: false,
+  },
+  {
+    dayIndex: 4,
+    dayLabel: 'Thu, Nov 12',
+    loadMode: 'TAPER',
+    mode: 'TAPER_LAB',
+    modeAndAnchors: 'TAPER_LAB (EXAM DAY)',
+    projectBlocksSummary: '0 proj blocks',
+    deliverablesCompleted:
+      'ANATOMY EXAM (Decks 1–4 All 16/16 Done!) + Licensing Practicum + Proposal Submitted!',
+    primaryDeliverable:
+      'ANATOMY EXAM (Decks 1–4 All 16/16 Done!) + Licensing Practicum + Proposal Submitted!',
+    cruisePlus: false,
+    baseTargetBlocks: 7,
+    deductedBlocksFromExtension: 0,
+    completedBlocks: 0,
+    fixedEvent: 'LAB_2H',
+    fixedEventTimeLabel: 'EXAM DAY — Anatomy Exam + Licensing Practicum',
+    earlyMorningAnchor: true,
+    isToday: false,
+  },
+  {
+    dayIndex: 5,
+    dayLabel: 'Fri, Nov 13',
+    loadMode: 'CRUISE',
+    mode: 'CRUISE',
+    modeAndAnchors: 'CRUISE (The Imaginary Invalid — 6:00 PM Early Shutdown)',
+    projectBlocksSummary: '4 proj blocks',
+    deliverablesCompleted:
+      'SOVEREIGN DRIP: Revised Paper #3 Sent (3/3 — 100% DONE!) + SymmetryProductivity v1.0 Public Launch (3 blocks / 60m) (26 left)',
+    primaryDeliverable:
+      'SOVEREIGN DRIP: Revised Paper #3 Sent (3/3 — 100% DONE!) + SymmetryProductivity v1.0 Public Launch (3 blocks / 60m) (26 left)',
+    cruisePlus: false,
+    baseTargetBlocks: 11,
+    deductedBlocksFromExtension: 0,
+    completedBlocks: 0,
+    fixedEvent: 'EVENING_OUTING_6PM',
+    fixedEventTimeLabel: 'The Imaginary Invalid — 6:00 PM Early Shutdown',
+    earlyMorningAnchor: false,
+    isToday: false,
+  },
+  {
+    dayIndex: 6,
+    dayLabel: 'Sat, Nov 14',
+    loadMode: 'CRUISE',
+    mode: 'CRUISE',
+    modeAndAnchors: 'CRUISE (Weekend Flow)',
+    projectBlocksSummary: '4 proj blocks',
+    deliverablesCompleted:
+      'Lab Report #4 (3/8) + Daily Sovereign Ambition Drip (1b) (25 left)',
+    primaryDeliverable:
+      'Lab Report #4 (3/8) + Daily Sovereign Ambition Drip (1b) (25 left)',
+    cruisePlus: false,
+    baseTargetBlocks: 11,
+    deductedBlocksFromExtension: 0,
+    completedBlocks: 0,
+    fixedEvent: 'NONE',
+    fixedEventTimeLabel: 'Weekend Flow',
+    earlyMorningAnchor: false,
+    isToday: false,
+  },
+  {
+    dayIndex: 7,
+    dayLabel: 'Sun, Nov 15',
+    loadMode: 'CRUISE',
+    mode: 'CRUISE',
+    modeAndAnchors: 'CRUISE (Weekend Flow)',
+    projectBlocksSummary: '4 proj blocks',
+    deliverablesCompleted:
+      'Lab Report #4 (6/8) + Daily Sovereign Ambition Drip (1b) (24 left)',
+    primaryDeliverable:
+      'Lab Report #4 (6/8) + Daily Sovereign Ambition Drip (1b) (24 left)',
+    cruisePlus: false,
+    baseTargetBlocks: 11,
+    deductedBlocksFromExtension: 0,
+    completedBlocks: 0,
+    fixedEvent: 'NONE',
+    fixedEventTimeLabel: 'Weekend Flow',
+    earlyMorningAnchor: false,
+    isToday: false,
+  },
+];
+
 export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
-  version: '1.0.0',
+  version: '1.1.0',
   profilePresetId: 'AVERY_DEFAULT',
   profileName: 'Avery Default (Medical Physics, Writing & Maker)',
   logicalDayRolloverHour: 4,
@@ -721,220 +944,96 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
   dailyHistory: DEFAULT_DAILY_HISTORY,
   stateBackups: [],
   audioSettings: DEFAULT_AUDIO_ENGINE_SETTINGS,
-  upcomingMilestones: ['Nov 12: Anatomy Exam', 'Dec 8–9: Comp Exam'],
+  upcomingMilestones: ['Thu, Nov 12: Anatomy Exam & Proposal Due', 'Dec 8–9: Comp Exam'],
   bandwidth: 'Sharp',
-  loadMode: 'CRUISE',
+  loadMode: 'TAPER',
   preExamTaperActive: false,
   cruisePlus: false,
-  customModeBlockAdjustment: 12, // 12 total blocks in Cruise; 3 completed = 9 left = 180m (3h 00m work left)
+  customModeBlockAdjustment: 10, // Mon, Nov 9 TAPER_LAB: 7 baseline blocks + 3 project blocks (2 Practicum Proposal + 1 Sovereign Drip)
 
-  surgeConsecutiveDays: 1,
+  surgeConsecutiveDays: 0,
   midDayResetCompletedToday: false,
-  fixedEvent: 'NONE',
-  flashcardsReviewedCount: 95,
+  fixedEvent: 'LAB_2H',
+  flashcardsReviewedCount: 0,
   flashcardsDailyCap: 250,
   earlyClearanceEnabled: false,
-  baselineBlocks: [
-    {
-      id: 'fc_anat_1',
-      title: '1b Anatomy Cards — Block 1/1',
-      category: 'FLASHCARDS_ANATOMY',
-      completed: true,
-      bankedViaEarlyClearance: false,
-      startupStep: 'Open deck + clear first 15 cards',
-      trackId: 'science',
-      cognitiveDemand: 'MECHANICAL_RECALL',
-    },
-    {
-      id: 'fc_comp_1',
-      title: '3b Comp Cards (250 cap) — Block 1/3',
-      category: 'FLASHCARDS_COMP',
-      completed: true,
-      bankedViaEarlyClearance: false,
-      startupStep: 'Open deck + clear first 15 cards',
-      trackId: 'science',
-      cognitiveDemand: 'MECHANICAL_RECALL',
-    },
-    {
-      id: 'fc_comp_2',
-      title: '3b Comp Cards (250 cap) — Block 2/3',
-      category: 'FLASHCARDS_COMP',
-      completed: false,
-      bankedViaEarlyClearance: false,
-      startupStep: 'Clear 20 due cards in the Comp deck without pausing on flags.',
-      trackId: 'science',
-      cognitiveDemand: 'MECHANICAL_RECALL',
-    },
-    {
-      id: 'fc_comp_3',
-      title: '3b Comp Cards (250 cap) — Block 3/3',
-      category: 'FLASHCARDS_COMP',
-      completed: false,
-      bankedViaEarlyClearance: false,
-      startupStep: 'Finish remaining Comp review queue or toggle Early Clearance if zeroed.',
-      trackId: 'science',
-      cognitiveDemand: 'MECHANICAL_RECALL',
-    },
-    {
-      id: 'hc_read_1',
-      title: '2b Half-Chapter Reading — Block 1/2',
-      category: 'READING',
-      completed: true,
-      startupStep: 'Open assigned section, read first 2 pages, and write down core equations.',
-      trackId: 'science',
-      cognitiveDemand: 'DEEP_SYNTHESIS',
-    },
-    {
-      id: 'hc_read_2',
-      title: '2b Half-Chapter Reading — Block 2/2',
-      category: 'READING',
-      completed: false,
-      startupStep: 'Work through 2 worked problem derivations from the current half-chapter.',
-      trackId: 'science',
-      cognitiveDemand: 'DEEP_SYNTHESIS',
-    },
-    {
-      id: 'hc_synth_1',
-      title: '1b Synthesis — Block 1/1',
-      category: 'SYNTHESIS',
-      completed: false,
-      startupStep: 'Condense today’s half-chapter into 5 bulleted mechanisms from memory.',
-      trackId: 'writing',
-      cognitiveDemand: 'DEEP_SYNTHESIS',
-    },
-  ],
+  baselineBlocks: DEFAULT_BASELINE_SLOTS,
+  baselineSlots: DEFAULT_BASELINE_SLOTS,
   projectQueue: [
     {
       id: 'proj_1',
       slot: 1,
-      title: '1. Anatomy & Comp Exam Prep Sprint',
-      presetType: 'PAPER_8',
-      completedBlocks: 2,
-      totalBlocks: 8,
+      title: '1. Practicum Presentation Research Project Proposal (Due Thu, Nov 12)',
+      presetType: 'CUSTOM',
+      completedBlocks: 1,
+      totalBlocks: 6,
       trackId: 'science',
-      startupStep: 'Open deck + clear first 15 cards',
-      nextStepNote: 'Primary focus target for Nov 12 Anatomy Exam & Dec 8–9 Comp Exam.',
+      startupStep:
+        'Open Practicum Proposal draft and write the next scheduled methodology/aims section (5 remaining across Mon–Wed).',
+      nextStepNote: '1 / 6 blocks done (5 remaining across Mon–Wed) — Serialized Institutional Focus #1.',
       cognitiveDemand: 'DEEP_SYNTHESIS',
+      isSovereignDrip: false,
+      category: 'institutional',
+      blockSubSteps: [
+        'Block 1: Topic & Clinical Physics Problem Statement (DONE)',
+        'Block 2: Specific Aims & Quantitative Hypothesis [Mon]',
+        'Block 3: Dataset & Pipeline Architecture [Mon]',
+        'Block 4: Validation Metrics & Figure Plan [Tue]',
+        'Block 5: Timeline & Preliminary Benchmarks [Tue]',
+        'Block 6: Final Proofread & Submission Check [Wed]',
+      ],
     },
     {
       id: 'proj_2',
       slot: 2,
-      title: '2. 12-Page AI/Coding Practicum Paper (8b)',
-      presetType: 'PAPER_8',
+      title: '2. Send Out 3 Revised Academic Papers (1 Block Per Paper)',
+      presetType: 'CUSTOM',
       completedBlocks: 0,
-      totalBlocks: 8,
+      totalBlocks: 3,
       trackId: 'science',
-      startupStep: 'Open draft + write 2 bullet lines',
-      nextStepNote: 'Locked until Item #1 completes.',
+      startupStep:
+        'Open revised manuscript submission folder, verify response-to-reviewers PDF, and submit.',
+      nextStepNote:
+        '0 / 3 blocks done (Block 1: Paper #1 [Tue Drip], Block 2: Paper #2 [Wed Drip], Block 3: Paper #3 [Fri Drip]).',
       cognitiveDemand: 'DEEP_SYNTHESIS',
+      isSovereignDrip: true,
+      category: 'sovereign',
+      blockSubSteps: [
+        'Block 1: Paper #1 [Tue Drip]',
+        'Block 2: Paper #2 [Wed Drip]',
+        'Block 3: Paper #3 [Fri Drip]',
+      ],
     },
     {
       id: 'proj_3',
       slot: 3,
-      title: '3. NMR / MRM / Green Journal Manuscript Revisions (8b)',
-      presetType: 'PAPER_8',
+      title: '3. sextant-core v0.1.0 Public GitHub Launch & Zenodo DOI Mint',
+      presetType: 'CUSTOM',
       completedBlocks: 0,
-      totalBlocks: 8,
-      trackId: 'science',
-      startupStep: 'Open manuscript + review 1 figure/paragraph',
-      nextStepNote: 'Locked until Item #1 and Item #2 complete.',
-      cognitiveDemand: 'LIGHT_ADMIN',
+      totalBlocks: 1,
+      trackId: 'coding',
+      startupStep:
+        'Push public repo, flip 1-click Zenodo integration, tag v0.1.0, mint citable DOI.',
+      nextStepNote:
+        '0 / 1 block done (Monday Sovereign Drip: Push public repo, flip 1-click Zenodo integration, tag v0.1.0, mint citable DOI).',
+      cognitiveDemand: 'DEEP_SYNTHESIS',
+      isSovereignDrip: true,
+      category: 'sovereign',
+      blockSubSteps: [
+        'Monday Sovereign Drip: Push public repo, flip 1-click Zenodo integration, tag v0.1.0, mint citable DOI',
+      ],
     },
   ],
   projectBacklog: DEFAULT_OPEN_LIST_BACKLOG,
   openListBacklog: DEFAULT_OPEN_LIST_BACKLOG,
   completedDeliverablesLog: DEFAULT_COMPLETED_DELIVERABLES,
   completedDeliverablesArchive: DEFAULT_COMPLETED_DELIVERABLES,
-  pipelineDays: [
-    {
-      dayIndex: 1,
-      dayLabel: 'Day 1 (Today)',
-      loadMode: 'CRUISE',
-      cruisePlus: false,
-      baseTargetBlocks: 12,
-      deductedBlocksFromExtension: 0,
-      completedBlocks: 3,
-      fixedEvent: 'NONE',
-      earlyMorningAnchor: false,
-      isToday: true,
-    },
-    {
-      dayIndex: 2,
-      dayLabel: 'Day 2 (Tomorrow)',
-      loadMode: 'CRUISE',
-      cruisePlus: false,
-      baseTargetBlocks: 12,
-      deductedBlocksFromExtension: 0,
-      completedBlocks: 0,
-      fixedEvent: 'NONE',
-      earlyMorningAnchor: false,
-      isToday: false,
-    },
-    {
-      dayIndex: 3,
-      dayLabel: 'Day 3',
-      loadMode: 'SURGE',
-      cruisePlus: false,
-      baseTargetBlocks: 14,
-      deductedBlocksFromExtension: 0,
-      completedBlocks: 0,
-      fixedEvent: 'NONE',
-      earlyMorningAnchor: false,
-      isToday: false,
-    },
-    {
-      dayIndex: 4,
-      dayLabel: 'Day 4',
-      loadMode: 'SURGE',
-      cruisePlus: false,
-      baseTargetBlocks: 15,
-      deductedBlocksFromExtension: 0,
-      completedBlocks: 0,
-      fixedEvent: 'NONE',
-      earlyMorningAnchor: false,
-      isToday: false,
-    },
-    {
-      dayIndex: 5,
-      dayLabel: 'Day 5',
-      loadMode: 'TAPER',
-      cruisePlus: false,
-      baseTargetBlocks: 8,
-      deductedBlocksFromExtension: 0,
-      completedBlocks: 0,
-      fixedEvent: 'LAB_2H',
-      fixedEventTimeLabel: '09:00 AM – 11:00 AM Lab Shift (~2h)',
-      earlyMorningAnchor: true,
-      isToday: false,
-    },
-    {
-      dayIndex: 6,
-      dayLabel: 'Day 6',
-      loadMode: 'CRUISE',
-      cruisePlus: true,
-      baseTargetBlocks: 13,
-      deductedBlocksFromExtension: 0,
-      completedBlocks: 0,
-      fixedEvent: 'EVENING_OUTING_6PM',
-      fixedEventTimeLabel: '6:00 PM Evening Outing',
-      earlyMorningAnchor: false,
-      isToday: false,
-    },
-    {
-      dayIndex: 7,
-      dayLabel: 'Day 7',
-      loadMode: 'TAPER',
-      cruisePlus: false,
-      baseTargetBlocks: 7,
-      deductedBlocksFromExtension: 0,
-      completedBlocks: 0,
-      fixedEvent: 'VOLUNTEER',
-      fixedEventTimeLabel: '01:00 PM – 03:00 PM Volunteer Shift',
-      earlyMorningAnchor: false,
-      isToday: false,
-    },
-  ],
+  pipelineDays: DEFAULT_SEVEN_DAY_PIPELINE,
+  sevenDayPipeline: DEFAULT_SEVEN_DAY_PIPELINE,
   discretionaryBlocksCompletedToday: 0,
+  dailySovereignDripDone: false,
+  dailySovereignDripTarget: 1,
+  sovereignGoldenRuleMode: true,
   timer: {
     mode: 'WORK_20M',
     workStage: 'IGNITION_5M',
@@ -942,13 +1041,14 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     targetEndTimeMs: null,
     isRunning: false,
     activeBlockSourceId: 'proj_1',
-    activeTaskTitle: '1. Anatomy & Comp Exam Prep Sprint',
+    activeTaskTitle: '1. Practicum Presentation Research Project Proposal (Due Thu, Nov 12)',
     activeTaskType: 'PROJECT',
-    activeStartupPrompt: 'Open deck + clear first 15 cards',
+    activeStartupPrompt:
+      'Open Practicum Proposal draft and write the next scheduled methodology/aims section (5 remaining across Mon–Wed).',
     elasticMultiplier: 1.0,
     startupShrinkLevel: 1,
-    chainedBlocksCount: 1,
-    sessionDisplayDurationMinutes: 40,
+    chainedBlocksCount: 0,
+    sessionDisplayDurationMinutes: 20,
     l1DurationMinutes: 5,
     l2DurationMinutes: 15,
     l2Protocol: 'ESPRESSO',
@@ -1432,11 +1532,24 @@ export function generateSequentialChecklist(
     categoryBadge: `MID-SHIFT • RECALL (${earlyFcCount + idx + 1}/${fcUnits.length})`,
   }));
 
+  const frontReadUnits =
+    synthUnits.length === 0 && readUnits.length > 1
+      ? readUnits.slice(0, -1)
+      : readUnits;
+  const tailSynthUnits =
+    synthUnits.length === 0 && readUnits.length > 1
+      ? readUnits.slice(-1).map((u) => ({
+          ...u,
+          taskType: 'SYNTHESIS' as const,
+          categoryBadge: 'BASELINE FLOOR • SYNTHESIS (3/3)',
+        }))
+      : synthUnits;
+
   const orderedBaselineSpecs: Omit<RawWorkSpec, 'blockNumber'>[] = [
     ...earlyFc,
-    ...readUnits,
+    ...frontReadUnits,
     ...midFc,
-    ...synthUnits,
+    ...tailSynthUnits,
   ];
 
   // If Shock Absorber compressed totalTargetBlocks below baselineCount, keep completed first + highest-yield remaining baseline specs
@@ -1451,27 +1564,50 @@ export function generateSequentialChecklist(
     );
   }
 
+  const sovereignProject = getActiveSovereignDripProject(state);
   const rawDiscretionarySpecs: Omit<RawWorkSpec, 'blockNumber'>[] = [];
   for (let d = 1; d <= discretionaryCount; d++) {
-    const isCompleted = d <= Math.floor(state.discretionaryBlocksCompletedToday);
-    const projTitle = primaryProject?.title || 'Closed List Focus #1';
-    const projSlot = primaryProject?.slot || 1;
-    const projStartup =
-      primaryProject?.startupStep ||
-      'Open primary deliverable and complete 5m ignition step.';
-    const projDemand = primaryProject
-      ? getProjectCognitiveDemand(primaryProject)
-      : 'DEEP_SYNTHESIS';
-    rawDiscretionarySpecs.push({
-      sourceId: primaryProject?.id || 'proj_1',
-      title: `${projTitle} — Locked Focus #${projSlot} (Block ${d}/${discretionaryCount})`,
-      categoryBadge: `CLOSED LIST #${projSlot} • DISCRETIONARY (${d}/${discretionaryCount})`,
-      taskType: 'PROJECT',
-      cognitiveDemand: projDemand,
-      startupStep: projStartup,
-      completed: isCompleted,
-      banked: false,
-    });
+    const isCapstoneSovereignSlot =
+      Boolean(sovereignProject) &&
+      (state.dailySovereignDripTarget ?? 1) >= 1 &&
+      d === discretionaryCount;
+
+    if (isCapstoneSovereignSlot && sovereignProject) {
+      const isDripCompleted = Boolean(
+        state.dailySovereignDripDone ||
+          d <= Math.floor(state.discretionaryBlocksCompletedToday)
+      );
+      rawDiscretionarySpecs.push({
+        sourceId: sovereignProject.id,
+        title: `${sovereignProject.title} — Sovereign Drip #${sovereignProject.slot} (1/1 Daily Drip)`,
+        categoryBadge: `SOVEREIGN AMBITION DRIP — 1B/DAY • SLOT #${sovereignProject.slot}`,
+        taskType: 'PROJECT',
+        cognitiveDemand: getProjectCognitiveDemand(sovereignProject),
+        startupStep: sovereignProject.startupStep,
+        completed: isDripCompleted,
+        banked: false,
+      });
+    } else {
+      const isCompleted = d <= Math.floor(state.discretionaryBlocksCompletedToday);
+      const projTitle = primaryProject?.title || 'Closed List Focus #1';
+      const projSlot = primaryProject?.slot || 1;
+      const projStartup =
+        primaryProject?.startupStep ||
+        'Open primary deliverable and complete 5m ignition step.';
+      const projDemand = primaryProject
+        ? getProjectCognitiveDemand(primaryProject)
+        : 'DEEP_SYNTHESIS';
+      rawDiscretionarySpecs.push({
+        sourceId: primaryProject?.id || 'proj_1',
+        title: `${projTitle} — Serialized Focus #${projSlot} (Block ${d}/${discretionaryCount})`,
+        categoryBadge: `SERIALIZED INSTITUTIONAL FOCUS #${projSlot} • (${d}/${discretionaryCount})`,
+        taskType: 'PROJECT',
+        cognitiveDemand: projDemand,
+        startupStep: projStartup,
+        completed: isCompleted,
+        banked: false,
+      });
+    }
   }
 
   const combinedSpecs: Omit<RawWorkSpec, 'blockNumber'>[] = [
@@ -1645,7 +1781,7 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
   const milestones = state.upcomingMilestones?.length
     ? state.upcomingMilestones.join(' • ')
     : state.profilePresetId === 'AVERY_DEFAULT'
-      ? 'Nov 12: Anatomy Exam • Dec 8–9: Comp Exam'
+      ? 'Thu, Nov 12: Anatomy Exam & Proposal Due • Dec 8–9: Comp Exam'
       : 'None configured';
 
   const totalInputBlocks = state.roadmapTracks.reduce(
@@ -1680,6 +1816,8 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
     state.recharge.fluidCategories?.CAT4_COMFORT ||
     DEFAULT_SYMMETRY_STATE.recharge.fluidCategories!.CAT4_COMFORT;
   const flex = state.flexibilityTuning || DEFAULT_FLEXIBILITY_TUNING;
+  const floorTotalBlocks = getTotalBaselineFloorBlocks(state.baselineBlocks) || 7;
+  const dripTarget = state.dailySovereignDripTarget ?? 1;
 
   const lines: string[] = [
     '# SymmetryManager (`wl-balancer`) — Master `state.md`',
@@ -1697,6 +1835,11 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
     `- **Active Load Mode**: ${state.loadMode}${state.cruisePlus ? ' (Cruise+)' : ''}${
       state.preExamTaperActive ? ' [Pre-Exam Taper Active]' : ''
     } — Target Ceiling: ${metrics.totalTargetBlocks} blocks`,
+    `- **Daily Sovereign Ambition Drip (1b/day)**: ${
+      state.dailySovereignDripDone
+        ? `[1/${dripTarget} DONE]`
+        : `[0/${dripTarget} PENDING]`
+    } (Golden Rule Mode: ${state.sovereignGoldenRuleMode !== false ? 'Active' : 'Off'})`,
     `- **Consecutive Surge Days**: ${state.surgeConsecutiveDays} / 2`,
     `- **Surge Mid-Day Reset (60–120m after Block 7)**: ${state.midDayResetCompletedToday ? 'Completed' : 'Pending'}`,
     `- **Fixed Event Anchor**: ${state.fixedEvent}`,
@@ -1704,10 +1847,10 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
     `- **Flashcard Review Queue**: ${state.flashcardsReviewedCount} / ${state.flashcardsDailyCap} cards (${state.earlyClearanceEnabled ? 'Early Clearance Active — Unused Blocks Banked' : 'Standard Pacing'})`,
     `- **Completed Deliverables Logged**: ${state.completedDeliverablesLog?.length || 0}`,
     '',
-    `## Today’s ${state.baselineBlocks.length}-Block Daily Core Baseline`,
+    `## Today’s ${floorTotalBlocks}-Block Daily Core Baseline`,
     ...state.baselineBlocks.map(
       (b) =>
-        `- [${b.completed ? 'x' : b.bankedViaEarlyClearance ? 'B' : ' '}] **${b.title}** (\`${b.category}\` • \`${getBaselineCognitiveDemand(b)}\`) — 5m Startup: *${b.startupStep}*`
+        `- [${b.completed ? 'x' : b.bankedViaEarlyClearance ? 'B' : ' '}] **${b.title}** (\`${getBaselineSlotCompletedBlocks(b)}/${getBaselineSlotTargetBlocks(b)}b\` • \`${b.category}\` • \`${getBaselineCognitiveDemand(b)}\`) — 5m Startup: *${b.startupStep}*`
     ),
     '',
     '## Today’s Sequential 20m Runway Preview',
@@ -1717,27 +1860,37 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
     ),
     '',
     '## Closed List 1–3 (Active Project Lock — Max 3)',
-    ...state.projectQueue.map(
-      (p) =>
-        `${p.slot}. **${p.title}** — \`[${p.completedBlocks} / ${p.totalBlocks} blocks]\` | Track: \`${p.trackId}\` | Demand: \`${getProjectCognitiveDemand(p)}\` | ${
-          p.slot === 1 ? 'UNLOCKED PRIMARY FOCUS #1' : 'LOCKED UNTIL ITEM #1 COMPLETES'
-        } — 5m Startup: *${p.startupStep}*`
-    ),
+    ...state.projectQueue.map((p) => {
+      const isSovereign = isProjectSovereignDrip(p);
+      const statusLabel =
+        p.slot === 1
+          ? 'SERIALIZED INSTITUTIONAL FOCUS #1 (UNLOCKED)'
+          : isSovereign
+          ? state.dailySovereignDripDone
+            ? 'SOVEREIGN AMBITION DRIP — 1B/DAY (1/1 BANKED TODAY)'
+            : 'SOVEREIGN AMBITION DRIP — 1B/DAY (UNLOCKED FOR DAILY 20M DRIP)'
+          : 'LOCKED UNTIL ITEM #1 COMPLETES';
+      return `${p.slot}. **${p.title}** — \`[${p.completedBlocks} / ${p.totalBlocks} blocks]\` | Category: \`${isSovereign ? 'sovereign' : 'institutional'}\` | Track: \`${p.trackId}\` | Demand: \`${getProjectCognitiveDemand(p)}\` | ${statusLabel} — 5m Startup: *${p.startupStep}*`;
+    }),
     '',
     '## Open List Backlog (Deferred Deliverables)',
     ...(state.projectBacklog.length > 0
       ? state.projectBacklog.map(
           (b, idx) =>
-            `- [Backlog #${idx + 1}] **${b.title}** — \`[0 / ${b.totalBlocks} blocks]\` (\`${b.presetType}\`, Track: \`${b.trackId}\`) — 5m Startup: *${b.startupStep}*`
+            `- [Backlog #${idx + 1}] **${b.title}** — \`[0 / ${b.totalBlocks} blocks]\` (\`${b.presetType}\`, Category: \`${isProjectSovereignDrip(b) ? 'sovereign' : 'institutional'}\`, Track: \`${b.trackId}\`) — 5m Startup: *${b.startupStep}*`
         )
       : ['- *(No deferred items in Open List Backlog)*']),
     '',
     '## 7-Day Master Pipeline Markdown Table',
-    '| Day | Load Mode | Target Blocks | Extension Deduction | Fixed Event | Early Anchor |',
-    '| :--- | :--- | :--- | :--- | :--- | :--- |',
+    '| Day | Load Mode | Target Blocks | Extension Deduction | Fixed Event | Early Anchor | Deliverables & Sovereign Drip |',
+    '| :--- | :--- | :--- | :--- | :--- | :--- | :--- |',
     ...state.pipelineDays.map((d) => {
-      const effective = Math.max(state.baselineBlocks.length || 7, d.baseTargetBlocks - d.deductedBlocksFromExtension);
-      return `| ${d.dayLabel} | ${d.loadMode}${d.cruisePlus ? '+' : ''} | ${effective} (${d.baseTargetBlocks} base) | -${d.deductedBlocksFromExtension} blks | ${d.fixedEvent}${d.fixedEventTimeLabel ? ` (${d.fixedEventTimeLabel})` : ''} | ${d.earlyMorningAnchor ? 'Yes' : 'No'} |`;
+      const effective = Math.max(
+        floorTotalBlocks,
+        d.baseTargetBlocks - d.deductedBlocksFromExtension
+      );
+      const summary = d.deliverablesCompleted || d.primaryDeliverable || '—';
+      return `| ${d.dayLabel} | ${d.mode || d.loadMode}${d.cruisePlus ? '+' : ''} | ${effective} (${d.projectBlocksSummary || `${d.baseTargetBlocks} base`}) | -${d.deductedBlocksFromExtension} blks | ${d.fixedEvent}${d.fixedEventTimeLabel ? ` (${d.fixedEventTimeLabel})` : ''} | ${d.earlyMorningAnchor ? 'Yes' : 'No'} | ${summary} |`;
     }),
     '',
     '---',
@@ -1864,13 +2017,81 @@ export function parseFromStateInput(rawText: string): SymmetryState {
       };
     };
 
-    const resolvedBacklog = Array.isArray(parsed.openListBacklog)
+    const rawBacklogArray = Array.isArray(parsed.openListBacklog)
       ? parsed.openListBacklog
       : Array.isArray(parsed.projectBacklog)
       ? parsed.projectBacklog
       : Array.isArray(parsed.openList)
       ? parsed.openList
       : DEFAULT_SYMMETRY_STATE.openListBacklog;
+
+    const resolvedBacklog: SymmetryState['openListBacklog'] = rawBacklogArray.map(
+      (item: unknown, idx: number) => {
+        if (typeof item === 'string') {
+          const isSov = /sovereign|sextant|symmetryproductivity|novel|treatise/i.test(
+            item
+          );
+          const blocksMatch = item.match(/\((\d+)b/i);
+          const totalBlocks = blocksMatch ? Math.max(1, Number(blocksMatch[1])) : 4;
+          return {
+            id: `proj_open_${idx + 1}`,
+            title: item,
+            presetType:
+              totalBlocks === 8
+                ? 'PAPER_8'
+                : totalBlocks === 4
+                ? 'SLIDES_4'
+                : totalBlocks === 2
+                ? 'QUICK_2'
+                : 'CUSTOM',
+            completedBlocks: 0,
+            totalBlocks,
+            trackId: isSov ? 'coding' : 'science',
+            startupStep: 'Open deliverable and complete 5-minute startup step.',
+            nextStepNote: 'Queued in Open List standby domino queue.',
+            cognitiveDemand: 'DEEP_SYNTHESIS',
+            isSovereignDrip: isSov,
+            category: isSov ? 'sovereign' : 'institutional',
+          };
+        }
+        const obj = item as Partial<ProjectItem> & {
+          blocksTotal?: number;
+          blocksDone?: number;
+        };
+        const isSov = Boolean(
+          obj.isSovereignDrip ||
+            obj.category === 'sovereign' ||
+            /sovereign\s+drip/i.test(String(obj.title || ''))
+        );
+        const totalBlocks =
+          typeof obj.totalBlocks === 'number'
+            ? obj.totalBlocks
+            : typeof obj.blocksTotal === 'number'
+            ? obj.blocksTotal
+            : 4;
+        return {
+          id: obj.id || `proj_open_${idx + 1}`,
+          title: obj.title || `Backlog Deliverable #${idx + 1}`,
+          presetType: obj.presetType || 'CUSTOM',
+          completedBlocks:
+            typeof obj.completedBlocks === 'number'
+              ? obj.completedBlocks
+              : typeof obj.blocksDone === 'number'
+              ? obj.blocksDone
+              : 0,
+          totalBlocks,
+          trackId: obj.trackId || (isSov ? 'coding' : 'science'),
+          startupStep:
+            obj.startupStep ||
+            'Open deliverable and complete 5-minute startup step.',
+          nextStepNote:
+            obj.nextStepNote || 'Queued in Open List standby domino queue.',
+          cognitiveDemand: obj.cognitiveDemand || 'DEEP_SYNTHESIS',
+          isSovereignDrip: isSov,
+          category: isSov ? 'sovereign' : 'institutional',
+        };
+      }
+    );
 
     const resolvedCompleted = Array.isArray(parsed.completedDeliverablesLog)
       ? parsed.completedDeliverablesLog
@@ -1880,29 +2101,144 @@ export function parseFromStateInput(rawText: string): SymmetryState {
       ? parsed.completedBlocks.completedDeliverablesLog
       : DEFAULT_SYMMETRY_STATE.completedDeliverablesLog;
 
-    const resolvedLoadMode: LoadMode =
-      parsed.loadMode === 'CRUISE' ||
-      parsed.loadMode === 'SURGE' ||
-      parsed.loadMode === 'TAPER'
-        ? parsed.loadMode
-        : parsed.tier === 'CRUISE' ||
-          parsed.tier === 'SURGE' ||
-          parsed.tier === 'TAPER'
-        ? parsed.tier
-        : DEFAULT_SYMMETRY_STATE.loadMode;
+    const normalizeLoadMode = (rawMode: unknown): LoadMode | undefined => {
+      if (rawMode === 'CRUISE' || rawMode === 'SURGE' || rawMode === 'TAPER') {
+        return rawMode;
+      }
+      if (typeof rawMode === 'string' && rawMode.toUpperCase().startsWith('TAPER')) {
+        return 'TAPER';
+      }
+      return undefined;
+    };
 
-    const resolvedBaselineBlocks =
+    const resolvedLoadMode: LoadMode =
+      normalizeLoadMode(parsed.loadMode) ||
+      normalizeLoadMode(parsed.tier) ||
+      DEFAULT_SYMMETRY_STATE.loadMode;
+
+    const rawBaselineArray =
       Array.isArray(parsed.baselineBlocks) && parsed.baselineBlocks.length > 0
         ? parsed.baselineBlocks
+        : Array.isArray(parsed.baselineSlots) && parsed.baselineSlots.length > 0
+        ? parsed.baselineSlots
         : Array.isArray(parsed.examFloor) && parsed.examFloor.length > 0
         ? parsed.examFloor
         : DEFAULT_SYMMETRY_STATE.baselineBlocks;
 
-    const resolvedProjectQueue: ProjectItem[] = Array.isArray(parsed.projectQueue)
+    const resolvedBaselineBlocks: BaselineBlock[] = rawBaselineArray.map(
+      (b: Partial<BaselineBlock>, idx: number) => {
+        const target =
+          typeof b.targetBlocks === 'number'
+            ? b.targetBlocks
+            : typeof b.blocksTarget === 'number'
+            ? b.blocksTarget
+            : 1;
+        const earlyEligible =
+          typeof b.earlyClearanceEligible === 'boolean'
+            ? b.earlyClearanceEligible
+            : typeof b.supportsEarlyClearance === 'boolean'
+            ? b.supportsEarlyClearance
+            : b.category === 'FLASHCARDS_ANATOMY' ||
+              b.category === 'FLASHCARDS_COMP';
+        return {
+          id: b.id || `floor_slot_${idx + 1}`,
+          title: b.title || `Baseline Slot #${idx + 1}`,
+          category: b.category || 'READING',
+          completed: Boolean(b.completed),
+          targetBlocks: target,
+          blocksTarget: target,
+          completedBlocks:
+            typeof b.completedBlocks === 'number'
+              ? b.completedBlocks
+              : b.completed
+              ? target
+              : 0,
+          bankedViaEarlyClearance: Boolean(b.bankedViaEarlyClearance),
+          earlyClearanceEligible: earlyEligible,
+          supportsEarlyClearance: earlyEligible,
+          lateNightBlocker:
+            typeof b.lateNightBlocker === 'boolean'
+              ? b.lateNightBlocker
+              : earlyEligible,
+          startupStep:
+            b.startupStep ||
+            b.startupPrompt ||
+            'Open baseline material and complete 5-minute startup step.',
+          trackId: b.trackId || 'science',
+          cognitiveDemand: b.cognitiveDemand,
+        };
+      }
+    );
+
+    const rawQueueArray = Array.isArray(parsed.projectQueue)
       ? parsed.projectQueue
       : Array.isArray(parsed.closedList)
       ? parsed.closedList
       : DEFAULT_SYMMETRY_STATE.projectQueue;
+
+    const resolvedProjectQueue: ProjectItem[] = rawQueueArray
+      .slice(0, 3)
+      .map(
+        (
+          rawProj: Partial<ProjectItem> & {
+            blocksDone?: number;
+            blocksTotal?: number;
+            subSteps?: string[];
+          },
+          idx: number
+        ) => {
+          const slotNum = ((idx + 1) as 1 | 2 | 3);
+          const isSov =
+            slotNum === 1 &&
+            rawProj.isSovereignDrip === undefined &&
+            rawProj.category === undefined
+              ? false
+              : Boolean(
+                  rawProj.isSovereignDrip ||
+                    rawProj.category === 'sovereign'
+                );
+          const totalBlocks =
+            typeof rawProj.totalBlocks === 'number'
+              ? rawProj.totalBlocks
+              : typeof rawProj.blocksTotal === 'number'
+              ? rawProj.blocksTotal
+              : 6;
+          const completedBlocks =
+            typeof rawProj.completedBlocks === 'number'
+              ? rawProj.completedBlocks
+              : typeof rawProj.blocksDone === 'number'
+              ? rawProj.blocksDone
+              : 0;
+          return {
+            id: rawProj.id || `proj_${slotNum}`,
+            slot: slotNum,
+            title: rawProj.title || `Closed List Slot #${slotNum}`,
+            presetType: rawProj.presetType || 'CUSTOM',
+            completedBlocks,
+            totalBlocks,
+            trackId: rawProj.trackId || (isSov ? 'coding' : 'science'),
+            startupStep:
+              rawProj.startupStep ||
+              'Open deliverable and complete 5-minute startup step.',
+            nextStepNote:
+              rawProj.nextStepNote ||
+              (isSov
+                ? 'Sovereign Ambition Drip — 1 block/day unlocked.'
+                : slotNum === 1
+                ? 'Serialized Institutional Focus #1.'
+                : 'Locked until Slot #1 completes.'),
+            cognitiveDemand: rawProj.cognitiveDemand || 'DEEP_SYNTHESIS',
+            blockedOnExternalFeedback: Boolean(rawProj.blockedOnExternalFeedback),
+            blockSubSteps: Array.isArray(rawProj.blockSubSteps)
+              ? rawProj.blockSubSteps
+              : Array.isArray(rawProj.subSteps)
+              ? rawProj.subSteps
+              : undefined,
+            isSovereignDrip: isSov,
+            category: isSov ? 'sovereign' : 'institutional',
+          };
+        }
+      );
 
     if (
       typeof parsed.hemingwayBridge === 'string' &&
@@ -1926,11 +2262,35 @@ export function parseFromStateInput(rawText: string): SymmetryState {
         ? parsed.completedBlocks.discretionaryBlocksCompletedToday
         : DEFAULT_SYMMETRY_STATE.discretionaryBlocksCompletedToday;
 
+    const resolvedDailySovereignDripDone =
+      typeof parsed.dailySovereignDripDone === 'boolean'
+        ? parsed.dailySovereignDripDone
+        : DEFAULT_SYMMETRY_STATE.dailySovereignDripDone;
+
+    const resolvedDailySovereignDripTarget =
+      typeof parsed.dailySovereignDripTarget === 'number' &&
+      !Number.isNaN(parsed.dailySovereignDripTarget)
+        ? Math.max(1, Math.round(parsed.dailySovereignDripTarget))
+        : DEFAULT_SYMMETRY_STATE.dailySovereignDripTarget;
+
+    const resolvedSovereignGoldenRuleMode =
+      typeof parsed.sovereignGoldenRuleMode === 'boolean'
+        ? parsed.sovereignGoldenRuleMode
+        : true;
+
     const resolvedTodayBlockLog = Array.isArray(parsed.todayBlockLog)
       ? parsed.todayBlockLog
       : Array.isArray(parsed.completedBlocks?.todayBlockLog)
       ? parsed.completedBlocks.todayBlockLog
       : DEFAULT_SYMMETRY_STATE.todayBlockLog;
+
+    const resolvedPipelineDays =
+      Array.isArray(parsed.pipelineDays) && parsed.pipelineDays.length > 0
+        ? parsed.pipelineDays
+        : Array.isArray(parsed.sevenDayPipeline) &&
+          parsed.sevenDayPipeline.length > 0
+        ? parsed.sevenDayPipeline
+        : DEFAULT_SYMMETRY_STATE.pipelineDays;
 
     const parsedRechargeSource =
       parsed.recharge || parsed.sanctuaryPillars || {};
@@ -1942,6 +2302,9 @@ export function parseFromStateInput(rawText: string): SymmetryState {
       ...parsed,
       loadMode: resolvedLoadMode,
       discretionaryBlocksCompletedToday: resolvedDiscretionaryBlocks,
+      dailySovereignDripDone: resolvedDailySovereignDripDone,
+      dailySovereignDripTarget: resolvedDailySovereignDripTarget,
+      sovereignGoldenRuleMode: resolvedSovereignGoldenRuleMode,
       profilePresetId: parsed.profilePresetId || DEFAULT_SYMMETRY_STATE.profilePresetId,
       profileName: parsed.profileName || DEFAULT_SYMMETRY_STATE.profileName,
       energyBandwidth:
@@ -1989,15 +2352,14 @@ export function parseFromStateInput(rawText: string): SymmetryState {
           ? parsed.upcomingMilestones
           : DEFAULT_SYMMETRY_STATE.upcomingMilestones,
       baselineBlocks: resolvedBaselineBlocks,
+      baselineSlots: resolvedBaselineBlocks,
       projectQueue: resolvedProjectQueue,
       projectBacklog: resolvedBacklog,
       openListBacklog: resolvedBacklog,
       completedDeliverablesLog: resolvedCompleted,
       completedDeliverablesArchive: resolvedCompleted,
-      pipelineDays:
-        Array.isArray(parsed.pipelineDays) && parsed.pipelineDays.length > 0
-          ? parsed.pipelineDays
-          : DEFAULT_SYMMETRY_STATE.pipelineDays,
+      pipelineDays: resolvedPipelineDays,
+      sevenDayPipeline: resolvedPipelineDays,
       roadmapTracks:
         Array.isArray(parsed.roadmapTracks) && parsed.roadmapTracks.length > 0
           ? parsed.roadmapTracks
@@ -2192,9 +2554,12 @@ export function syncTodayIntoDailyHistory(
       : buildDefault90DayHistory(logicalDate);
 
   const metrics = computeShiftMetrics(state);
-  const completedBaseline = state.baselineBlocks.filter(
-    (b) => b.completed || b.bankedViaEarlyClearance
-  ).length;
+  const completedBaseline = Math.round(
+    state.baselineBlocks.reduce(
+      (sum, b) => sum + getBaselineSlotCompletedBlocks(b),
+      0
+    )
+  );
   const mediaStartsToday = (state.todayBlockLog || []).filter(
     (e) =>
       e.logicalDate === logicalDate &&

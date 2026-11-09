@@ -51,6 +51,7 @@ import {
   generateSequentialChecklist,
   getActiveBlockDurationsSeconds,
   getActiveFocusProject,
+  getActiveSovereignDripProject,
   getBaselineCognitiveDemand,
   getBaselineSlotCompletedBlocks,
   getBaselineSlotTargetBlocks,
@@ -60,6 +61,7 @@ import {
   getTotalBaselineFloorBlocks,
   isBaselineSlotEarlyClearanceEligible,
   isBaselineSlotLateNightBlocked,
+  isProjectSovereignDrip,
 } from '../state/defaultState';
 import { DualRingTimerSvg } from './DualRingTimerSvg';
 import { BreathingVisualizer478 } from './BreathingVisualizer478';
@@ -178,6 +180,10 @@ interface Tab1PipelineProps {
   onUpdateBreakOptions?: (
     patch: Partial<import('../types/symmetry').BreakOptionsConfig>
   ) => void;
+  // Daily Sovereign Ambition Drip handlers
+  onToggleSovereignDripDone?: () => void;
+  onToggleGoldenRuleMode?: () => void;
+  onCompleteProjectById?: (projectId: string) => void;
 }
 
 export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
@@ -244,6 +250,9 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   onUpdateProjectItem,
   onUpdateActiveTimerTask,
   onUpdateBreakOptions,
+  onToggleSovereignDripDone,
+  onToggleGoldenRuleMode,
+  onCompleteProjectById,
 }) => {
   const metrics = computeShiftMetrics(state);
   const { timer } = state;
@@ -254,11 +263,9 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   const shrinkLevel: StartupShrinkLevel = timer.startupShrinkLevel ?? 1;
   const totalBaselineFloorBlocks = getTotalBaselineFloorBlocks(state.baselineBlocks);
 
-  // Progressive Disclosure States (Opens automatically if Modular Blank Canvas inlineEditModeActive is true)
+  // Progressive Disclosure States (Default open so Daily Core Baseline & Closed List are immediately visible)
   const [stageOptionsOpen, setStageOptionsOpen] = useState(false);
-  const [progressChecklistOpen, setProgressChecklistOpen] = useState(
-    Boolean(state.inlineEditModeActive)
-  );
+  const [progressChecklistOpen, setProgressChecklistOpen] = useState(true);
   const [triageDetailsOpen, setTriageDetailsOpen] = useState(false);
   const [sequentialViewOpen, setSequentialViewOpen] = useState(false);
   const [recalibrateWizardOpen, setRecalibrateWizardOpen] = useState(false);
@@ -401,9 +408,9 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
     ? Math.max(0, primaryProject.totalBlocks - primaryProject.completedBlocks)
     : 0;
   const discretionaryQuotaAvailable =
-    metrics.totalTargetBlocks > state.baselineBlocks.length &&
+    metrics.totalTargetBlocks > totalBaselineFloorBlocks &&
     state.discretionaryBlocksCompletedToday <
-      metrics.totalTargetBlocks - state.baselineBlocks.length;
+      metrics.totalTargetBlocks - totalBaselineFloorBlocks;
 
   const upNextBlock = (() => {
     if (state.preExamTaperActive) {
@@ -570,7 +577,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
       newProjStartup.trim() ||
       'Open file and complete initial 5m startup step.';
 
-    const floorLen = state.baselineBlocks.length || 7;
+    const floorLen = totalBaselineFloorBlocks || 7;
     const exceedsClosedListCap = state.projectQueue.length >= 3;
     const forcesSurgeDay =
       state.loadMode !== 'SURGE' &&
@@ -1453,6 +1460,40 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 </span>
               )}
             </span>
+
+            <span className="text-slate-600">•</span>
+
+            <button
+              id="pipeline-sovereign-drip-pill"
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerHaptic([10]);
+                onToggleSovereignDripDone?.();
+              }}
+              title={
+                state.dailySovereignDripDone
+                  ? 'Daily Sovereign Ambition Drip [1/1 DONE] — Today was not a 100%-school day. Click to toggle.'
+                  : 'Daily Sovereign Ambition Drip [0/1] — Guarantees at least 1 dedicated 20m non-school block today. Click to toggle.'
+              }
+              className={`px-2.5 py-0.5 rounded-full border font-mono text-[11px] inline-flex items-center gap-1.5 transition cursor-pointer ${
+                state.dailySovereignDripDone
+                  ? 'bg-amber-500/15 border-amber-400/40 text-amber-200 shadow-[0_0_12px_rgba(245,158,11,0.18)]'
+                  : 'bg-violet-500/15 border-violet-400/35 text-violet-200 hover:bg-violet-500/25'
+              }`}
+            >
+              <Sparkles
+                className={`w-3 h-3 shrink-0 ${
+                  state.dailySovereignDripDone ? 'text-amber-300' : 'text-violet-300'
+                }`}
+              />
+              <span>
+                Sovereign Drip:{' '}
+                {state.dailySovereignDripDone
+                  ? `[1/${state.dailySovereignDripTarget || 1} DONE]`
+                  : `[0/${state.dailySovereignDripTarget || 1}]`}
+              </span>
+            </button>
           </div>
 
           <div className="flex items-center gap-4 shrink-0">
@@ -1740,13 +1781,13 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                   )}
                 </div>
 
-                {/* Right Column: Locked Focus #1 Deliverable (Inline Editable Title, Block Count 1b-12b, 5m Startup Script) */}
+                {/* Right Column: Closed List (Max 3 Active Slots) — Slot #1 Institutional Focus + Dual-Slot Serialization Exception for Sovereign Ambition Drip */}
                 <div
                   id="bento-project-lock-card"
                   className="p-5 rounded-2xl bg-white/[0.015] border border-white/[0.05] flex flex-col justify-between space-y-4"
                 >
                   {primaryProject ? (
-                    <div id="project-card-slot-1" className="space-y-4">
+                    <div id="project-card-slot-1" className="space-y-3.5">
                       {isDualSlotEnabled && (
                         <div className="flex items-center justify-between gap-2 pb-2 border-b border-white/[0.05]">
                           <span className="text-[10px] font-mono uppercase text-indigo-300">
@@ -1780,11 +1821,16 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
 
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
-                          <span className="text-[10px] font-mono uppercase tracking-widest text-emerald-300/90 flex items-center gap-1">
-                            <Unlock className="w-3 h-3" />
-                            <span>Locked Focus #{primaryProject.slot}</span>
-                          </span>
-                          <h3 className="font-serif text-2xl font-medium text-white mt-0.5">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span
+                              id="slot-1-institutional-badge"
+                              className="px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-400/40 text-[10px] font-mono font-semibold uppercase tracking-wider text-emerald-200 flex items-center gap-1"
+                            >
+                              <Unlock className="w-3 h-3 text-emerald-300" />
+                              <span>[SERIALIZED INSTITUTIONAL FOCUS #{primaryProject.slot}]</span>
+                            </span>
+                          </div>
+                          <h3 className="font-serif text-xl sm:text-2xl font-medium text-white mt-1.5">
                             <InlineEditableText
                               value={primaryProject.title}
                               onSave={(newTitle) =>
@@ -1794,6 +1840,11 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                               }
                             />
                           </h3>
+                          {primaryProject.nextStepNote && (
+                            <p className="text-[11px] font-mono text-emerald-300/80 mt-0.5">
+                              {primaryProject.nextStepNote}
+                            </p>
+                          )}
                           <div className="text-xs text-slate-400 mt-1">
                             <span className="text-[10px] font-mono uppercase text-amber-300/80 mr-1.5">
                               5m Startup:
@@ -1807,6 +1858,18 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                               }
                             />
                           </div>
+                          {primaryProject.blockSubSteps && primaryProject.blockSubSteps.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1.5">
+                              {primaryProject.blockSubSteps.map((stepLabel, idx) => (
+                                <span
+                                  key={idx}
+                                  className="px-1.5 py-0.5 rounded bg-white/[0.03] border border-white/[0.06] font-mono text-[10px] text-slate-300"
+                                >
+                                  {stepLabel}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
 
                         <div className="flex items-center gap-1 shrink-0">
@@ -1887,7 +1950,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                           }}
                           className="flex-1 py-2 px-3 rounded-full bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-mono font-medium text-xs cursor-pointer"
                         >
-                          Start {activeDurations.startupMinutes}m
+                          Start {activeDurations.startupMinutes}m Ignition
                         </button>
                         <button
                           id="btn-log-project-1-block"
@@ -1925,17 +1988,236 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     </div>
                   )}
 
-                  {/* Secondary Accordions inside Checklist Drawer: Locked Queue #2/#3, Smart Intake, Sequential Checklist, 7-Day Table */}
+                  {/* Dual-Slot Serialization Exception: Slots #2 & #3 Always Visible in Closed List */}
+                  <div
+                    id="closed-list-secondary-slots"
+                    className="pt-3 border-t border-white/[0.06] space-y-2.5"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-amber-200/90 flex items-center gap-1.5">
+                        <Sparkles className="w-3 h-3 text-amber-300" />
+                        <span>
+                          Dual-Slot Serialization Exception (Slots #2–#3)
+                        </span>
+                      </span>
+                      <button
+                        id="btn-closed-list-golden-rule"
+                        type="button"
+                        onClick={() => onToggleGoldenRuleMode?.()}
+                        className={`px-2 py-0.5 rounded-full border font-mono text-[10px] transition cursor-pointer ${
+                          state.sovereignGoldenRuleMode !== false
+                            ? 'bg-amber-500/15 border-amber-400/40 text-amber-200'
+                            : 'bg-white/[0.02] border-white/[0.06] text-slate-400'
+                        }`}
+                        title="Toggle Golden Rule deadline pacing reminder"
+                      >
+                        Golden Rule: {state.sovereignGoldenRuleMode !== false ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+
+                    {state.sovereignGoldenRuleMode !== false && (
+                      <div
+                        id="closed-list-golden-rule-banner"
+                        className="px-3 py-2 rounded-xl bg-gradient-to-r from-amber-500/10 via-violet-500/10 to-amber-500/10 border border-amber-400/25 text-[11px] text-amber-100/90 leading-relaxed"
+                      >
+                        <span className="font-mono font-semibold uppercase text-amber-300 mr-1.5">
+                          [Golden Rule]:
+                        </span>
+                        On days with an imminent school deadline, knock out today&apos;s scheduled Focus #1 blocks first or run your 1b Sovereign Drip as the high-reward capstone block of the shift (strictly stopwatch-capped at 20m unless Flow Extension is active).
+                      </div>
+                    )}
+
+                    {lockedSecondaryProjects.map((proj) => {
+                      const isSov = isProjectSovereignDrip(proj);
+                      const dripAlreadyBanked = Boolean(state.dailySovereignDripDone);
+                      const isIgnitionUnlocked =
+                        isSov &&
+                        !dripAlreadyBanked &&
+                        !metrics.isZeroWorkLeft &&
+                        !isSurgeMidDayResetRequired;
+
+                      return (
+                        <div
+                          key={proj.id}
+                          id={`project-card-slot-${proj.slot}`}
+                          className={`p-3 rounded-xl border space-y-2 text-xs transition ${
+                            isSov
+                              ? 'bg-gradient-to-br from-amber-500/[0.07] via-violet-500/[0.07] to-slate-950/80 border-amber-400/35'
+                              : 'bg-black/30 border-white/[0.05]'
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-1.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {isSov ? (
+                                <span
+                                  id={`sovereign-drip-badge-slot-${proj.slot}`}
+                                  className="px-2 py-0.5 rounded-md bg-gradient-to-r from-amber-500/20 to-violet-500/25 border border-amber-400/45 text-[10px] font-mono font-semibold uppercase tracking-wider text-amber-200 flex items-center gap-1"
+                                >
+                                  <Sparkles className="w-3 h-3 text-amber-300" />
+                                  <span>[SOVEREIGN AMBITION DRIP — 1B/DAY]</span>
+                                </span>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.08] text-[10px] font-mono uppercase text-slate-400 flex items-center gap-1">
+                                  <Lock className="w-3 h-3" />
+                                  <span>[QUEUED INSTITUTIONAL #{proj.slot}]</span>
+                                </span>
+                              )}
+                              <button
+                                id={`btn-toggle-sovereign-flag-${proj.slot}`}
+                                type="button"
+                                onClick={() =>
+                                  onUpdateProjectItem?.(proj.id, {
+                                    isSovereignDrip: !isSov,
+                                    category: !isSov ? 'sovereign' : 'institutional',
+                                  })
+                                }
+                                className="px-1.5 py-0.5 rounded bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] font-mono text-[9px] text-slate-400 cursor-pointer"
+                                title="Toggle Sovereign Ambition Drip exception on this Closed List slot"
+                              >
+                                {isSov ? 'Sovereign' : 'Set Sovereign'}
+                              </button>
+                            </div>
+
+                            <select
+                              aria-label={`Slot #${proj.slot} Block Count`}
+                              value={proj.totalBlocks}
+                              onChange={(e) =>
+                                onUpdateProjectItem?.(proj.id, {
+                                  totalBlocks: Number(e.target.value) || 1,
+                                })
+                              }
+                              className="bg-slate-950 border border-amber-400/30 rounded-full px-2 py-0.5 font-mono text-amber-200 text-[10px] cursor-pointer"
+                            >
+                              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
+                                <option key={n} value={n}>
+                                  {proj.completedBlocks}/{n}b
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="font-serif text-base font-medium text-slate-100">
+                            <InlineEditableText
+                              value={proj.title}
+                              onSave={(val) =>
+                                onUpdateProjectItem?.(proj.id, { title: val })
+                              }
+                            />
+                          </div>
+
+                          {proj.nextStepNote && (
+                            <p className="text-[11px] font-mono text-amber-200/80">
+                              {proj.nextStepNote}
+                            </p>
+                          )}
+
+                          {proj.blockSubSteps && proj.blockSubSteps.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                              {proj.blockSubSteps.map((stepText, sIdx) => (
+                                <span
+                                  key={sIdx}
+                                  className="px-1.5 py-0.5 rounded bg-violet-500/15 border border-violet-400/30 font-mono text-[10px] text-violet-200"
+                                >
+                                  {stepText}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="text-[11px] text-slate-300">
+                            <span className="font-mono text-[10px] uppercase text-amber-300/80 mr-1.5">
+                              5m Startup:
+                            </span>
+                            <InlineEditableText
+                              value={proj.startupStep}
+                              onSave={(val) =>
+                                onUpdateProjectItem?.(proj.id, { startupStep: val })
+                              }
+                            />
+                          </div>
+
+                          {/* Unlocked Sovereign Drip Ignition Controls */}
+                          {isSov ? (
+                            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                              <button
+                                id={`btn-launch-sovereign-slot-${proj.slot}`}
+                                type="button"
+                                disabled={!isIgnitionUnlocked}
+                                onClick={() => {
+                                  triggerHaptic([15]);
+                                  onLaunchBlockInTimer(
+                                    proj.id,
+                                    proj.title,
+                                    'PROJECT',
+                                    proj.startupStep
+                                  );
+                                }}
+                                className={`flex-1 py-1.5 px-3 rounded-full font-mono font-medium text-[11px] transition flex items-center justify-center gap-1.5 ${
+                                  isIgnitionUnlocked
+                                    ? 'bg-gradient-to-r from-amber-400 to-violet-400 hover:from-amber-300 hover:to-violet-300 text-slate-950 cursor-pointer shadow-sm'
+                                    : 'bg-emerald-500/15 border border-emerald-400/35 text-emerald-200 cursor-not-allowed opacity-80'
+                                }`}
+                              >
+                                {dripAlreadyBanked ? (
+                                  <>
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
+                                    <span>1/1 Daily Drip Banked</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Unlock className="w-3 h-3" />
+                                    <span>
+                                      Start {activeDurations.startupMinutes}m Ignition (20m Drip)
+                                    </span>
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                id={`btn-log-sovereign-slot-${proj.slot}`}
+                                type="button"
+                                disabled={metrics.isZeroWorkLeft || isSurgeMidDayResetRequired}
+                                onClick={() => {
+                                  triggerHaptic([10]);
+                                  onIncrementProjectBlock(proj.id);
+                                }}
+                                className="py-1.5 px-2.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/35 text-amber-200 font-mono text-[11px] cursor-pointer"
+                              >
+                                +1 Drip Block
+                              </button>
+                              {onCompleteProjectById && (
+                                <button
+                                  id={`btn-complete-sovereign-slot-${proj.slot}`}
+                                  type="button"
+                                  onClick={() => onCompleteProjectById(proj.id)}
+                                  className="py-1.5 px-2.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/35 text-emerald-200 font-mono text-[11px] cursor-pointer"
+                                  title="Mark Deliverable Complete & Promote Next Open List Item"
+                                >
+                                  Complete
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="text-[10px] font-mono text-slate-500 flex items-center gap-1 pt-0.5">
+                              <Lock className="w-3 h-3" />
+                              <span>Waiting for Slot #1 to complete</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Secondary Accordions inside Checklist Drawer: Standby Open List ("Whatever Is After That" Domino Queue) + Add Deliverable */}
                   <div className="pt-3 border-t border-white/[0.05] flex flex-wrap items-center gap-2">
                     <button
                       id="btn-toggle-locked-projects-drawer"
                       type="button"
                       onClick={() => setLockedDrawerOpen(!lockedDrawerOpen)}
-                      className="px-2.5 py-1 rounded-full bg-white/[0.025] hover:bg-white/[0.06] border border-white/[0.05] text-[11px] font-mono text-slate-400 flex items-center gap-1.5 cursor-pointer"
+                      className="px-2.5 py-1 rounded-full bg-white/[0.025] hover:bg-white/[0.06] border border-white/[0.05] text-[11px] font-mono text-slate-300 flex items-center gap-1.5 cursor-pointer"
                     >
-                      <Lock className="w-3 h-3" />
+                      <Lock className="w-3 h-3 text-cyan-300" />
                       <span>
-                        Queue #2–#3 ({lockedSecondaryProjects.length}) • Backlog ({openBacklogList.length})
+                        Open List Domino Queue ({openBacklogList.length}) • Add Deliverable
                       </span>
                     </button>
 
@@ -1951,51 +2233,49 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
 
                   {lockedDrawerOpen && (
                     <div className="space-y-2 pt-2">
-                      {lockedSecondaryProjects.map((proj) => (
+                      {openBacklogList.length > 0 && (
                         <div
-                          key={proj.id}
-                          id={`project-card-slot-${proj.slot}`}
-                          className="p-2.5 rounded-xl bg-black/30 border border-white/[0.05] space-y-1.5 text-xs"
+                          id="open-list-domino-queue"
+                          className="p-2.5 rounded-xl bg-black/30 border border-white/[0.06] space-y-1.5"
                         >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-slate-200 font-medium truncate">
-                              #{proj.slot}{' '}
-                              <InlineEditableText
-                                value={proj.title}
-                                onSave={(val) =>
-                                  onUpdateProjectItem?.(proj.id, { title: val })
-                                }
-                              />
-                            </span>
-                            <select
-                              value={proj.totalBlocks}
-                              onChange={(e) =>
-                                onUpdateProjectItem?.(proj.id, {
-                                  totalBlocks: Number(e.target.value) || 4,
-                                })
-                              }
-                              className="bg-slate-950 border border-slate-700 rounded px-1.5 py-0.5 font-mono text-slate-300 text-[10px]"
-                            >
-                              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
-                                <option key={n} value={n}>
-                                  {proj.completedBlocks}/{n}b
-                                </option>
-                              ))}
-                            </select>
+                          <div className="text-[10px] font-mono uppercase tracking-wider text-cyan-300/90">
+                            Standby Open List (&ldquo;Whatever Is After That&rdquo; Domino Queue)
                           </div>
-                          <div className="text-[11px] text-slate-400">
-                            <span className="font-mono text-[10px] text-slate-500 mr-1">
-                              5m Startup:
-                            </span>
-                            <InlineEditableText
-                              value={proj.startupStep}
-                              onSave={(val) =>
-                                onUpdateProjectItem?.(proj.id, { startupStep: val })
-                              }
-                            />
-                          </div>
+                          {openBacklogList.map((item, idx) => {
+                            const itemSov = isProjectSovereignDrip(item);
+                            return (
+                              <div
+                                key={item.id}
+                                className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.05] flex items-start justify-between gap-2 text-xs"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="font-mono text-[10px] text-slate-400">
+                                      #{idx + 1}
+                                    </span>
+                                    {itemSov && (
+                                      <span className="px-1.5 py-0.2 rounded bg-amber-500/15 border border-amber-400/35 font-mono text-[9px] uppercase text-amber-200">
+                                        Sovereign Drip
+                                      </span>
+                                    )}
+                                    <span className="text-slate-200 font-medium">
+                                      {item.title}
+                                    </span>
+                                  </div>
+                                  {item.nextStepNote && (
+                                    <p className="text-[10px] font-mono text-slate-400 mt-0.5">
+                                      {item.nextStepNote}
+                                    </p>
+                                  )}
+                                </div>
+                                <span className="px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.07] font-mono text-[10px] text-slate-300 shrink-0">
+                                  {item.completedBlocks}/{item.totalBlocks}b
+                                </span>
+                              </div>
+                            );
+                          })}
                         </div>
-                      ))}
+                      )}
 
                       {/* Add Deliverable Form */}
                       <form

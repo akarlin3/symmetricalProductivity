@@ -1174,7 +1174,6 @@ export const PROFILE_PRESETS: Record<string, ProfilePresetDefinition> = {
     })),
     projectQueue: DEFAULT_SYMMETRY_STATE.projectQueue.map((p) => ({
       ...p,
-      completedBlocks: p.slot === 1 ? 2 : 0,
     })),
     openListBacklog: [...DEFAULT_SYMMETRY_STATE.openListBacklog],
     stickySlots: JSON.parse(JSON.stringify(DEFAULT_SYMMETRY_STATE.recharge.stickySlots)),
@@ -1675,20 +1674,36 @@ export function applyPresetToState(
     taskWeights: { ...preset.taskWeights },
     breakOptions: { ...preset.breakOptions },
     upcomingMilestones: [...preset.upcomingMilestones],
-    loadMode: keepWork ? currentState.loadMode : 'CRUISE',
+    loadMode: keepWork
+      ? currentState.loadMode
+      : preset.id === 'AVERY_DEFAULT'
+      ? DEFAULT_SYMMETRY_STATE.loadMode
+      : 'CRUISE',
     preExamTaperActive: false,
     cruisePlus: keepWork ? currentState.cruisePlus : false,
-    customModeBlockAdjustment: cruiseCeiling,
+    customModeBlockAdjustment:
+      preset.id === 'AVERY_DEFAULT' && !options?.customCruiseCeiling
+        ? DEFAULT_SYMMETRY_STATE.customModeBlockAdjustment
+        : cruiseCeiling,
+    fixedEvent:
+      preset.id === 'AVERY_DEFAULT' && !keepWork
+        ? DEFAULT_SYMMETRY_STATE.fixedEvent
+        : currentState.fixedEvent,
     earlyClearanceEnabled: keepWork ? currentState.earlyClearanceEnabled : false,
     flashcardsReviewedCount:
       preset.id === 'AVERY_DEFAULT'
-        ? 95
+        ? DEFAULT_SYMMETRY_STATE.flashcardsReviewedCount
         : keepWork
         ? currentState.flashcardsReviewedCount
         : 0,
     discretionaryBlocksCompletedToday: keepWork
       ? currentState.discretionaryBlocksCompletedToday
       : 0,
+    dailySovereignDripDone: keepWork
+      ? Boolean(currentState.dailySovereignDripDone)
+      : false,
+    dailySovereignDripTarget: currentState.dailySovereignDripTarget ?? 1,
+    sovereignGoldenRuleMode: currentState.sovereignGoldenRuleMode ?? true,
     todayBlockLog:
       preset.id === 'AVERY_DEFAULT' && !keepWork
         ? DEFAULT_SYMMETRY_STATE.todayBlockLog
@@ -1696,6 +1711,7 @@ export function applyPresetToState(
         ? currentState.todayBlockLog
         : [],
     baselineBlocks: floorBlocks,
+    baselineSlots: floorBlocks,
     projectQueue,
     projectBacklog: keepWork
       ? currentState.projectBacklog
@@ -1703,23 +1719,25 @@ export function applyPresetToState(
     openListBacklog: keepWork
       ? currentState.openListBacklog
       : JSON.parse(JSON.stringify(preset.openListBacklog)),
-    pipelineDays: currentState.pipelineDays.map((d, idx) =>
-      idx === 0
-        ? {
-            ...d,
-            loadMode: keepWork ? d.loadMode : 'CRUISE',
-            cruisePlus: false,
-            baseTargetBlocks: cruiseCeiling,
-            completedBlocks:
-              preset.id === 'AVERY_DEFAULT' && !keepWork
-                ? 3
-                : keepWork
-                ? d.completedBlocks
-                : 0,
-            deductedBlocksFromExtension: 0,
-          }
-        : d
-    ),
+    pipelineDays:
+      preset.id === 'AVERY_DEFAULT' && !keepWork
+        ? JSON.parse(JSON.stringify(DEFAULT_SYMMETRY_STATE.pipelineDays))
+        : currentState.pipelineDays.map((d, idx) =>
+            idx === 0
+              ? {
+                  ...d,
+                  loadMode: keepWork ? d.loadMode : 'CRUISE',
+                  cruisePlus: false,
+                  baseTargetBlocks: cruiseCeiling,
+                  completedBlocks: keepWork ? d.completedBlocks : 0,
+                  deductedBlocksFromExtension: 0,
+                }
+              : d
+          ),
+    sevenDayPipeline:
+      preset.id === 'AVERY_DEFAULT' && !keepWork
+        ? JSON.parse(JSON.stringify(DEFAULT_SYMMETRY_STATE.pipelineDays))
+        : undefined,
     timer: {
       ...currentState.timer,
       isRunning: false,

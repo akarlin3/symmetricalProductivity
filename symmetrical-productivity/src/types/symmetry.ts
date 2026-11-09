@@ -61,10 +61,12 @@ export interface BaselineBlock {
   completed: boolean;
   durationMinutes?: number;
   targetBlocks?: number; // 1..6 (defaults to 1)
+  blocksTarget?: number; // Alias for targetBlocks
   completedBlocks?: number; // 0..targetBlocks
   partialCredit?: number; // 0.5 when a 0.5x Micro-Block is logged
   bankedViaEarlyClearance?: boolean;
   earlyClearanceEligible?: boolean; // Toggleable per slot
+  supportsEarlyClearance?: boolean; // Alias for earlyClearanceEligible
   lateNightBlocker?: boolean; // Toggleable per slot (prevents scheduling as final block of night)
   startupStep: string;
   startupPrompt?: string;
@@ -73,6 +75,8 @@ export interface BaselineBlock {
 }
 
 export type ProjectPresetType = 'PAPER_8' | 'SLIDES_4' | 'QUICK_2' | 'CUSTOM';
+
+export type ClosedListCategory = 'institutional' | 'sovereign';
 
 export interface ProjectItem {
   id: string;
@@ -87,7 +91,11 @@ export interface ProjectItem {
   cognitiveDemand?: CognitiveDemandTag;
   blockedOnExternalFeedback?: boolean;
   blockSubSteps?: string[];
+  isSovereignDrip?: boolean;
+  category?: ClosedListCategory;
 }
+
+export type ClosedListItem = ProjectItem;
 
 export interface PipelineDay {
   dayIndex: number;
@@ -130,6 +138,8 @@ export interface SmartIntakeClosedListItem {
   blocksTotal: number;
   startupStep5m: string;
   roadmapTrack: SmartIntakeRoadmapTrack;
+  isSovereignDrip?: boolean;
+  category?: ClosedListCategory;
 }
 
 export interface SmartIntakeBacklogItem {
@@ -137,6 +147,8 @@ export interface SmartIntakeBacklogItem {
   blocksTotal: number;
   startupStep5m: string;
   roadmapTrack: SmartIntakeRoadmapTrack;
+  isSovereignDrip?: boolean;
+  category?: ClosedListCategory;
 }
 
 export interface SmartIntakePipelineRow {
@@ -506,6 +518,9 @@ export interface SymmetryState {
   completedDeliverablesArchive?: CompletedDeliverableEntry[];
   pipelineDays: PipelineDay[];
   discretionaryBlocksCompletedToday: number;
+  dailySovereignDripDone: boolean;
+  dailySovereignDripTarget: number;
+  sovereignGoldenRuleMode?: boolean;
   timer: TimerConsoleState;
   recharge: RechargeState;
   roadmapTracks: RoadmapTrack[];
@@ -517,8 +532,10 @@ export interface SymmetryState {
     completedDeliverablesLog: CompletedDeliverableEntry[];
   } | number;
   examFloor?: BaselineBlock[];
+  baselineSlots?: BaselineBlock[];
   closedList?: ProjectItem[];
   openList?: Omit<ProjectItem, 'slot'>[];
+  sevenDayPipeline?: PipelineDay[];
   sanctuaryPillars?: RechargeState;
   hemingwayBridge?: string;
   watchmansRest?: boolean;

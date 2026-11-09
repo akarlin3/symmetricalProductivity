@@ -52,6 +52,9 @@ export function buildUnifiedSymmetryPayload(
 
   return {
     ...state,
+    dailySovereignDripDone: Boolean(state.dailySovereignDripDone),
+    dailySovereignDripTarget: state.dailySovereignDripTarget ?? 1,
+    sovereignGoldenRuleMode: state.sovereignGoldenRuleMode ?? true,
     tier: state.loadMode,
     completedBlocks: {
       discretionaryBlocksCompletedToday: state.discretionaryBlocksCompletedToday,
@@ -59,8 +62,10 @@ export function buildUnifiedSymmetryPayload(
       completedDeliverablesLog: state.completedDeliverablesLog || [],
     },
     examFloor: state.baselineBlocks,
+    baselineSlots: state.baselineBlocks,
     closedList: state.projectQueue,
     openList: state.openListBacklog || state.projectBacklog || [],
+    sevenDayPipeline: state.pipelineDays,
     sanctuaryPillars: state.recharge,
     hemingwayBridge: bridgeNote,
     watchmansRest: Boolean(
@@ -96,6 +101,9 @@ export function computeMeaningfulStateSignature(state: SymmetryState): string {
     flashcardsReviewedCount: state.flashcardsReviewedCount,
     earlyClearanceEnabled: state.earlyClearanceEnabled,
     discretionaryBlocksCompletedToday: state.discretionaryBlocksCompletedToday,
+    dailySovereignDripDone: state.dailySovereignDripDone,
+    dailySovereignDripTarget: state.dailySovereignDripTarget,
+    sovereignGoldenRuleMode: state.sovereignGoldenRuleMode,
     baselineBlocks: state.baselineBlocks,
     projectQueue: state.projectQueue,
     projectBacklog: state.projectBacklog,

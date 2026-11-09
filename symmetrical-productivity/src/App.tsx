@@ -78,6 +78,7 @@ import {
   getLogicalDayKey,
   getPreExamTaperSuggestion,
   isBaselineSlotEarlyClearanceEligible,
+  isProjectSovereignDrip,
   getProjectCognitiveDemand,
   parseFromStateInput,
   pushStateBackup,
@@ -994,9 +995,11 @@ export function App() {
           flashcardsReviewedCount: 0,
           earlyClearanceEnabled: false,
           discretionaryBlocksCompletedToday: 0,
+          dailySovereignDripDone: false,
           baselineBlocks: prev.baselineBlocks.map((b) => ({
             ...b,
             completed: false,
+            completedBlocks: 0,
             bankedViaEarlyClearance: false,
           })),
           pipelineDays: prev.pipelineDays.map((d, idx) =>
@@ -1606,12 +1609,20 @@ export function App() {
         sourceBlockId: 'sandbox_curiosity',
         rungNumber: 2,
       });
-    } else {
+    }
+    let updatedSovereignDripDone = Boolean(prev.dailySovereignDripDone);
+    if (!matchingBaseline && prev.timer.activeBlockSourceId !== 'sandbox_curiosity') {
       updatedDiscretionary = Number((updatedDiscretionary + mult).toFixed(2));
-      const activeFocusProj = getActiveFocusProject(prev);
-      const targetSlot = activeFocusProj?.slot ?? 1;
+      const matchedBySourceId = prev.projectQueue.find(
+        (p) => p.id === prev.timer.activeBlockSourceId
+      );
+      const activeFocusProj = matchedBySourceId || getActiveFocusProject(prev);
+      const targetProjId = activeFocusProj?.id;
+      if (activeFocusProj && isProjectSovereignDrip(activeFocusProj)) {
+        updatedSovereignDripDone = true;
+      }
       updatedProjects = prev.projectQueue.map((p) =>
-        p.slot === targetSlot
+        p.id === targetProjId
           ? {
               ...p,
               completedBlocks: Math.min(
@@ -1648,14 +1659,15 @@ export function App() {
 
     pushUndoSnapshot(
       prev,
-      `Block Logged: ${newLogEntry.title} (${newLogEntry.durationMinutes}m • +${mult}b)`
+      `Block Logged: ${newLogEntry!.title} (${newLogEntry!.durationMinutes}m • +${mult}b)`
     );
 
     const nextCandidate: SymmetryState = {
       ...prev,
-      todayBlockLog: [...(prev.todayBlockLog || []), newLogEntry],
+      todayBlockLog: [...(prev.todayBlockLog || []), newLogEntry!],
       baselineBlocks: updatedBaseline,
       discretionaryBlocksCompletedToday: updatedDiscretionary,
+      dailySovereignDripDone: updatedSovereignDripDone,
       projectQueue: updatedProjects,
       roadmapTracks: updatedTracks,
     };
@@ -2399,6 +2411,7 @@ export function App() {
         prev.projectQueue.find((p) => p.id === projectId) ||
         getActiveFocusProject(prev);
       if (!targetProj) return prev;
+      const isSov = isProjectSovereignDrip(targetProj);
       const updatedQueue = prev.projectQueue.map((p) =>
         p.id === targetProj.id
           ? {
@@ -2416,7 +2429,9 @@ export function App() {
       );
       const newEntry = createTodayLogEntry(prev, {
         category: 'PROJECT_FOCUS_1',
-        title: targetProj.title,
+        title: isSov
+          ? `[Sovereign Drip] ${targetProj.title}`
+          : targetProj.title,
         durationMinutes: 20,
         blockCredit: 1,
         roadmapTrack: targetProj.trackId,
@@ -2429,11 +2444,28 @@ export function App() {
         ...prev,
         todayBlockLog: [...(prev.todayBlockLog || []), newEntry],
         discretionaryBlocksCompletedToday: prev.discretionaryBlocksCompletedToday + 1,
+        dailySovereignDripDone: isSov ? true : Boolean(prev.dailySovereignDripDone),
         projectQueue: updatedQueue,
         roadmapTracks: updatedTracks,
       };
     });
     showNotice('Logged +1 discretionary project block (Credited to Output).');
+  };
+
+  const handleToggleSovereignDripDone = () => {
+    soundEngine.playTactileClick('MODE_TOGGLE');
+    setState((prev) => ({
+      ...prev,
+      dailySovereignDripDone: !prev.dailySovereignDripDone,
+    }));
+  };
+
+  const handleToggleGoldenRuleMode = () => {
+    soundEngine.playTactileClick('MODE_TOGGLE');
+    setState((prev) => ({
+      ...prev,
+      sovereignGoldenRuleMode: prev.sovereignGoldenRuleMode === false,
+    }));
   };
 
   // ===========================================================================
@@ -3087,11 +3119,15 @@ export function App() {
     });
   };
 
-  // One-Tap Backlog Promotion & Completed Ledger Archive on Closed List Focus #1
-  const handleCompleteProjectItem1 = () => {
+  // One-Tap Backlog Promotion & Completed Ledger Archive on Closed List Focus #1 (or Sovereign Drip Slot #2/#3)
+  const handleCompleteProjectById = (projectId?: string) => {
     setState((prev) => {
-      const completedItem = prev.projectQueue[0];
-      const remaining = prev.projectQueue.slice(1);
+      const targetIndex = projectId
+        ? prev.projectQueue.findIndex((p) => p.id === projectId)
+        : 0;
+      const resolvedIndex = targetIndex >= 0 ? targetIndex : 0;
+      const completedItem = prev.projectQueue[resolvedIndex];
+      const remaining = prev.projectQueue.filter((_, idx) => idx !== resolvedIndex);
       const sourceBacklog =
         prev.openListBacklog && prev.openListBacklog.length > 0
           ? prev.openListBacklog
@@ -3102,9 +3138,9 @@ export function App() {
         ...item,
         slot: (index + 1) as 1 | 2 | 3,
         nextStepNote:
-          index === 0
+          index === 0 && !isProjectSovereignDrip(item)
             ? 'Promoted to Active Focus #1 — 100% of discretionary blocks locked here.'
-            : 'Locked until Item #1 is marked complete.',
+            : item.nextStepNote,
       }));
 
       if (nextFromBacklog && newQueue.length < 3) {
@@ -3112,9 +3148,10 @@ export function App() {
           ...nextFromBacklog,
           slot: (newQueue.length + 1) as 1 | 2 | 3,
           nextStepNote:
-            newQueue.length === 0
+            nextFromBacklog.nextStepNote ||
+            (newQueue.length === 0
               ? 'Promoted to Active Focus #1.'
-              : 'Promoted from Open Backlog into Slot #3.',
+              : 'Promoted from Open Backlog into Slot #3.'),
         });
       }
 
@@ -3153,7 +3190,7 @@ export function App() {
 
       pushUndoSnapshot(
         prev,
-        `Completed Deliverable #1: ${completedItem?.title || 'Item #1'}`
+        `Completed Deliverable: ${completedItem?.title || 'Item'}`
       );
 
       return {
@@ -3167,8 +3204,12 @@ export function App() {
       };
     });
     showNotice(
-      'Archived Deliverable #1 to Completed Ledger, incremented 4-Rung Output bar, shifted #2 → #1, and promoted Open Backlog into Slot #3.'
+      'Archived Deliverable to Completed Ledger, incremented 4-Rung Output bar, and promoted next item from Open List Domino Queue.'
     );
+  };
+
+  const handleCompleteProjectItem1 = () => {
+    handleCompleteProjectById();
   };
 
   const handleAddProjectToQueue = (
@@ -4120,6 +4161,8 @@ export function App() {
           onImportJsonBackupFile={(file) => {
             void importStateJsonFile(file);
           }}
+          onToggleSovereignDripDone={handleToggleSovereignDripDone}
+          onToggleGoldenRuleMode={handleToggleGoldenRuleMode}
         />
 
         {/* Status Toast Notice */}
@@ -4198,6 +4241,9 @@ export function App() {
               onLaunchBreakStepInTimer={handleLaunchBreakStepInTimer}
               onIncrementProjectBlock={handleIncrementProjectBlock}
               onCompleteProjectItem1={handleCompleteProjectItem1}
+              onCompleteProjectById={handleCompleteProjectById}
+              onToggleSovereignDripDone={handleToggleSovereignDripDone}
+              onToggleGoldenRuleMode={handleToggleGoldenRuleMode}
               onAddProjectToQueue={handleAddProjectToQueue}
               onPromoteDeliverableWithSurge={handlePromoteDeliverableWithSurge}
               onDemoteDeliverableToBacklog={handleDemoteDeliverableToBacklog}
