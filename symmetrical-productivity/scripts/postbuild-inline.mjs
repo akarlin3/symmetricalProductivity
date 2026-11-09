@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 
@@ -42,9 +43,17 @@ const googleFontsLinks = `<link rel="preconnect" href="https://fonts.googleapis.
 const safeSwScript = `<script>
   try {
     if ('serviceWorker' in navigator && navigator.serviceWorker && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+      var refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (refreshing) return;
+        refreshing = true;
+        window.location.reload();
+      });
       window.addEventListener('load', function () {
         try {
-          navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(function () {});
+          navigator.serviceWorker.register('./sw.js', { scope: './', updateViaCache: 'none' }).then(function (reg) {
+            try { reg.update(); } catch (e) {}
+          }).catch(function () {});
         } catch (e) {}
       });
     }
@@ -105,6 +114,23 @@ fs.writeFileSync(path.join(distDir, 'index.html'), selfContainedDistHtml, 'utf8'
 fs.writeFileSync(path.join(repoRoot, 'index.html'), selfContainedDistHtml, 'utf8');
 fs.writeFileSync(path.join(rootPublicDir, 'index.html'), selfContainedDistHtml, 'utf8');
 fs.writeFileSync(path.join(appRoot, 'index.html'), sourceIndexHtml, 'utf8');
+
+// Update dist/sw.js with the real MD5 revision of selfContainedDistHtml and strip inlined asset entries so SW never 404s
+const distSwPath = path.join(distDir, 'sw.js');
+if (fs.existsSync(distSwPath)) {
+  const indexMd5 = crypto
+    .createHash('md5')
+    .update(selfContainedDistHtml)
+    .digest('hex');
+  const rawSw = fs.readFileSync(distSwPath, 'utf8');
+  const patchedSw = rawSw
+    .replace(
+      /\{url:"index\.html",revision:"[^"]+"\}/g,
+      `{url:"index.html",revision:"${indexMd5}"}`
+    )
+    .replace(/,\{url:"assets\/[^"]+",revision:null\}/g, '');
+  fs.writeFileSync(distSwPath, patchedSw, 'utf8');
+}
 
 // Copy manifest.webmanifest, favicon.svg, sw.js, sw-alarms.js, icons, workbox to repo root and repo-root public/
 for (const file of fs.readdirSync(distDir)) {

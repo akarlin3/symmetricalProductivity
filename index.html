@@ -91,9 +91,17 @@ VITE_FIREBASE_APP_ID=1:123456789:web:abcdef`,className:`w-full rounded-xl bg-bla
     <script>
   try {
     if ('serviceWorker' in navigator && navigator.serviceWorker && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+      var refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (refreshing) return;
+        refreshing = true;
+        window.location.reload();
+      });
       window.addEventListener('load', function () {
         try {
-          navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(function () {});
+          navigator.serviceWorker.register('./sw.js', { scope: './', updateViaCache: 'none' }).then(function (reg) {
+            try { reg.update(); } catch (e) {}
+          }).catch(function () {});
         } catch (e) {}
       });
     }
