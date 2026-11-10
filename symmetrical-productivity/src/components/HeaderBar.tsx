@@ -43,7 +43,9 @@ import {
   computeShiftMetrics,
   DEFAULT_AUDIO_ENGINE_SETTINGS,
   formatRolloverHourLabel,
+  getEffectiveDailyAmbitionDrip,
   getLogicalDayKey,
+  isTodayExamDay,
 } from '../state/defaultState';
 import { triggerHaptic } from '../utils/haptics';
 import {
@@ -301,132 +303,153 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               <span>{compactDurationText}</span>
             </div>
 
-            {/* Dedicated Sovereign Ambition Drip Indicator Pill + Toggleable Golden Rule Tooltip/Mode */}
-            <div className="relative flex items-center gap-1 shrink-0">
-              <button
-                id="header-sovereign-drip-badge"
-                type="button"
-                onClick={() => {
-                  triggerHaptic([10]);
-                  soundEngine.playTactileClick('UI_TAP');
-                  onToggleSovereignDripDone?.();
-                }}
-                title={
-                  state.dailySovereignDripDone
-                    ? 'Daily Sovereign Ambition Drip [1/1 DONE] — Today is confirmed not a 100%-school day. Click to toggle.'
-                    : 'Daily Sovereign Ambition Drip [0/1] — Guarantees at least 1 dedicated 20m non-school block today. Click to mark [1/1 DONE] or start from Closed List.'
-                }
-                className={`px-2 py-0.5 rounded-full border font-mono text-[10px] font-medium tracking-tight tabular-nums flex items-center gap-1.5 transition-all duration-300 cursor-pointer select-none ${
-                  isCinemaReceding ? 'opacity-30 hover:opacity-100' : ''
-                } ${
-                  state.dailySovereignDripDone
-                    ? 'bg-amber-500/15 border-amber-400/40 text-amber-200 shadow-[0_0_12px_rgba(245,158,11,0.18)]'
-                    : 'bg-violet-500/15 border-violet-400/35 text-violet-200 hover:bg-violet-500/25'
-                }`}
-              >
-                <Sparkles
-                  className={`w-2.5 h-2.5 shrink-0 ${
-                    state.dailySovereignDripDone
-                      ? 'text-amber-300'
-                      : 'text-violet-300'
-                  }`}
-                />
-                <span>
-                  Sovereign Drip:{' '}
-                  {state.dailySovereignDripDone
-                    ? `[1/${state.dailySovereignDripTarget || 1} DONE]`
-                    : `[0/${state.dailySovereignDripTarget || 1}]`}
-                </span>
-              </button>
-
-              <button
-                id="header-golden-rule-trigger"
-                type="button"
-                onClick={() => {
-                  triggerHaptic([8]);
-                  setGoldenRulePopoverOpen((prev) => !prev);
-                }}
-                title="Golden Rule Pacing Mode — Click to view or toggle Golden Rule guidance for imminent school deadlines"
-                className={`px-1.5 py-0.5 rounded-full border font-mono text-[9px] uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer select-none ${
-                  isCinemaReceding ? 'opacity-20 hover:opacity-100' : ''
-                } ${
-                  state.sovereignGoldenRuleMode !== false
-                    ? 'bg-amber-500/15 border-amber-400/35 text-amber-200'
-                    : 'bg-white/[0.03] border-white/[0.08] text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <span>Golden Rule</span>
-                <HelpCircle className="w-2.5 h-2.5 shrink-0" />
-              </button>
-
-              <AnimatePresence>
-                {goldenRulePopoverOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 6, scale: 0.97 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 6, scale: 0.97 }}
-                    transition={{ duration: 0.16 }}
-                    className="absolute left-0 top-full mt-2 z-50 w-80 sm:w-96 rounded-2xl border border-amber-400/30 bg-[#0b0d14]/95 backdrop-blur-2xl p-3.5 shadow-2xl text-left"
+            {/* Dedicated Daily Ambition Drip Indicator Pill ("Zero 100%-Institutional Days") */}
+            {(() => {
+              const drip = getEffectiveDailyAmbitionDrip(state);
+              const examDayPaused = isTodayExamDay(state);
+              const dripDone =
+                drip.completedToday >= drip.targetBlocksPerDay ||
+                Boolean(state.dailySovereignDripDone);
+              return (
+                <div className="relative flex items-center gap-1 shrink-0">
+                  <button
+                    id="header-sovereign-drip-badge"
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic([10]);
+                      soundEngine.playTactileClick('UI_TAP');
+                      onToggleSovereignDripDone?.();
+                    }}
+                    title={
+                      examDayPaused
+                        ? 'Daily Ambition Drip auto-paused during Pre-Exam Taper / Exam Day.'
+                        : dripDone
+                        ? `Daily Ambition Drip [${drip.completedToday}/${drip.targetBlocksPerDay} DONE] — Zero 100%-Institutional Days verified. Click to toggle.`
+                        : `Daily Ambition Drip [${drip.completedToday}/${drip.targetBlocksPerDay}] — Reserves 1 capstone 20m block today for Slot #${drip.preferredSlotIndex + 1}. Click to toggle.`
+                    }
+                    className={`px-2 py-0.5 rounded-full border font-mono text-[10px] font-medium tracking-tight tabular-nums flex items-center gap-1.5 transition-all duration-300 cursor-pointer select-none ${
+                      isCinemaReceding ? 'opacity-30 hover:opacity-100' : ''
+                    } ${
+                      examDayPaused || !drip.enabled
+                        ? 'bg-white/[0.03] border-white/[0.08] text-slate-400'
+                        : dripDone
+                        ? 'bg-amber-500/15 border-amber-400/40 text-amber-200 shadow-[0_0_12px_rgba(245,158,11,0.18)]'
+                        : 'bg-violet-500/15 border-violet-400/35 text-violet-200 hover:bg-violet-500/25'
+                    }`}
                   >
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
-                      <span className="text-[11px] font-mono font-semibold uppercase tracking-wider text-amber-200 flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                        Sovereign Drip — Golden Rule
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setGoldenRulePopoverOpen(false)}
-                        className="p-0.5 rounded-md text-slate-400 hover:text-white cursor-pointer"
-                        aria-label="Close Golden Rule tooltip"
+                    <Sparkles
+                      className={`w-2.5 h-2.5 shrink-0 ${
+                        examDayPaused || !drip.enabled
+                          ? 'text-slate-400'
+                          : dripDone
+                          ? 'text-amber-300'
+                          : 'text-violet-300'
+                      }`}
+                    />
+                    <span>
+                      Ambition Drip:{' '}
+                      {examDayPaused
+                        ? '[EXAM PAUSE]'
+                        : !drip.enabled
+                        ? '[OFF]'
+                        : dripDone
+                        ? `[${Math.max(1, drip.completedToday)}/${drip.targetBlocksPerDay} DONE]`
+                        : `[${drip.completedToday}/${drip.targetBlocksPerDay}]`}
+                    </span>
+                  </button>
+
+                  <button
+                    id="header-golden-rule-trigger"
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic([8]);
+                      setGoldenRulePopoverOpen((prev) => !prev);
+                    }}
+                    title="Capstone Pacing Rule — Click to view or toggle capstone scheduling for Daily Ambition Drip"
+                    className={`px-1.5 py-0.5 rounded-full border font-mono text-[9px] uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer select-none ${
+                      isCinemaReceding ? 'opacity-20 hover:opacity-100' : ''
+                    } ${
+                      state.sovereignGoldenRuleMode !== false
+                        ? 'bg-amber-500/15 border-amber-400/35 text-amber-200'
+                        : 'bg-white/[0.03] border-white/[0.08] text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    <span>Capstone</span>
+                    <HelpCircle className="w-2.5 h-2.5 shrink-0" />
+                  </button>
+
+                  <AnimatePresence>
+                    {goldenRulePopoverOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 6, scale: 0.97 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 6, scale: 0.97 }}
+                        transition={{ duration: 0.16 }}
+                        className="absolute left-0 top-full mt-2 z-50 w-80 sm:w-96 rounded-2xl border border-amber-400/30 bg-[#0b0d14]/95 backdrop-blur-2xl p-3.5 shadow-2xl text-left"
                       >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                    <p className="text-[11px] leading-relaxed text-slate-300 mb-2.5">
-                      On days with an imminent school deadline, either knock out
-                      the day&apos;s scheduled hard-deadline school blocks first
-                      OR run the Sovereign Drip as the high-reward capstone block
-                      of the shift — strictly stopwatch-capped at{' '}
-                      <span className="font-mono text-amber-200">20m</span>{' '}
-                      unless Flow Extension is active.
-                    </p>
-                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/[0.08]">
-                      <button
-                        id="btn-toggle-golden-rule-mode"
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic([8]);
-                          onToggleGoldenRuleMode?.();
-                        }}
-                        className={`px-2.5 py-1 rounded-lg border text-[10px] font-mono uppercase tracking-wider cursor-pointer transition ${
-                          state.sovereignGoldenRuleMode !== false
-                            ? 'bg-amber-500/20 border-amber-400/40 text-amber-100'
-                            : 'bg-white/[0.04] border-white/[0.1] text-slate-300'
-                        }`}
-                      >
-                        Golden Rule:{' '}
-                        {state.sovereignGoldenRuleMode !== false ? 'ON' : 'OFF'}
-                      </button>
-                      {!state.dailySovereignDripDone &&
-                        onStartSovereignDripIgnition && (
+                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                          <span className="text-[11px] font-mono font-semibold uppercase tracking-wider text-amber-200 flex items-center gap-1.5">
+                            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                            Daily Ambition Drip — Zero 100%-Institutional Days
+                          </span>
                           <button
-                            id="btn-header-start-sovereign-drip"
+                            type="button"
+                            onClick={() => setGoldenRulePopoverOpen(false)}
+                            className="p-0.5 rounded-md text-slate-400 hover:text-white cursor-pointer"
+                            aria-label="Close Ambition Drip tooltip"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <p className="text-[11px] leading-relaxed text-slate-300 mb-2.5">
+                          Schedules hard-deadline Focus #1 blocks and mechanical
+                          recall sprints first, reserving 1 capstone block/day for
+                          Ambition Drip Slot #{drip.preferredSlotIndex + 1} — strictly
+                          stopwatch-capped at{' '}
+                          <span className="font-mono text-amber-200">20m</span>{' '}
+                          unless Flow Extension is eligible and unlocked. Auto-disabled
+                          during Pre-Exam Taper / Exam Day.
+                        </p>
+                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/[0.08]">
+                          <button
+                            id="btn-toggle-golden-rule-mode"
                             type="button"
                             onClick={() => {
-                              triggerHaptic([12]);
-                              setGoldenRulePopoverOpen(false);
-                              onStartSovereignDripIgnition();
+                              triggerHaptic([8]);
+                              onToggleGoldenRuleMode?.();
                             }}
-                            className="px-2.5 py-1 rounded-lg bg-violet-500/25 hover:bg-violet-500/35 border border-violet-400/40 text-violet-100 text-[10px] font-mono font-semibold cursor-pointer transition"
+                            className={`px-2.5 py-1 rounded-lg border text-[10px] font-mono uppercase tracking-wider cursor-pointer transition ${
+                              state.sovereignGoldenRuleMode !== false
+                                ? 'bg-amber-500/20 border-amber-400/40 text-amber-100'
+                                : 'bg-white/[0.04] border-white/[0.1] text-slate-300'
+                            }`}
                           >
-                            Start 5m Drip Ignition
+                            Capstone Order:{' '}
+                            {state.sovereignGoldenRuleMode !== false ? 'ON' : 'OFF'}
                           </button>
-                        )}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+                          {!dripDone &&
+                            !examDayPaused &&
+                            onStartSovereignDripIgnition && (
+                              <button
+                                id="btn-header-start-sovereign-drip"
+                                type="button"
+                                onClick={() => {
+                                  triggerHaptic([12]);
+                                  setGoldenRulePopoverOpen(false);
+                                  onStartSovereignDripIgnition();
+                                }}
+                                className="px-2.5 py-1 rounded-lg bg-violet-500/25 hover:bg-violet-500/35 border border-violet-400/40 text-violet-100 text-[10px] font-mono font-semibold cursor-pointer transition"
+                              >
+                                Start 5m Drip Step
+                              </button>
+                            )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              );
+            })()}
 
             {fixedEventDisplay && (
               <div

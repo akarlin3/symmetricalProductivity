@@ -1,0 +1,84 @@
+name: Build Web & Android APK
+
+on:
+  push:
+    branches: ['main']
+    tags: ['v*']
+  pull_request:
+    branches: ['main']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: symmetrical-productivity/package-lock.json
+
+      - name: Setup Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle'
+
+      - name: Install Dependencies, Lint, Build Web & Sync Capacitor Android
+        working-directory: symmetrical-productivity
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY || vars.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN || vars.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID || vars.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET || vars.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID || vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID || vars.VITE_FIREBASE_APP_ID }}
+        run: |
+          npm ci
+          npm run lint
+          npm run build
+          npx cap sync android
+
+      - name: Assemble Android Debug APK
+        working-directory: symmetrical-productivity/android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Upload Web Dist Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: symmetrical-productivity-web-dist
+          path: symmetrical-productivity/dist
+          retention-days: 14
+
+      - name: Upload Android Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: symmetrical-productivity-debug-apk
+          path: symmetrical-productivity/android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      - name: Publish GitHub Release APK on Version Tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APK_PATH="symmetrical-productivity/android/app/build/outputs/apk/debug/app-debug.apk"
+          TAG_NAME="${GITHUB_REF_NAME}"
+          RELEASE_APK="symmetrical-productivity-${TAG_NAME}-debug.apk"
+          cp "$APK_PATH" "$RELEASE_APK"
+          gh release view "$TAG_NAME" >/dev/null 2>&1 || gh release create "$TAG_NAME" --generate-notes
+          gh release upload "$TAG_NAME" "$RELEASE_APK" --clobber

@@ -7,12 +7,14 @@ import {
   ChevronUp,
   Cpu,
   Edit3,
+  ExternalLink,
   Eye,
   EyeOff,
   FastForward,
   Film,
   Flame,
   Gamepad2,
+  Globe,
   Headphones,
   Lock,
   Moon,
@@ -43,6 +45,10 @@ import { BreathingVisualizer478 } from './BreathingVisualizer478';
 import { InlineEditableText } from './InlineEditableText';
 import { triggerHaptic } from '../utils/haptics';
 import { AveryCorpEmblem } from './AveryCorpEmblem';
+import {
+  isValidResourceLaunchUrl,
+  openResourceLaunchUrl,
+} from '../utils/ankiConnectClient';
 
 interface Tab3RechargeProps {
   state: SymmetryState;
@@ -211,6 +217,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
     if (card.id === 'CAT3_MEDIA') return 'recharge-card-cat3-media';
     if (card.id === 'CAT4_COMFORT') return 'recharge-card-cat4-comfort';
     if (card.id === 'CAT5_GAMING') return 'recharge-card-cat5-gaming';
+    if (card.id === 'CAT6_CULTURE') return 'recharge-card-cat6-culture';
     return `recharge-card-${card.id.toLowerCase()}`;
   };
 
@@ -219,11 +226,12 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
     if (slotNumber === 2) return <Cpu className="w-3 h-3 text-orange-300" />;
     if (slotNumber === 3) return <Headphones className="w-3 h-3 text-amber-300" />;
     if (slotNumber === 4) return <Tv className="w-3 h-3 text-amber-300" />;
-    return <Gamepad2 className="w-3 h-3 text-emerald-300" />;
+    if (slotNumber === 5) return <Gamepad2 className="w-3 h-3 text-emerald-300" />;
+    return <Globe className="w-3 h-3 text-cyan-300" />;
   };
 
   return (
-    <div className="relative w-full max-w-none space-y-5 text-amber-50 animate-tab-enter pb-12">
+    <div className="relative w-full max-w-none space-y-3.5 text-amber-50 animate-tab-enter pb-10">
       {/* Subtle Ambient Warm Halo */}
       <div
         aria-hidden="true"
@@ -235,10 +243,10 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
       />
 
       {/* Editorial Section Header */}
-      <div className="w-full flex flex-wrap items-end justify-between gap-4 border-b border-white/[0.05] pb-4">
-        <div className="flex items-center gap-3.5">
+      <div className="w-full flex flex-wrap items-end justify-between gap-3 border-b border-white/[0.05] pb-3">
+        <div className="flex items-center gap-3">
           <AveryCorpEmblem
-            size={42}
+            size={38}
             variant="image"
             cropMode="full-seal"
             ariaLabel="AveryCorp End-of-Shift Seal"
@@ -246,9 +254,9 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
           <div>
             <span className="text-[10px] font-mono uppercase tracking-widest text-amber-300/80 flex items-center gap-1.5">
               <Moon className="w-3 h-3 text-amber-400" />
-              <span>Evening Sanctuary</span>
+              <span>Off-Duty Recovery • 6-Channel 3×2 Grid</span>
             </span>
-            <h2 className="font-serif text-3xl sm:text-4xl font-medium tracking-tight text-amber-50 mt-1">
+            <h2 className="font-serif text-2xl sm:text-3xl font-medium tracking-tight text-amber-50 mt-0.5">
               Evening Recharge Menu
             </h2>
           </div>
@@ -295,12 +303,12 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
       </div>
 
       {/* =====================================================================
-          OPTION 0 (STILLNESS): SLEEK SINGLE-LINE SERENE BANNER AT THE TOP
+          OPTION 0 (STILLNESS): SLIM SINGLE-LINE BANNER AT THE TOP
          ===================================================================== */}
       <section
         id="option-0-stillness-card"
         aria-labelledby="option-0-heading"
-        className="w-full rounded-3xl bento-hero-border-evening px-6 py-4 transition-all duration-300 space-y-4"
+        className="w-full rounded-3xl bento-hero-border-evening px-5 py-3 transition-all duration-300 space-y-3"
       >
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3 sm:gap-4 min-w-0">
@@ -535,9 +543,9 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
       )}
 
       {/* =====================================================================
-          RECHARGE CATEGORIES GRID WITH DIRECT INLINE "EDIT CARD" TOGGLES
+          6-CHANNEL SYMMETRICAL 3x2 RECHARGE GRID WITH INLINE "EDIT CARD" & LAUNCH URL
          ===================================================================== */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3.5 w-full">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 w-full">
         {visibleCategoryCards.map((card) => {
           const isEditingCard = Boolean(editingCardIds[card.id]);
           const isTriple = card.trackMode === 'TRIPLE' && Array.isArray(card.subTracks);
@@ -579,6 +587,18 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
               card.backlogQueue
             : liveStickySlot?.backlogQueue || card.backlogQueue;
 
+          const displayLaunchUrl = isTriple
+            ? activeSubTrack?.launchUrl ?? liveStickySlot?.launchUrl ?? card.launchUrl ?? ''
+            : liveStickySlot?.launchUrl ?? card.launchUrl ?? '';
+
+          const displayAutoLaunchUrl = Boolean(
+            isTriple
+              ? activeSubTrack?.autoLaunchUrl ??
+                  liveStickySlot?.autoLaunchUrl ??
+                  card.autoLaunchUrl
+              : liveStickySlot?.autoLaunchUrl ?? card.autoLaunchUrl
+          );
+
           const displayStarts = isTriple
             ? liveStickySlot?.startsLogged ??
               liveStickySlot?.fiveMinStarts ??
@@ -606,15 +626,15 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
               onMouseEnter={() => setHoveredCat(card.id)}
               onMouseLeave={() => setHoveredCat(null)}
               onClick={() => toggleCardExpand(card)}
-              className={`rounded-3xl p-5 border transition-all duration-300 cursor-pointer flex flex-col justify-between space-y-5 ${
+              className={`rounded-3xl p-4 border transition-all duration-300 cursor-pointer flex flex-col justify-between space-y-3.5 ${
                 isSelectedCard
                   ? 'bento-hero-border-evening border-amber-400/35'
                   : 'bento-surface-evening'
               }`}
             >
-              <div className="space-y-3">
-                {/* Card Top Header: Category Badge + Inline "Edit Card" Button */}
-                <div className="flex items-center justify-between gap-2">
+              <div className="space-y-2.5">
+                {/* Card Top Header: Category Badge + Optional Launch Link + Inline "Edit Card" Button */}
+                <div className="flex items-center justify-between gap-1.5">
                   <span className="px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-400/25 font-mono text-[10px] uppercase tracking-widest text-amber-200 flex items-center gap-1.5 min-w-0">
                     {getCardIcon(card.slotNumber ?? 1)}
                     <span className="truncate">
@@ -633,22 +653,39 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                     </span>
                   </span>
 
-                  <button
-                    type="button"
-                    onClick={(e) => toggleEditCard(card.id, e)}
-                    className={`px-2 py-0.5 rounded-full border font-mono text-[10px] inline-flex items-center gap-1 transition shrink-0 ${
-                      isEditingCard
-                        ? 'bg-amber-400 text-stone-950 border-amber-300 font-semibold'
-                        : 'bg-black/40 hover:bg-white/[0.08] border-white/[0.08] text-amber-200/80 hover:text-amber-100'
-                    }`}
-                  >
-                    <Edit3 className="w-3 h-3" />
-                    <span>{isEditingCard ? 'Done' : 'Edit Card'}</span>
-                  </button>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {isValidResourceLaunchUrl(displayLaunchUrl) && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openResourceLaunchUrl(displayLaunchUrl);
+                        }}
+                        title={`Open linked resource (${displayLaunchUrl})`}
+                        className="px-2 py-0.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/35 text-amber-200 font-mono text-[10px] inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        <ExternalLink className="w-2.5 h-2.5" />
+                        <span>Open</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={(e) => toggleEditCard(card.id, e)}
+                      className={`px-2 py-0.5 rounded-full border font-mono text-[10px] inline-flex items-center gap-1 transition shrink-0 ${
+                        isEditingCard
+                          ? 'bg-amber-400 text-stone-950 border-amber-300 font-semibold'
+                          : 'bg-black/40 hover:bg-white/[0.08] border-white/[0.08] text-amber-200/80 hover:text-amber-100'
+                      }`}
+                    >
+                      <Edit3 className="w-3 h-3" />
+                      <span>{isEditingCard ? 'Done' : 'Edit Card'}</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Active Item Title (Inline Editable) */}
-                <h3 className="font-serif text-2xl sm:text-3xl font-medium tracking-tight text-amber-50">
+                <h3 className="font-serif text-xl sm:text-2xl font-medium tracking-tight text-amber-50">
                   <InlineEditableText
                     value={displayActiveTitle}
                     onSave={(newTitle) =>
@@ -693,7 +730,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
 
                     <div>
                       <label className="block text-[10px] font-mono uppercase text-amber-200/70 mb-0.5">
-                        Category Name (e.g., Sketching, Cooking, Music)
+                        Category Name (e.g., Culture &amp; Language, Music, Maker)
                       </label>
                       <input
                         type="text"
@@ -854,6 +891,60 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                       />
                     </div>
 
+                    {/* Optional Resource Launch URL + Auto-Open Toggle */}
+                    <div className="space-y-1.5 pt-1 border-t border-white/[0.08]">
+                      <label className="block text-[10px] font-mono uppercase text-amber-200/70">
+                        Optional Resource URL / Deep Link
+                      </label>
+                      <input
+                        type="text"
+                        value={displayLaunchUrl}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          updateCardById(card.id, (c) => {
+                            if (c.trackMode === 'TRIPLE' && Array.isArray(c.subTracks)) {
+                              return {
+                                ...c,
+                                subTracks: c.subTracks.map((sub) =>
+                                  sub.id === activeSubTrackId
+                                    ? { ...sub, launchUrl: val }
+                                    : sub
+                                ),
+                              };
+                            }
+                            return { ...c, launchUrl: val };
+                          });
+                        }}
+                        onKeyDown={(e) => e.stopPropagation()}
+                        placeholder="https://... or app deep link"
+                        className="w-full px-2.5 py-1 rounded bg-stone-950 border border-stone-700 text-xs text-amber-100"
+                      />
+                      <label className="inline-flex items-center gap-1.5 text-[10px] font-mono text-amber-200/80 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={displayAutoLaunchUrl}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            updateCardById(card.id, (c) => {
+                              if (c.trackMode === 'TRIPLE' && Array.isArray(c.subTracks)) {
+                                return {
+                                  ...c,
+                                  subTracks: c.subTracks.map((sub) =>
+                                    sub.id === activeSubTrackId
+                                      ? { ...sub, autoLaunchUrl: checked }
+                                      : sub
+                                  ),
+                                };
+                              }
+                              return { ...c, autoLaunchUrl: checked };
+                            });
+                          }}
+                          className="accent-amber-400"
+                        />
+                        <span>Auto-open URL when clicking Begin 5m</span>
+                      </label>
+                    </div>
+
                     {/* Backlog Queue Editor */}
                     <div className="space-y-1.5 pt-1 border-t border-white/[0.08]">
                       <label className="block text-[10px] font-mono uppercase text-amber-200/70">
@@ -1005,7 +1096,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
                       exit={{ opacity: 0, height: 0 }}
-                      className="overflow-hidden pt-2 space-y-3"
+                      className="overflow-hidden pt-1.5 space-y-2.5"
                       onClick={(e) => e.stopPropagation()}
                     >
                       {/* Triple-Track Switcher when card is in TRIPLE mode */}
@@ -1115,7 +1206,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                           <div className="text-[11px] font-mono text-stone-400 truncate">
                             Next: {displayBacklog[0] || 'None'}
                           </div>
-                          <div className="flex items-center gap-2 pt-1">
+                          <div className="flex items-center gap-2 pt-0.5">
                             <button
                               id={
                                 legacyStickyKey
@@ -1176,10 +1267,13 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
+                  if (displayAutoLaunchUrl && isValidResourceLaunchUrl(displayLaunchUrl)) {
+                    openResourceLaunchUrl(displayLaunchUrl);
+                  }
                   onSelectCategory(card.legacyCategoryKey || 'CAT1_MUSIC');
                   onStartCategory5mStep();
                 }}
-                className="w-full py-2.5 px-4 rounded-full bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                className="w-full py-2 px-4 rounded-full bg-amber-400/90 hover:bg-amber-300 text-stone-950 font-mono font-medium text-xs flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Play className="w-3.5 h-3.5 fill-current" />
                 <span>Begin 5m</span>

@@ -50,11 +50,21 @@ export function buildUnifiedSymmetryPayload(
   const bridgeNote =
     primaryItem?.nextStepNote?.trim() || primaryItem?.startupStep?.trim() || '';
 
+  const dripCfg = state.dailyAmbitionDrip || {
+    enabled: state.sovereignGoldenRuleMode !== false,
+    targetBlocksPerDay: state.dailySovereignDripTarget ?? 1,
+    completedToday: state.dailySovereignDripDone ? 1 : 0,
+    preferredSlotIndex: 1 as const,
+  };
+
   return {
     ...state,
-    dailySovereignDripDone: Boolean(state.dailySovereignDripDone),
-    dailySovereignDripTarget: state.dailySovereignDripTarget ?? 1,
-    sovereignGoldenRuleMode: state.sovereignGoldenRuleMode ?? true,
+    dailyAmbitionDrip: dripCfg,
+    dailySovereignDripDone:
+      Boolean(state.dailySovereignDripDone) ||
+      dripCfg.completedToday >= dripCfg.targetBlocksPerDay,
+    dailySovereignDripTarget: dripCfg.targetBlocksPerDay,
+    sovereignGoldenRuleMode: dripCfg.enabled,
     tier: state.loadMode,
     completedBlocks: {
       discretionaryBlocksCompletedToday: state.discretionaryBlocksCompletedToday,
@@ -99,8 +109,12 @@ export function computeMeaningfulStateSignature(state: SymmetryState): string {
     midDayResetCompletedToday: state.midDayResetCompletedToday,
     fixedEvent: state.fixedEvent,
     flashcardsReviewedCount: state.flashcardsReviewedCount,
+    flashcardsDailyCap: state.flashcardsDailyCap,
+    ankiConnectEnabled: state.ankiConnectEnabled,
+    ankiConnectUrl: state.ankiConnectUrl,
     earlyClearanceEnabled: state.earlyClearanceEnabled,
     discretionaryBlocksCompletedToday: state.discretionaryBlocksCompletedToday,
+    dailyAmbitionDrip: state.dailyAmbitionDrip,
     dailySovereignDripDone: state.dailySovereignDripDone,
     dailySovereignDripTarget: state.dailySovereignDripTarget,
     sovereignGoldenRuleMode: state.sovereignGoldenRuleMode,
@@ -111,6 +125,8 @@ export function computeMeaningfulStateSignature(state: SymmetryState): string {
     completedDeliverablesLog: state.completedDeliverablesLog,
     pipelineDays: state.pipelineDays,
     todayBlockLog: state.todayBlockLog,
+    roadmapShelter: state.roadmapShelter,
+    roadmapFoundation: state.roadmapFoundation,
     roadmapTracks: state.roadmapTracks,
     audioSettings: state.audioSettings,
     // Timer transitions (start/stop, stage change, task change, targetEndTimeMs) — excluding per-second secondsLeft

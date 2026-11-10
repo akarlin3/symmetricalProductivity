@@ -31,6 +31,7 @@ export interface DeliverableSplitResult {
   startupStep5m: string;
   subStepsSummary: string;
   milestones: string[];
+  blockSubSteps: string[];
   source: 'PRO_CLOUDFLARE' | 'BYOK_DIRECT' | 'LOCAL_FALLBACK';
 }
 
@@ -379,7 +380,8 @@ export async function callGemini<TFallback = undefined>(
 }
 
 /**
- * Deterministic local fallback for the 8-Block Deliverable Splitter.
+ * Deterministic local phase-template splitter (`Outline & Setup` -> `Core Sections` -> `Figures/Equations` -> `Final Polish`)
+ * generating one distinct 5-minute startup micro-script per block (`blockSubSteps`).
  */
 export function splitDeliverableLocal(
   title: string,
@@ -387,43 +389,72 @@ export function splitDeliverableLocal(
   trackId: TrackId = 'writing'
 ): DeliverableSplitResult {
   const cleanTitle = title.trim() || '2-Page Deliverable';
-  const blocks = Math.max(1, Math.min(24, totalBlocks || 8));
+  const blocks = Math.max(1, Math.min(24, Math.round(totalBlocks || 8)));
+  const isSlides = blocks === 4 || /slide|deck|presentation/i.test(cleanTitle);
+  const isHardwareOrCode =
+    trackId === 'coding' || /printer|k1c|hardware|pipeline|code|repo|build/i.test(cleanTitle);
 
-  let startupStep5m = `Open working document for "${cleanTitle}", outline section headings, and draft the first 3 bullet lines.`;
-  if (blocks === 4 || /slide|deck|presentation/i.test(cleanTitle)) {
-    startupStep5m = `Open slide deck for "${cleanTitle}", create 4 slide headers, and paste primary figure into Slide 1.`;
-  } else if (trackId === 'coding') {
-    startupStep5m = `Open workspace for "${cleanTitle}" and run 1 single 5m diagnostic or build step.`;
-  } else if (trackId === 'science') {
-    startupStep5m = `Open primary data/reference source for "${cleanTitle}" and write down 3 core mechanisms.`;
-  }
+  const blockSubSteps: string[] = Array.from({ length: blocks }, (_, idx) => {
+    const blockNum = idx + 1;
+    const progressRatio = blocks === 1 ? 1 : idx / (blocks - 1);
+
+    if (idx === 0) {
+      if (isSlides) {
+        return `Block 1/${blocks} [Outline & Setup]: Open slide deck for "${cleanTitle}", create slide titles, and drop primary figure on Slide 1.`;
+      }
+      if (isHardwareOrCode) {
+        return `Block 1/${blocks} [Outline & Setup]: Open workspace/bench for "${cleanTitle}" and isolate 1 reproducible 5m diagnostic check.`;
+      }
+      return `Block 1/${blocks} [Outline & Setup]: Open working doc for "${cleanTitle}", set section headers, and draft 3 scope bullets.`;
+    }
+
+    if (progressRatio < 0.5) {
+      if (isHardwareOrCode) {
+        return `Block ${blockNum}/${blocks} [Core Sections]: Implement or test core module/component #${blockNum - 1} for "${cleanTitle}".`;
+      }
+      if (isSlides) {
+        return `Block ${blockNum}/${blocks} [Core Sections]: Populate mechanism bullets and key claims across middle slides for "${cleanTitle}".`;
+      }
+      return `Block ${blockNum}/${blocks} [Core Sections]: Draft 1 core body section paragraph + supporting claims for "${cleanTitle}".`;
+    }
+
+    if (progressRatio < 0.82) {
+      if (isHardwareOrCode) {
+        return `Block ${blockNum}/${blocks} [Figures/Verification]: Run verification pass, log telemetry/plots, and tighten edge cases on "${cleanTitle}".`;
+      }
+      if (isSlides) {
+        return `Block ${blockNum}/${blocks} [Figures/Equations]: Label figure axes, verify equations/units, and add speaker cues for "${cleanTitle}".`;
+      }
+      return `Block ${blockNum}/${blocks} [Figures/Equations]: Insert figure captions, verify equations/data tables, and cross-check citations for "${cleanTitle}".`;
+    }
+
+    return `Block ${blockNum}/${blocks} [Final Polish]: Read "${cleanTitle}" top-to-bottom, tighten transitions, and lock submission export.`;
+  });
+
+  const startupStep5m = blockSubSteps[0];
 
   const milestones: string[] =
     blocks <= 4
-      ? [
-          `Block 1 (20m): 5m Startup (${startupStep5m}) + architecture & slide headers`,
-          `Block 2 (20m): Primary figure panels & data table placement`,
-          `Block 3 (20m): Mechanism bullet condensation & speaker notes`,
-          `Block 4 (20m): Visual verification & final export lock`,
-        ]
+      ? blockSubSteps
       : [
-          `Blocks 1–2 (40m): 5m Startup (${startupStep5m}) + structural outline & core thesis`,
-          `Blocks 3–4 (40m): Primary section drafting & mechanism synthesis`,
-          `Blocks 5–6 (40m): Results/discussion integration & figure cross-checks`,
-          `Blocks 7–${blocks} (40m): Citation verification, line edits & submission lock`,
+          `Blocks 1–${Math.max(1, Math.floor(blocks * 0.25))}: Outline & Setup`,
+          `Blocks ${Math.floor(blocks * 0.25) + 1}–${Math.floor(blocks * 0.55)}: Core Sections`,
+          `Blocks ${Math.floor(blocks * 0.55) + 1}–${blocks - 1}: Figures/Equations`,
+          `Block ${blocks}: Final Polish & Export`,
         ];
 
   return {
     startupStep5m,
     subStepsSummary: milestones.join(' • '),
     milestones,
+    blockSubSteps,
     source: 'LOCAL_FALLBACK',
   };
 }
 
 /**
- * 8-Block Deliverable Splitter powered by `callGemini(payload)`
- * (Priority 1: Pro Mode `/api/gemini-pro`, Priority 2: BYOK Key, Priority 3: Local Splitter).
+ * Multi-Block Deliverable Sub-Step Splitter powered by `callGemini(payload)`
+ * (Priority 1: Pro Mode `/api/gemini-pro`, Priority 2: BYOK Key, Priority 3: Local Phase-Template Splitter).
  */
 export async function splitDeliverableWithGemini(
   title: string,
@@ -431,14 +462,15 @@ export async function splitDeliverableWithGemini(
   trackId: TrackId = 'writing'
 ): Promise<DeliverableSplitResult> {
   const cleanTitle = title.trim() || '2-Page Paper Draft';
-  const blocks = Math.max(1, Math.min(24, totalBlocks || 8));
+  const blocks = Math.max(1, Math.min(24, Math.round(totalBlocks || 8)));
 
   const systemPrompt = [
-    'You are the mechanical 8-Block Deliverable Splitter for SymmetryManager.',
+    'You are the mechanical Multi-Block Deliverable Splitter for SymmetryManager.',
     'STRICT TONE RULES: Keep all labels strictly functional, concise, and mechanical. Zero philosophical, religious, or preachy text.',
-    `Split the deliverable "${cleanTitle}" (${blocks} total 20-minute blocks, track: ${trackId}) into:`,
-    '1. startupStep5m: A concrete, zero-friction 5-minute physical startup action (IGNITION_5M).',
-    '2. milestones: An array of 4 concise block-by-block milestone strings covering all blocks.',
+    `Split the deliverable "${cleanTitle}" (${blocks} total 20-minute blocks, track: ${trackId}) across four phases (Outline & Setup -> Core Sections -> Figures/Equations -> Final Polish):`,
+    '1. startupStep5m: A concrete, zero-friction 5-minute physical startup action for Block 1 (IGNITION_5M).',
+    `2. blockSubSteps: An array of EXACTLY ${blocks} distinct 5-minute startup micro-scripts (one per 20m block, prefixed "Block k/${blocks}: ...").`,
+    '3. milestones: An array of 4 concise phase summary strings.',
   ].join('\n');
 
   const res = await callGemini(
@@ -452,7 +484,7 @@ export async function splitDeliverableWithGemini(
           role: 'user',
           parts: [
             {
-              text: `Deliverable: "${cleanTitle}" (${blocks} blocks, track: ${trackId}). Return JSON with startupStep5m and milestones.`,
+              text: `Deliverable: "${cleanTitle}" (${blocks} blocks, track: ${trackId}). Return JSON with startupStep5m, blockSubSteps (length ${blocks}), and milestones.`,
             },
           ],
         },
@@ -463,12 +495,16 @@ export async function splitDeliverableWithGemini(
           type: 'OBJECT',
           properties: {
             startupStep5m: { type: 'STRING' },
+            blockSubSteps: {
+              type: 'ARRAY',
+              items: { type: 'STRING' },
+            },
             milestones: {
               type: 'ARRAY',
               items: { type: 'STRING' },
             },
           },
-          required: ['startupStep5m', 'milestones'],
+          required: ['startupStep5m', 'blockSubSteps', 'milestones'],
         },
         temperature: 0.2,
       },
@@ -480,13 +516,20 @@ export async function splitDeliverableWithGemini(
     try {
       const parsed = JSON.parse(res.text) as {
         startupStep5m?: string;
+        blockSubSteps?: string[];
         milestones?: string[];
       };
       const localFallback = splitDeliverableLocal(cleanTitle, blocks, trackId);
+      const rawSteps = Array.isArray(parsed.blockSubSteps)
+        ? parsed.blockSubSteps.map((s) => String(s).trim()).filter(Boolean)
+        : [];
+      const normalizedSubSteps = Array.from({ length: blocks }, (_, i) => {
+        return rawSteps[i] || localFallback.blockSubSteps[i];
+      });
       const startupStep5m =
         typeof parsed.startupStep5m === 'string' && parsed.startupStep5m.trim()
           ? parsed.startupStep5m.trim()
-          : localFallback.startupStep5m;
+          : normalizedSubSteps[0] || localFallback.startupStep5m;
       const milestones =
         Array.isArray(parsed.milestones) && parsed.milestones.length > 0
           ? parsed.milestones.map((m) => String(m).trim()).filter(Boolean)
@@ -495,6 +538,7 @@ export async function splitDeliverableWithGemini(
         startupStep5m,
         subStepsSummary: milestones.join(' • '),
         milestones,
+        blockSubSteps: normalizedSubSteps,
         source: res.source,
       };
     } catch {

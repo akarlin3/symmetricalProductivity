@@ -106,6 +106,7 @@ export const ProfilePresetModal: React.FC<ProfilePresetModalProps> = ({
     personal: '',
     coding: '',
     music: '',
+    culture: '',
   });
   const [builderShutdownTime, setBuilderShutdownTime] = useState('6:00 PM');
   const [builderRolloverHour, setBuilderRolloverHour] = useState(4);
@@ -161,11 +162,12 @@ export const ProfilePresetModal: React.FC<ProfilePresetModalProps> = ({
     setBuilderEveningCards(cards);
 
     const nextTracks: Record<RoadmapTrackId, string> = {
-      science: 'Core Track 1: Primary Career / Study',
-      writing: 'Core Track 2: Personal Projects & Output',
-      personal: 'Core Track 3: Health, Home & Relationships',
-      coding: 'Sandbox 1: Side Craft / Skill A',
-      music: 'Sandbox 2: Side Craft / Skill B',
+      science: 'Major Track 1: Primary Vocation & Research',
+      writing: 'Major Track 2: Writing & Authorship',
+      personal: 'Legacy Core Track',
+      coding: 'Sandbox Track 1: Engineering, Software & Tactile Craft',
+      music: 'Sandbox Track 2: Music & Acoustic Practice',
+      culture: 'Sandbox Track 3: Foreign Culture & Language',
     };
     for (const t of resolved.roadmapTracks) {
       nextTracks[t.id] = t.name;

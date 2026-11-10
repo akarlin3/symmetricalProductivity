@@ -13,9 +13,15 @@ import {
 } from '../types/symmetry';
 import {
   computeShiftMetrics,
+  DEFAULT_HOUSE_FOUNDATION,
+  DEFAULT_HOUSE_SHELTER,
   DEFAULT_SYMMETRY_STATE,
   formatRolloverHourLabel,
+  getEffectiveDailyAmbitionDrip,
   getLogicalDayKey,
+  isProjectAmbitionDripEligible,
+  migrateRoadmapTracksToHouseTopology,
+  normalizeOpenListArray,
 } from '../state/defaultState';
 import {
   applySmartIntakePlanToState,
@@ -272,13 +278,20 @@ export function compileFullGeminiPayload(
     state.timer.activeTaskType !== 'FLASHCARDS' &&
     state.recharge.weeklyExtensionsUsed < 2;
 
-  // Fluid & Sticky Recharge Categories
+  // Fluid & Sticky Recharge Categories (6 Symmetrical Channels)
   const cat1Fluid =
     state.recharge.fluidCategories?.CAT1_MUSIC ||
     DEFAULT_SYMMETRY_STATE.recharge.fluidCategories!.CAT1_MUSIC;
   const cat4Fluid =
     state.recharge.fluidCategories?.CAT4_COMFORT ||
     DEFAULT_SYMMETRY_STATE.recharge.fluidCategories!.CAT4_COMFORT;
+  const cat6Fluid =
+    state.recharge.fluidCategories?.CAT6_CULTURE ||
+    DEFAULT_SYMMETRY_STATE.recharge.fluidCategories!.CAT6_CULTURE || {
+      activeTitle: 'Culture & Language',
+      startupStep:
+        '5m spoken audio lesson, foreign music/cinema, or culinary prep — zero SRS flashcards.',
+    };
   const sMaker = state.recharge.stickySlots.CAT2_MAKER;
   const s3A = state.recharge.stickySlots['3A_FICTION'];
   const s3B = state.recharge.stickySlots['3B_NONFICTION'];
@@ -290,12 +303,17 @@ export function compileFullGeminiPayload(
       ? state.recharge.completedLog
       : DEFAULT_SYMMETRY_STATE.recharge.completedLog || [];
 
-  // Part III: 4-Rung Input/Output & 14-day empirical velocity
-  const totalInputBlocks = state.roadmapTracks.reduce(
+  // Part III: Structural House Roadmap (Shelter + 2 Major + 3 Sandbox + Foundation)
+  const houseTracks = migrateRoadmapTracksToHouseTopology(state.roadmapTracks);
+  const shelter = state.roadmapShelter || DEFAULT_HOUSE_SHELTER;
+  const foundation = state.roadmapFoundation || DEFAULT_HOUSE_FOUNDATION;
+  const drip = getEffectiveDailyAmbitionDrip(state);
+
+  const totalInputBlocks = houseTracks.reduce(
     (sum, t) => sum + t.inputBlocksCredited,
     0
   );
-  const totalOutputBlocks = state.roadmapTracks.reduce(
+  const totalOutputBlocks = houseTracks.reduce(
     (sum, t) => sum + t.outputBlocksCredited,
     0
   );
@@ -319,14 +337,22 @@ export function compileFullGeminiPayload(
   const velocity14DayAvgPerDay = (velocity14DayTotalBlocks / 14).toFixed(1);
   const velocity14DayHours = ((velocity14DayTotalBlocks * 20) / 60).toFixed(1);
 
-  const backlogList =
-    state.openListBacklog && state.openListBacklog.length > 0
+  const structuredOpenList = normalizeOpenListArray(
+    state.openList && state.openList.length > 0
+      ? state.openList
+      : state.openListBacklog && state.openListBacklog.length > 0
       ? state.openListBacklog
-      : state.projectBacklog || [];
+      : state.projectBacklog || []
+  );
 
   const stateWithBandwidth: SymmetryState = {
     ...state,
     bandwidth,
+    dailyAmbitionDrip: drip,
+    openList: structuredOpenList,
+    roadmapShelter: shelter,
+    roadmapFoundation: foundation,
+    roadmapTracks: houseTracks,
   };
 
   const mdLines: string[] = [
@@ -334,9 +360,10 @@ export function compileFullGeminiPayload(
     '',
     '## Header Telemetry',
     `- **Logical Date (${rolloverLabel} Rollover Boundary)**: \`${logicalDate}\` (Boundary: \`${rolloverLabel}\`, Early Outing Cutoff: \`${shutdownTime}\`)`,
-    `- **Active Profile Preset**: ${state.profileName || DEFAULT_SYMMETRY_STATE.profileName} (\`${state.profilePresetId || 'AVERY_DEFAULT'}\`)`,
+    `- **Active Profile Preset**: ${state.profileName || DEFAULT_SYMMETRY_STATE.profileName} (\`${state.profilePresetId || 'BALANCED_CORE'}\`)`,
     `- **Current Bandwidth**: \`${bandwidth}\` (\`Sharp\` / \`Steady\` / \`Low\`)`,
     `- **Active Load Mode**: **${loadModeDisplay}** (\`${state.loadMode}\`${state.cruisePlus ? ' • Cruise+' : ''}${state.preExamTaperActive ? ' • Pre-Exam Taper Active' : ''}) — Target Ceiling: ${metrics.totalTargetBlocks} blocks`,
+    `- **Daily Ambition Drip ("Zero 100%-Institutional Days")**: \`${drip.enabled ? `${drip.completedToday} / ${drip.targetBlocksPerDay} block` : 'PAUSED'}\` (Preferred Slot: \`#${drip.preferredSlotIndex + 1}\`)`,
     `- **Consecutive Surge Days**: \`${state.surgeConsecutiveDays} / 2\``,
     `- **Live Countdown**: \`${liveCountdownFormatted}\` (HUD Readout: \`${metrics.durationPrefix}\`)`,
     `- **Fixed Event Anchor**: \`${state.fixedEvent}\` | **Upcoming Milestones**: ${milestones}`,
@@ -351,7 +378,7 @@ export function compileFullGeminiPayload(
     `- **Surge Mid-Day Reset (60–120m after Block 7)**: \`${state.midDayResetCompletedToday ? 'Completed' : 'Pending'}\``,
     ...state.baselineBlocks.map(
       (b) =>
-        `- [${b.completed ? 'x' : b.bankedViaEarlyClearance ? 'B' : ' '}] **${b.title}** (\`${b.category}\` • Track: \`${b.trackId}\`) — 5m Startup: *${b.startupStep}*`
+        `- [${b.completed ? 'x' : b.bankedViaEarlyClearance ? 'B' : b.reallocatedViaEarlyClearance ? 'R' : ' '}] **${b.title}** (\`${b.category}\` • Track: \`${b.trackId}\`${b.launchUrl ? ` • Link: \`${b.launchUrl}\`` : ''}) — 5m Startup: *${b.startupStep}*`
     ),
     '',
     `## 2. Today's Timestamped Block Log (Since ${rolloverLabel} Rollover)`,
@@ -364,27 +391,30 @@ export function compileFullGeminiPayload(
         })
       : [`- *(No blocks completed yet since ${rolloverLabel} logical day boundary)*`]),
     '',
-    '## 3. Active Closed List (Max 3 Items — 100% Focus #1 Lock) & Open List Backlog',
+    '## 3. Active Closed List (Max 3 Items — Focus #1 Lock + 1b Daily Ambition Drip) & Open List Backlog',
     '### Active Closed List (Slots 1–3)',
     ...state.projectQueue.flatMap((p) => {
+      const isDrip = isProjectAmbitionDripEligible(p);
       const lockBadge =
         p.slot === 1
-          ? 'UNLOCKED PRIMARY FOCUS #1 (100% Discretionary Project Lock)'
+          ? 'UNLOCKED PRIMARY FOCUS #1 (Serialized Discretionary Lock)'
+          : isDrip && drip.enabled
+          ? `DAILY AMBITION DRIP CAPSTONE (1b/day Cap • Queue Slot #${p.slot})`
           : `LOCKED UNTIL ITEM #1 COMPLETES (Queue Slot #${p.slot})`;
       const subSteps = buildDefaultSubStepsForProject(p);
       return [
-        `${p.slot}. **${p.title}** — \`[${p.completedBlocks} / ${p.totalBlocks} blocks]\` | Track: \`${p.trackId}\` | Preset: \`${p.presetType}\` | **${lockBadge}**`,
+        `${p.slot}. **${p.title}** — \`[${p.completedBlocks} / ${p.totalBlocks} blocks]\` | Track: \`${p.trackId}\`${p.subTrack ? ` (\`${p.subTrack}\`)` : ''} | Preset: \`${p.presetType}\`${p.launchUrl ? ` | Link: \`${p.launchUrl}\`` : ''} | **${lockBadge}**`,
         `   - **5m Startup Step**: *${p.startupStep}*`,
         `   - **Next-Step Note**: ${p.nextStepNote || 'Ready for next 20m block.'}`,
         `   - **Sub-Steps Breakdown**: ${subSteps.join(' • ')}`,
       ];
     }),
     '',
-    '### Open List Backlog (Deferred Deliverables)',
-    ...(backlogList.length > 0
-      ? backlogList.map(
+    '### Open List Backlog (Deferred Deliverables & Prerequisite Locks)',
+    ...(structuredOpenList.length > 0
+      ? structuredOpenList.map(
           (b, idx) =>
-            `- [Backlog #${idx + 1}] **${b.title}** — \`[${b.completedBlocks || 0} / ${b.totalBlocks} blocks]\` (\`${b.presetType}\`, Track: \`${b.trackId}\`) — 5m Startup: *${b.startupStep}*`
+            `- [Backlog #${idx + 1}] **${b.title}** — \`[${b.completedBlocks || 0} / ${b.totalBlocks || b.blocksTotal || 8} blocks]\` (\`${b.presetType || 'PAPER_8'}\`, Track: \`${b.trackId || 'science'}\`${b.blockedByTitle ? `, Locked until "${b.blockedByTitle}" is 100%` : ''}) — 5m Startup: *${b.startupStep || `Open "${b.title}" and complete first 5m startup step.`}*`
         )
       : ['- *(No deferred items in Open List Backlog)*']),
     '',
@@ -404,20 +434,21 @@ export function compileFullGeminiPayload(
     '',
     '---',
     '',
-    '# Part II: Off-Duty 5-Pillar Recharge State',
+    '# Part II: Off-Duty 6-Channel Symmetrical Recharge State',
     '',
     '## 1. Option 0 (Bounded Stillness) & End-of-Shift Lock',
     `- **End-of-Shift Lock Status**: ${metrics.isZeroWorkLeft ? 'LOCKED (`[0m work left]` — Evening Menu Active)' : `ON-DUTY (\`${metrics.remainingWorkFormatted}\`)`}`,
     `- **Option 0 (Bounded Stillness) Windows Logged Tonight**: \`[${state.recharge.option0ConsecutiveWindows} / 2]\` (20m silent timer with zero startup step; capped at 2 consecutive windows [40m] -> Fork Check: "Go to Sleep" vs. "Start One 5m Activity")`,
     '',
-    '## 2. All 5 Recharge Categories (Active Titles, `[X / 3]` Sticky Counters, 5m Startup Prompts & Queued Next Items)',
-    `- **Category 1 — Music [Fluid]**: **${cat1Fluid.activeTitle}** — Counter: \`[Fluid]\` — 5m Startup: *${cat1Fluid.startupStep}* — Queued Next: *Instrument Rotation (Bass / Guitar / Piano / Drums)*`,
+    '## 2. All 6 Recharge Categories (Active Titles, `[X / 3]` Sticky Counters, 5m Startup Prompts & Queued Next Items)',
+    `- **Category 1 — Music [Fluid]**: **${cat1Fluid.activeTitle}** — Counter: \`[Fluid]\` — 5m Startup: *${cat1Fluid.startupStep}* — Queued Next: *Instrument Rotation*`,
     `- **Category 2 — Maker / Hardware [Sticky]**: **${sMaker.activeTitle}** — Counter: \`[${sMaker.fiveMinStarts} / 3]\` — 5m Startup: *${sMaker.startupStep}* — Queued Next: **${sMaker.queuedNextTitle || sMaker.backlogQueue[0] || 'None'}** — Backlog: ${sMaker.backlogQueue.join(', ') || 'None'}`,
     `- **Category 3A — Media: Fiction [Sticky]**: **${s3A.activeTitle}** (${state.recharge.fictionSpeed}) — Counter: \`[${s3A.fiveMinStarts} / 3]\` — 5m Startup: *${s3A.startupStep}* — Queued Next: **${s3A.queuedNextTitle || s3A.backlogQueue[0] || 'None'}** — Backlog: ${s3A.backlogQueue.join(', ') || 'None'}`,
     `- **Category 3B — Media: Nonfiction [Sticky]**: **${s3B.activeTitle}** — Counter: \`[${s3B.fiveMinStarts} / 3]\` — 5m Startup: *${s3B.startupStep}* — Queued Next: **${s3B.queuedNextTitle || s3B.backlogQueue[0] || 'None'}** — Backlog: ${s3B.backlogQueue.join(', ') || 'None'}`,
     `- **Category 3C — Media: Visual Media / Video [Sticky]**: **${s3C.activeTitle}** — Counter: \`[${s3C.fiveMinStarts} / 3]\` — 5m Startup: *${s3C.startupStep}* — Queued Next: **${s3C.queuedNextTitle || s3C.backlogQueue[0] || 'None'}** — Backlog: ${s3C.backlogQueue.join(', ') || 'None'}`,
     `- **Category 4 — Comfort Show [Fluid]**: **${cat4Fluid.activeTitle}** — Counter: \`[Fluid]\` — 5m Startup: *${cat4Fluid.startupStep}* — Queued Next: *Episode Rotation (Away from Work Monitor)*`,
     `- **Category 5 — Gaming [Sticky]**: **${sGaming.activeTitle}** — Counter: \`[${sGaming.fiveMinStarts} / 3]\` — 5m Startup: *${sGaming.startupStep}* — Queued Next: **${sGaming.queuedNextTitle || sGaming.backlogQueue[0] || 'None'}** — Backlog: ${sGaming.backlogQueue.join(', ') || 'None'}`,
+    `- **Category 6 — Culture & Language [Fluid]**: **${cat6Fluid.activeTitle}** — Counter: \`[Fluid]\` — 5m Startup: *${cat6Fluid.startupStep}* — Queued Next: *Spoken Audio / Cinema / Culinary Rotation*`,
     '',
     '## 3. Completed Recharge Log',
     ...(rechargeLog.length > 0
@@ -426,22 +457,28 @@ export function compileFullGeminiPayload(
     '',
     '---',
     '',
-    '# Part III: 4-Rung Master Horizon & Empirical History',
+    '# Part III: Structural House Master Horizon & Empirical History',
     '',
     '## 1. Global Input/Output Ledger & Recent 14-Day Block Velocity Summary',
     `- **Global Symmetrical Ledger Balance**: Input: **${totalInputBlocks} blocks (${inputPct}%)** | Output: **${totalOutputBlocks} blocks (${outputPct}%)** (Target: 50% Input / 50% Output)`,
     `- **Recent 14-Day Block Velocity Summary**: **${velocity14DayTotalBlocks} blocks (${velocity14DayHours}h)** logged across 14 days — Average Velocity: **${velocity14DayAvgPerDay} blocks/day** (${totalInputBlocks} INPUT / ${totalOutputBlocks} OUTPUT; ${archiveList.length} deliverables archived totaling ${archivedBlocksSum} blocks)`,
+    `- **Top Shelter Strip (${shelter.title})**: ${shelter.horizonNotes.map((h) => `${h.label}: ${h.note}`).join(' • ')}`,
+    `- **Bottom Foundation Strip (${foundation.title})**: ${foundation.statusSummary || 'Active'} — ${foundation.horizonNotes.map((h) => `${h.label}: ${h.note}`).join(' • ')}`,
     '',
-    '## 2. 3 Core Tracks & 2 Zero-Quota Sandbox Tracks Across Rungs 1–4',
-    ...state.roadmapTracks.flatMap((t) => {
+    '## 2. Structural House Tracks (2 Major Core + 3 Zero-Quota Sandbox) Across Horizons 1–4',
+    ...houseTracks.flatMap((t) => {
       const statusTag = t.isSandbox
         ? t.activeThisWeek
           ? 'Active Sandbox Session'
           : 'Flexible Pace / Coasting in Neutral'
         : 'Active Core Quota';
+      const subSplit =
+        t.id === 'science'
+          ? ` (1A Institutional: ${t.subTrack1ABlocksCredited ?? t.outputBlocksCredited}b | 1B Independent: ${t.subTrack1BBlocksCredited ?? 0}b)`
+          : '';
       const targetStr = t.isSandbox
         ? `INPUT: ${t.inputBlocksCredited} blocks (Zero-Quota) | OUTPUT: ${t.outputBlocksCredited} blocks (Zero-Quota)`
-        : `INPUT: ${t.inputBlocksCredited} / ${t.inputWeeklyTarget} blocks | OUTPUT: ${t.outputBlocksCredited} / ${t.outputWeeklyTarget} blocks`;
+        : `INPUT: ${t.inputBlocksCredited} / ${t.inputWeeklyTarget} blocks | OUTPUT: ${t.outputBlocksCredited} / ${t.outputWeeklyTarget} blocks${subSplit}`;
       return [
         `### ${t.name} (\`${t.categoryLabel}\` — ${statusTag})`,
         `- **Track Ledger**: ${targetStr}`,
@@ -604,11 +641,34 @@ export function parseGeminiResponseToState(
             };
           };
 
-          const resolvedBacklog = Array.isArray(parsedObj.openListBacklog)
-            ? parsedObj.openListBacklog
-            : Array.isArray(parsedObj.projectBacklog)
-            ? parsedObj.projectBacklog
-            : workingState.openListBacklog;
+          const resolvedOpenList = normalizeOpenListArray(
+            Array.isArray(parsedObj.openList)
+              ? parsedObj.openList
+              : Array.isArray(parsedObj.openListBacklog)
+              ? parsedObj.openListBacklog
+              : Array.isArray(parsedObj.projectBacklog)
+              ? parsedObj.projectBacklog
+              : workingState.openList || workingState.openListBacklog
+          );
+          const resolvedBacklog = resolvedOpenList.map((item) => ({
+            id: item.id,
+            title: item.title,
+            presetType: item.presetType || 'PAPER_8',
+            completedBlocks: item.completedBlocks ?? 0,
+            totalBlocks: item.totalBlocks ?? item.blocksTotal ?? 8,
+            trackId: item.trackId || 'science',
+            subTrack: item.subTrack,
+            startupStep:
+              item.startupStep ||
+              `Open "${item.title}" and complete first 5m startup step.`,
+            nextStepNote: item.notes || item.nextStepNote || 'Queued in Open List backlog.',
+            blockedByTitle: item.blockedByTitle,
+            notes: item.notes,
+            launchUrl: item.launchUrl,
+            autoLaunchUrl: item.autoLaunchUrl,
+            isAmbitionDrip: item.isAmbitionDrip,
+            isSovereignDrip: item.isAmbitionDrip ?? item.isSovereignDrip,
+          }));
 
           const resolvedCompleted = Array.isArray(parsedObj.completedDeliverablesLog)
             ? parsedObj.completedDeliverablesLog
@@ -620,6 +680,13 @@ export function parseGeminiResponseToState(
             ...workingState,
             ...parsedObj,
             bandwidth: parsedObj.bandwidth || workingState.bandwidth || 'Sharp',
+            dailyAmbitionDrip:
+              parsedObj.dailyAmbitionDrip && typeof parsedObj.dailyAmbitionDrip === 'object'
+                ? {
+                    ...getEffectiveDailyAmbitionDrip(workingState),
+                    ...parsedObj.dailyAmbitionDrip,
+                  }
+                : getEffectiveDailyAmbitionDrip(workingState),
             taskWeights: {
               ...(workingState.taskWeights || DEFAULT_SYMMETRY_STATE.taskWeights!),
               ...(parsedObj.taskWeights || {}),
@@ -637,6 +704,7 @@ export function parseGeminiResponseToState(
               Array.isArray(parsedObj.projectQueue) && parsedObj.projectQueue.length > 0
                 ? parsedObj.projectQueue
                 : workingState.projectQueue,
+            openList: resolvedOpenList,
             projectBacklog: resolvedBacklog,
             openListBacklog: resolvedBacklog,
             completedDeliverablesLog: resolvedCompleted,
@@ -645,10 +713,16 @@ export function parseGeminiResponseToState(
               Array.isArray(parsedObj.pipelineDays) && parsedObj.pipelineDays.length > 0
                 ? parsedObj.pipelineDays
                 : workingState.pipelineDays,
-            roadmapTracks:
+            roadmapShelter: parsedObj.roadmapShelter || workingState.roadmapShelter || DEFAULT_HOUSE_SHELTER,
+            roadmapFoundation:
+              parsedObj.roadmapFoundation ||
+              workingState.roadmapFoundation ||
+              DEFAULT_HOUSE_FOUNDATION,
+            roadmapTracks: migrateRoadmapTracksToHouseTopology(
               Array.isArray(parsedObj.roadmapTracks) && parsedObj.roadmapTracks.length > 0
                 ? parsedObj.roadmapTracks
-                : workingState.roadmapTracks,
+                : workingState.roadmapTracks
+            ),
             timer: {
               ...workingState.timer,
               ...(parsedObj.timer || {}),
@@ -666,6 +740,15 @@ export function parseGeminiResponseToState(
                   ...(workingState.recharge.fluidCategories?.CAT4_COMFORT ||
                     DEFAULT_SYMMETRY_STATE.recharge.fluidCategories!.CAT4_COMFORT),
                   ...(parsedObj.recharge?.fluidCategories?.CAT4_COMFORT || {}),
+                },
+                CAT6_CULTURE: {
+                  ...(workingState.recharge.fluidCategories?.CAT6_CULTURE ||
+                    DEFAULT_SYMMETRY_STATE.recharge.fluidCategories!.CAT6_CULTURE || {
+                      activeTitle: 'Culture & Language',
+                      startupStep:
+                        '5m spoken audio lesson, foreign music/cinema, or culinary prep — zero SRS flashcards.',
+                    }),
+                  ...(parsedObj.recharge?.fluidCategories?.CAT6_CULTURE || {}),
                 },
               },
               stickySlots: {
@@ -824,10 +907,8 @@ export function parseGeminiResponseToState(
   }
 
   // 2G. Parse Closed List Items (#1–#3)
-  // Supports both single-line and multi-line formats:
-  // `1. **Title** — `[2 / 8 blocks]` | Track: `science` ...`
   const closedListItemRegex =
-    /^([123])\.\s*\*\*(?:\[[^\]]+\]\s*)?([^*]+)\*\*\s*—\s*(?:Progress:\s*)?`?\[(\d+)\s*\/\s*(\d+)\s*blocks?\]`?(?:[^\n]*?Track:\s*`?(science|writing|personal|coding|music)`?)?(?:[^\n]*?5m Startup(?:\s*Step)?:\s*\*([^*\n]+)\*)?(?:\n\s*-\s*\*\*5m Startup Step\*\*:\s*\*([^*\n]+)\*)?(?:\n\s*-\s*\*\*Next-Step Note\*\*:\s*([^\n]+))?/gim;
+    /^([123])\.\s*\*\*(?:\[[^\]]+\]\s*)?([^*]+)\*\*\s*—\s*(?:Progress:\s*)?`?\[(\d+)\s*\/\s*(\d+)\s*blocks?\]`?(?:[^\n]*?Track:\s*`?(science|writing|personal|coding|music|culture)`?)?(?:[^\n]*?5m Startup(?:\s*Step)?:\s*\*([^*\n]+)\*)?(?:\n\s*-\s*\*\*5m Startup Step\*\*:\s*\*([^*\n]+)\*)?(?:\n\s*-\s*\*\*Next-Step Note\*\*:\s*([^\n]+))?/gim;
   const closedMatches = [...mdText.matchAll(closedListItemRegex)];
   if (closedMatches.length > 0) {
     const newQueue: ProjectItem[] = [...workingState.projectQueue];
@@ -844,15 +925,21 @@ export function parseGeminiResponseToState(
 
       const existingIdx = newQueue.findIndex((p) => p.slot === slotNum);
       const existing = newQueue[existingIdx];
-      const trackId: TrackId = ['science', 'writing', 'personal', 'coding', 'music'].includes(
-        rawTrack
-      )
+      const trackId: TrackId = [
+        'science',
+        'writing',
+        'personal',
+        'coding',
+        'music',
+        'culture',
+      ].includes(rawTrack)
         ? rawTrack
         : existing?.trackId || 'science';
       const presetType: ProjectPresetType =
         totalBlocks === 8 ? 'PAPER_8' : totalBlocks === 4 ? 'SLIDES_4' : 'CUSTOM';
 
       const updatedItem: ProjectItem = {
+        ...(existing || {}),
         id: existing?.id || `proj_${slotNum}`,
         slot: slotNum,
         title: cleanTitle,
@@ -895,9 +982,9 @@ export function parseGeminiResponseToState(
     appliedChanges.push(`Updated Closed List Queue (${updatedClosedCount} active items)`);
   }
 
-  // 2H. Parse Open List Backlog (`- [Backlog #1] **Title** — `[0 / 8 blocks]` ... — 5m Startup: *...*`)
+  // 2H. Parse Open List Backlog (`- [Backlog #1] **Title** — `[0 / 8 blocks]` ...`)
   const backlogRegex =
-    /^-\s*\[Backlog\s*#\d+\]\s*\*\*([^*]+)\*\*\s*—\s*(?:Progress:\s*)?`?\[(\d+)\s*\/\s*(\d+)\s*blocks?\]`?(?:[^\n]*?Track:\s*`?(science|writing|personal|coding|music)`?)?(?:[^\n]*?5m Startup(?:\s*Step)?:\s*\*([^*\n]+)\*)?/gim;
+    /^-\s*\[Backlog\s*#\d+\]\s*\*\*([^*]+)\*\*\s*—\s*(?:Progress:\s*)?`?\[(\d+)\s*\/\s*(\d+)\s*blocks?\]`?(?:[^\n]*?Track:\s*`?(science|writing|personal|coding|music|culture)`?)?(?:[^\n]*?Locked until\s+"([^"]+)"\s+is\s+100%)?(?:[^\n]*?5m Startup(?:\s*Step)?:\s*\*([^*\n]+)\*)?/gim;
   const backlogMatches = [...mdText.matchAll(backlogRegex)];
   if (backlogMatches.length > 0) {
     const parsedBacklog: Omit<ProjectItem, 'slot'>[] = backlogMatches.map((bm, i) => {
@@ -905,13 +992,19 @@ export function parseGeminiResponseToState(
       const completedBlocks = Math.max(0, Number(bm[2]) || 0);
       const totalBlocks = Math.max(1, Number(bm[3]) || 4);
       const rawTrack = (bm[4] || 'science').toLowerCase() as TrackId;
-      const trackId: TrackId = ['science', 'writing', 'personal', 'coding', 'music'].includes(
-        rawTrack
-      )
+      const trackId: TrackId = [
+        'science',
+        'writing',
+        'personal',
+        'coding',
+        'music',
+        'culture',
+      ].includes(rawTrack)
         ? rawTrack
         : 'science';
+      const blockedByTitle = bm[5]?.trim() || undefined;
       const startupStep =
-        bm[5]?.trim() || `Open "${title}" and complete first 5m startup step.`;
+        bm[6]?.trim() || `Open "${title}" and complete first 5m startup step.`;
       const presetType: ProjectPresetType =
         totalBlocks === 8 ? 'PAPER_8' : totalBlocks === 4 ? 'SLIDES_4' : 'CUSTOM';
       return {
@@ -923,10 +1016,12 @@ export function parseGeminiResponseToState(
         trackId,
         startupStep,
         nextStepNote: 'Queued in Open List Backlog.',
+        blockedByTitle,
       };
     });
     workingState.projectBacklog = parsedBacklog;
     workingState.openListBacklog = parsedBacklog;
+    workingState.openList = normalizeOpenListArray(parsedBacklog);
     matchedAnyStructure = true;
     appliedChanges.push(`Updated Open List Backlog (${parsedBacklog.length} items)`);
   }
@@ -1110,7 +1205,7 @@ export function parseGeminiResponseToState(
     matchedAnyStructure = true;
   }
 
-  // Fluid Category 1 & Category 4
+  // Fluid Category 1, Category 4, & Category 6
   const cat1Match = mdText.match(
     /Category 1\s*—\s*Music\s*\[Fluid\]\*\*:\s*(?:\*\*)?([^*\n—]+)(?:\*\*)?(?:[^\n]*?5m Startup(?:\s*Prompt)?:\s*\*([^*\n]+)\*)?/i
   );
@@ -1135,6 +1230,25 @@ export function parseGeminiResponseToState(
       startupStep:
         cat4Match[2]?.trim() ||
         workingState.recharge.fluidCategories.CAT4_COMFORT.startupStep,
+    };
+    matchedAnyStructure = true;
+  }
+
+  const cat6Match = mdText.match(
+    /Category 6\s*—\s*[^\n[]*\[Fluid\]\*\*:\s*(?:\*\*)?([^*\n—]+)(?:\*\*)?(?:[^\n]*?5m Startup(?:\s*Prompt)?:\s*\*([^*\n]+)\*)?/i
+  );
+  if (cat6Match && workingState.recharge.fluidCategories) {
+    const baseCat6 = workingState.recharge.fluidCategories.CAT6_CULTURE || {
+      label: '6. Culture & Language',
+      activeTitle: 'Culture & Language',
+      subtitle: 'Low-pressure cultural & spoken language immersion — zero SRS flashcards.',
+      startupStep:
+        '5m spoken audio lesson, foreign music/cinema, or culinary prep — zero SRS flashcards.',
+    };
+    workingState.recharge.fluidCategories.CAT6_CULTURE = {
+      ...baseCat6,
+      activeTitle: cat6Match[1].trim(),
+      startupStep: cat6Match[2]?.trim() || baseCat6.startupStep,
     };
     matchedAnyStructure = true;
   }

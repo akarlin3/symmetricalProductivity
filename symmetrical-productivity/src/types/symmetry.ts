@@ -6,6 +6,9 @@ export type LoadMode = 'CRUISE' | 'SURGE' | 'TAPER';
 
 export type BandwidthLevel = 'Sharp' | 'Steady' | 'Low';
 
+export type EarlyClearanceActionMode = 'BANK_FREE_TIME' | 'REALLOCATE_TO_QUEUE';
+
+export type MajorSubTrackId = '1A_INSTITUTIONAL' | '1B_INDEPENDENT';
 
 export type FixedEventType = 'NONE' | 'LAB_2H' | 'VOLUNTEER' | 'EVENING_OUTING_6PM';
 
@@ -13,8 +16,38 @@ export type BaselineCategory = 'FLASHCARDS_ANATOMY' | 'FLASHCARDS_COMP' | 'READI
 
 export type ActiveTaskType = 'FLASHCARDS' | 'READING' | 'SYNTHESIS' | 'PROJECT';
 
-export type TrackId = 'science' | 'writing' | 'personal' | 'coding' | 'music';
+export type TrackId = 'science' | 'writing' | 'personal' | 'coding' | 'music' | 'culture';
 export type RoadmapTrackId = TrackId;
+
+export interface RoadmapHorizonNote {
+  horizon: 1 | 2 | 3 | 4;
+  horizonLabel: string;
+  label?: string;
+  note: string;
+  horizonNumber?: 1 | 2 | 3 | 4;
+  focusSummary?: string;
+}
+
+export interface RoadmapHouseStrip {
+  id?: 'SHELTER' | 'FOUNDATION';
+  title: string;
+  subtitle: string;
+  statusSummary?: string;
+  statusNote?: string;
+  horizonNotes: RoadmapHorizonNote[];
+  horizonMilestones?: Record<string, string>;
+}
+
+export type RoadmapShelterConfig = RoadmapHouseStrip;
+export type RoadmapFoundationConfig = RoadmapHouseStrip;
+
+export interface DailyAmbitionDripConfig {
+  enabled: boolean;
+  targetBlocksPerDay: number;
+  completedToday: number;
+  /** 1 -> Closed List Slot #2 (index 1); 2 -> Closed List Slot #3 (index 2) */
+  preferredSlotIndex: 1 | 2;
+}
 
 export type EnergyBandwidthState = 'SHARP' | 'STEADY' | 'LOW_FOGGY';
 
@@ -65,11 +98,16 @@ export interface BaselineBlock {
   completedBlocks?: number; // 0..targetBlocks
   partialCredit?: number; // 0.5 when a 0.5x Micro-Block is logged
   bankedViaEarlyClearance?: boolean;
+  /** Option B: Marks remaining recall blocks cleared without shrinking workLeft (converts 1-for-1 into extra discretionary project/drip blocks) */
+  reallocatedViaEarlyClearance?: boolean;
+  reallocatedBlocksCount?: number;
   earlyClearanceEligible?: boolean; // Toggleable per slot
   supportsEarlyClearance?: boolean; // Alias for earlyClearanceEligible
   lateNightBlocker?: boolean; // Toggleable per slot (prevents scheduling as final block of night)
   startupStep: string;
   startupPrompt?: string;
+  launchUrl?: string;
+  autoLaunchUrl?: boolean;
   trackId: TrackId;
   cognitiveDemand?: CognitiveDemandTag;
 }
@@ -85,17 +123,27 @@ export interface ProjectItem {
   presetType: ProjectPresetType;
   completedBlocks: number;
   totalBlocks: number;
+  blocksTotal?: number;
   trackId: TrackId;
+  subTrack?: MajorSubTrackId;
   startupStep: string;
   nextStepNote: string;
+  notes?: string;
+  blockedByTitle?: string;
+  dueDateLabel?: string;
+  launchUrl?: string;
+  autoLaunchUrl?: boolean;
   cognitiveDemand?: CognitiveDemandTag;
   blockedOnExternalFeedback?: boolean;
   blockSubSteps?: string[];
+  isAmbitionDrip?: boolean;
   isSovereignDrip?: boolean;
   category?: ClosedListCategory;
 }
 
 export type ClosedListItem = ProjectItem;
+
+export type OpenListItem = Omit<ProjectItem, 'slot'>;
 
 export interface PipelineDay {
   dayIndex: number;
@@ -108,6 +156,9 @@ export interface PipelineDay {
   fixedEvent: FixedEventType;
   fixedEventTimeLabel?: string;
   earlyMorningAnchor: boolean;
+  earlyShutdownFlag?: boolean;
+  earlyEveningShutdownBadge?: boolean | string;
+  importedAnchorSummary?: string;
   isToday: boolean;
   primaryDeliverable?: string;
   mode?: string;
@@ -117,6 +168,8 @@ export interface PipelineDay {
   eveningBridge?: string;
 }
 
+export type PipelineDayEntry = PipelineDay;
+
 export type SmartIntakeLoadMode = 'CRUISE' | 'SURGE' | 'TAPER_LAB';
 
 export type SmartIntakeRoadmapTrack =
@@ -124,7 +177,8 @@ export type SmartIntakeRoadmapTrack =
   | 'WRITING'
   | 'HOME'
   | 'CODING_MAKER'
-  | 'MUSIC';
+  | 'MUSIC'
+  | 'CULTURE';
 
 export interface SmartIntakeFixedEvent {
   day: string;
@@ -208,7 +262,8 @@ export type RechargeCategoryId =
   | 'CAT2_MAKER'
   | 'CAT3_MEDIA'
   | 'CAT4_COMFORT'
-  | 'CAT5_GAMING';
+  | 'CAT5_GAMING'
+  | 'CAT6_CULTURE';
 
 export type MediaSubTrackId = '3A_FICTION' | '3B_NONFICTION' | '3C_VIDEO';
 
@@ -225,6 +280,8 @@ export interface StickySlotState {
   startsLogged: number; // Alias synchronized with fiveMinStarts ([X / 3] starts)
   unlockedViaCheckIn: boolean;
   archivedTitles?: string[];
+  launchUrl?: string;
+  autoLaunchUrl?: boolean;
 }
 
 export type StickyItemState = StickySlotState;
@@ -239,6 +296,7 @@ export interface CompletedDeliverableEntry {
   blocksCompleted: number;
   totalBlocks: number;
   trackId: TrackId;
+  subTrack?: MajorSubTrackId;
   presetType?: ProjectPresetType;
 }
 
@@ -253,11 +311,14 @@ export interface FluidCategoryConfig {
   activeTitle: string;
   subtitle: string;
   startupStep: string;
+  launchUrl?: string;
+  autoLaunchUrl?: boolean;
 }
 
 export interface FluidCategoriesMap {
   CAT1_MUSIC: FluidCategoryConfig;
   CAT4_COMFORT: FluidCategoryConfig;
+  CAT6_CULTURE?: FluidCategoryConfig;
 }
 
 export interface EveningSubTrackConfig {
@@ -270,19 +331,21 @@ export interface EveningSubTrackConfig {
   backlogQueue: string[];
   fiveMinStarts: number;
   unlockedViaCheckIn: boolean;
+  launchUrl?: string;
+  autoLaunchUrl?: boolean;
 }
 
 export interface EveningCategoryCardConfig {
-  id: string; // 'CAT1_MUSIC' | 'CAT2_MAKER' | 'CAT3_MEDIA' | 'CAT4_COMFORT' | 'CAT5_GAMING' | custom ID
+  id: string; // 'CAT1_MUSIC' | 'CAT2_MAKER' | 'CAT3_MEDIA' | 'CAT4_COMFORT' | 'CAT5_GAMING' | 'CAT6_CULTURE' | custom ID
   slotNumber?: number;
-  categoryName: string; // e.g., '1. Creative / Hands-On' or '1. Music'
+  categoryName: string;
   subtitle?: string;
   behavior: 'FLUID' | 'STICKY';
   trackMode: 'SINGLE' | 'TRIPLE';
   hidden?: boolean;
   legacyCategoryKey?: RechargeCategoryId;
   stickyKey?: StickyKey;
-  fluidKey?: 'CAT1_MUSIC' | 'CAT4_COMFORT';
+  fluidKey?: 'CAT1_MUSIC' | 'CAT4_COMFORT' | 'CAT6_CULTURE';
   // Single-track properties
   activeTitle: string;
   startupStep?: string;
@@ -290,6 +353,8 @@ export interface EveningCategoryCardConfig {
   backlogQueue: string[];
   fiveMinStarts: number;
   unlockedViaCheckIn: boolean;
+  launchUrl?: string;
+  autoLaunchUrl?: boolean;
   // Triple-track properties
   subTracks?: EveningSubTrackConfig[];
   activeSubTrackId?: string;
@@ -350,7 +415,7 @@ export interface RechargeState {
   option0TargetEndTimeMs: number | null;
   option0ConsecutiveWindows: number; // Cap at 2 (40m)
   forkCheckModalOpen: boolean;
-  // 5+ Recharge Categories
+  // 6 Recharge Categories
   activeCategory: RechargeCategoryId;
   activeMediaTab: MediaSubTrackId;
   fictionSpeed: '1.75x' | '2.00x' | '2.25x';
@@ -378,6 +443,9 @@ export interface SequentialChecklistStep {
   taskType?: ActiveTaskType;
   cognitiveDemand?: CognitiveDemandTag;
   startupStep: string;
+  launchUrl?: string;
+  autoLaunchUrl?: boolean;
+  isAmbitionDrip?: boolean;
   durationMinutes: number;
   chainPosition?: 1 | 2; // 1 = 20m, 2 = 40m
   remainingMinutesAfter: number;
@@ -401,13 +469,17 @@ export interface RoadmapTrack {
   id: TrackId;
   name: string;
   archetypeRole?: string;
-  categoryLabel: 'CORE TRACK' | 'ZERO-QUOTA SANDBOX';
+  categoryLabel: 'CORE TRACK' | 'MAJOR CORE TRACK' | 'ZERO-QUOTA SANDBOX';
   isSandbox: boolean;
   activeThisWeek: boolean;
   inputBlocksCredited: number;
   inputWeeklyTarget: number;
   outputBlocksCredited: number;
   outputWeeklyTarget: number;
+  /** Sub-track 1A (Institutional) output blocks credited on Major Track 1 */
+  subTrack1ABlocksCredited?: number;
+  /** Sub-track 1B (Independent) output blocks credited on Major Track 1 */
+  subTrack1BBlocksCredited?: number;
   rungs: RoadmapRung[];
 }
 
@@ -431,6 +503,7 @@ export interface TodayBlockLogEntry {
   blockUnits?: number; // 0.5, 1.0, or 2.0
   blockCredit?: number; // 0.5, 1.0, or 2.0
   roadmapTrack: string;
+  subTrack?: MajorSubTrackId;
   stroke: 'INPUT' | 'OUTPUT';
   sourceBlockId?: string;
   stickyKey?: StickyKey;
@@ -509,21 +582,29 @@ export interface SymmetryState {
   fixedEvent: FixedEventType;
   flashcardsReviewedCount: number; // 250-card daily cap
   flashcardsDailyCap: number;
+  ankiConnectEnabled?: boolean;
+  ankiConnectUrl?: string;
   earlyClearanceEnabled: boolean;
   baselineBlocks: BaselineBlock[];
   projectQueue: ProjectItem[];
-  projectBacklog: Omit<ProjectItem, 'slot'>[];
-  openListBacklog: Omit<ProjectItem, 'slot'>[];
+  projectBacklog: OpenListItem[];
+  openListBacklog: OpenListItem[];
   completedDeliverablesLog: CompletedDeliverableEntry[];
   completedDeliverablesArchive?: CompletedDeliverableEntry[];
   pipelineDays: PipelineDay[];
   discretionaryBlocksCompletedToday: number;
+  /** Daily Ambition Drip ("Zero 100%-Institutional Days" Engine) */
+  dailyAmbitionDrip?: DailyAmbitionDripConfig;
   dailySovereignDripDone: boolean;
   dailySovereignDripTarget: number;
   sovereignGoldenRuleMode?: boolean;
   timer: TimerConsoleState;
   recharge: RechargeState;
   roadmapTracks: RoadmapTrack[];
+  /** Structural House Top Shelter Strip: Relationships, Community & Service (Non-Quota Roof) */
+  roadmapShelter?: RoadmapHouseStrip;
+  /** Structural House Bottom Foundation Strip: Physical Vitality (Non-Quota Foundation) */
+  roadmapFoundation?: RoadmapHouseStrip;
   // Unified Local + Cloud Firestore Sync Schema Fields
   tier?: LoadMode;
   completedBlocks?: {
@@ -534,7 +615,7 @@ export interface SymmetryState {
   examFloor?: BaselineBlock[];
   baselineSlots?: BaselineBlock[];
   closedList?: ProjectItem[];
-  openList?: Omit<ProjectItem, 'slot'>[];
+  openList?: OpenListItem[];
   sevenDayPipeline?: PipelineDay[];
   sanctuaryPillars?: RechargeState;
   hemingwayBridge?: string;

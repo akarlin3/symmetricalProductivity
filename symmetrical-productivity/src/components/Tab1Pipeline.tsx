@@ -2,20 +2,22 @@ import React, { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Activity,
-  Archive,
   Calendar,
   Check,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
   Coffee,
+  ExternalLink,
   FastForward,
   Flame,
   GraduationCap,
+  Link2,
   ListOrdered,
   Lock,
   Music,
   Pause,
+  Pencil,
   Play,
   Plus,
   RefreshCw,
@@ -25,17 +27,23 @@ import {
   Sparkles,
   Unlock,
   Wind,
+  X,
 } from 'lucide-react';
 import {
   BaselineBlock,
   CognitiveDemandTag,
+  DailyAmbitionDripConfig,
+  EarlyClearanceActionMode,
   ElasticBlockMultiplier,
   EnergyBandwidthState,
   FixedEventType,
   LayoutMode,
   Level2BreakProtocol,
   LoadMode,
+  MajorSubTrackId,
+  OpenListItem,
   PipelineDay,
+  ProjectItem,
   ProjectPresetType,
   SequentialChecklistStep,
   ShockAbsorberMode,
@@ -49,19 +57,25 @@ import {
 import {
   computeShiftMetrics,
   generateSequentialChecklist,
+  getActiveAmbitionDripProject,
   getActiveBlockDurationsSeconds,
   getActiveFocusProject,
-  getActiveSovereignDripProject,
   getBaselineCognitiveDemand,
   getBaselineSlotCompletedBlocks,
+  getBaselineSlotEffectiveTargetBlocks,
   getBaselineSlotTargetBlocks,
-  getPreExamTaperSuggestion,
+  getEffectiveDailyAmbitionDrip,
+  getEffectiveScheduledBaselineFloorBlocks,
+  getProjectActiveStartupStep,
   getProjectCognitiveDemand,
   getShrunkStartupPrompt,
   getTotalBaselineFloorBlocks,
+  isBaselineSlotClearedForToday,
   isBaselineSlotEarlyClearanceEligible,
   isBaselineSlotLateNightBlocked,
-  isProjectSovereignDrip,
+  isOpenListItemUnlocked,
+  isProjectAmbitionDripEligible,
+  isTodayExamDay,
 } from '../state/defaultState';
 import { DualRingTimerSvg } from './DualRingTimerSvg';
 import { BreathingVisualizer478 } from './BreathingVisualizer478';
@@ -71,8 +85,12 @@ import { InlineEditableText } from './InlineEditableText';
 import { InlineBreakOptionsEditor, InlineSlotEditor } from './InlineSlotEditor';
 import { triggerHaptic } from '../utils/haptics';
 import { splitDeliverableWithGemini } from '../utils/geminiClient';
+import {
+  fetchAnkiConnectReviewedToday,
+  isValidResourceLaunchUrl,
+  openResourceLaunchUrl,
+} from '../utils/ankiConnectClient';
 import { soundEngine } from '../utils/soundEngine';
-import { Pencil, X } from 'lucide-react';
 
 interface PendingIntakeDeliverable {
   title: string;
@@ -80,6 +98,8 @@ interface PendingIntakeDeliverable {
   totalBlocks: number;
   trackId: TrackId;
   startupStep: string;
+  blockSubSteps?: string[];
+  blockedByTitle?: string;
   reason: string;
 }
 
@@ -105,7 +125,10 @@ interface Tab1PipelineProps {
   onSetSessionDisplayDuration: (mins: 20 | 40) => void;
   onToggleBaselineBlock: (blockId: string) => void;
   onToggleEarlyClearance: () => void;
+  onApplySlotEarlyClearance?: (slotId: string | 'ALL_ELIGIBLE', mode: EarlyClearanceActionMode) => void;
+  onRestoreSlotEarlyClearance?: (slotId: string) => void;
   onUpdateFlashcardCount: (count: number) => void;
+  onToggleAnkiConnect?: (enabled: boolean) => void;
   onLaunchBlockInTimer: (
     sourceId: string,
     title: string,
@@ -120,7 +143,8 @@ interface Tab1PipelineProps {
     presetType: ProjectPresetType,
     totalBlocks: number,
     trackId: TrackId,
-    startupStep: string
+    startupStep: string,
+    extra?: { blockSubSteps?: string[]; blockedByTitle?: string }
   ) => void;
   onPromoteDeliverableWithSurge: (
     title: string,
@@ -134,7 +158,8 @@ interface Tab1PipelineProps {
     presetType: ProjectPresetType,
     totalBlocks: number,
     trackId: TrackId,
-    startupStep: string
+    startupStep: string,
+    blockedByTitle?: string
   ) => void;
   onRecalibrateStepDownTier: () => void;
   onRecalibrateReSequenceNow: () => void;
@@ -174,13 +199,18 @@ interface Tab1PipelineProps {
   onDeleteBaselineBlock?: (blockId: string) => void;
   onUpdateProjectItem?: (
     projectId: string,
-    patch: Partial<import('../types/symmetry').ProjectItem>
+    patch: Partial<ProjectItem>
+  ) => void;
+  onUpdateOpenListItem?: (
+    itemId: string,
+    patch: Partial<OpenListItem>
   ) => void;
   onUpdateActiveTimerTask?: (patch: { title?: string; startupPrompt?: string }) => void;
   onUpdateBreakOptions?: (
     patch: Partial<import('../types/symmetry').BreakOptionsConfig>
   ) => void;
-  // Daily Sovereign Ambition Drip handlers
+  // Daily Ambition Drip ("Zero 100%-Institutional Days") handlers
+  onUpdateDailyAmbitionDrip?: (patch: Partial<DailyAmbitionDripConfig>) => void;
   onToggleSovereignDripDone?: () => void;
   onToggleGoldenRuleMode?: () => void;
   onCompleteProjectById?: (projectId: string) => void;
@@ -197,17 +227,17 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   onOpenCommandDock,
   cinemaFocusMode = false,
   onToggleCinemaFocusMode,
-  architectModeUnlocked = false,
   onUnlockArchitectMode,
   apiKeyVersion,
   onSelectLoadMode,
   onTogglePreExamTaper,
-  onSetSurgeConsecutiveDays,
   onSetFixedEvent,
-  onSetSessionDisplayDuration,
   onToggleBaselineBlock,
   onToggleEarlyClearance,
+  onApplySlotEarlyClearance,
+  onRestoreSlotEarlyClearance,
   onUpdateFlashcardCount,
+  onToggleAnkiConnect,
   onLaunchBlockInTimer,
   onLaunchBreakStepInTimer,
   onIncrementProjectBlock,
@@ -227,7 +257,6 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   onToggleTimerRun,
   onResetCurrentStage,
   onFastForwardCurrentStage,
-  onSwitchTimerMode,
   onSelectL1Minutes,
   onSelectL2Minutes,
   onSelectL2Protocol,
@@ -238,7 +267,6 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   onCompleteRecoveryFlashcard5m,
   onGoToRecharge,
   onSetEnergyBandwidth,
-  onCycleCognitiveDemand,
   onSelectElasticMultiplier,
   onShrinkStartupStep,
   onApplyShockAbsorber,
@@ -248,8 +276,10 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   onAddBaselineBlock,
   onDeleteBaselineBlock,
   onUpdateProjectItem,
+  onUpdateOpenListItem,
   onUpdateActiveTimerTask,
   onUpdateBreakOptions,
+  onUpdateDailyAmbitionDrip,
   onToggleSovereignDripDone,
   onToggleGoldenRuleMode,
   onCompleteProjectById,
@@ -262,8 +292,19 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   const elasticMult: ElasticBlockMultiplier = timer.elasticMultiplier ?? 1.0;
   const shrinkLevel: StartupShrinkLevel = timer.startupShrinkLevel ?? 1;
   const totalBaselineFloorBlocks = getTotalBaselineFloorBlocks(state.baselineBlocks);
+  const effectiveScheduledFloorBlocks = getEffectiveScheduledBaselineFloorBlocks(
+    state.baselineBlocks
+  );
 
-  // Progressive Disclosure States (Default open so Daily Core Baseline & Closed List are immediately visible)
+  // Daily Ambition Drip state
+  const dripConfig = getEffectiveDailyAmbitionDrip(state);
+  const examDayAutoPaused = isTodayExamDay(state);
+  const activeAmbitionDripProj = getActiveAmbitionDripProject(state);
+  const dripCompletedToday = dripConfig.completedToday >= dripConfig.targetBlocksPerDay;
+  const isDripCapEnforced =
+    dripCompletedToday && !state.recharge.flowExtensionActive;
+
+  // Progressive Disclosure States
   const [stageOptionsOpen, setStageOptionsOpen] = useState(false);
   const [progressChecklistOpen, setProgressChecklistOpen] = useState(true);
   const [triageDetailsOpen, setTriageDetailsOpen] = useState(false);
@@ -279,6 +320,26 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
     'L1' | 'L2' | 'STRESS' | null
   >(null);
 
+  // 2-Way Early Clearance inline prompt state (slot id or 'ALL_ELIGIBLE')
+  const [earlyClearanceChoiceSlotId, setEarlyClearanceChoiceSlotId] = useState<
+    string | null
+  >(null);
+  const [zeroDueForcedPrompt, setZeroDueForcedPrompt] = useState(false);
+
+  // Project Link / Sub-Steps / Open List Prereq inline editor states
+  const [editingProjectLinkId, setEditingProjectLinkId] = useState<string | null>(null);
+  const [splittingProjectId, setSplittingProjectId] = useState<string | null>(null);
+  const [editingPrereqItemId, setEditingPrereqItemId] = useState<string | null>(null);
+  const [prereqDraftText, setPrereqDraftText] = useState<string>('');
+
+  // Flashcard manual tap-entry & AnkiConnect polling states
+  const [editingCardCountInline, setEditingCardCountInline] = useState(false);
+  const [cardCountDraft, setCardCountDraft] = useState<string>(
+    String(state.flashcardsReviewedCount || 0)
+  );
+  const [ankiSyncLoading, setAnkiSyncLoading] = useState(false);
+  const [ankiSyncStatus, setAnkiSyncStatus] = useState<string | null>(null);
+
   const [shockAbsorberSelection, setShockAbsorberSelection] = useState<ShockAbsorberMode>(
     state.shockAbsorberMode || 'HALF_SHIFT'
   );
@@ -287,30 +348,22 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   );
 
   const [selectedBaselineId, setSelectedBaselineId] = useState<string>(
-    state.baselineBlocks.find((b) => !b.completed && !b.bankedViaEarlyClearance)?.id ||
+    state.baselineBlocks.find((b) => !isBaselineSlotClearedForToday(b))?.id ||
       state.baselineBlocks[0]?.id ||
       'fc_anat_1'
   );
   const [newProjTitle, setNewProjTitle] = useState('');
   const [newProjPreset, setNewProjPreset] = useState<ProjectPresetType>('PAPER_8');
-  const [newProjCustomBlocks, setNewProjCustomBlocks] = useState(4);
+  const [newProjCustomBlocks] = useState(4);
   const [newProjTrack, setNewProjTrack] = useState<TrackId>('writing');
-  const [newProjStartup, setNewProjStartup] = useState(
+  const [newProjBlockedBy, setNewProjBlockedBy] = useState<string>('');
+  const [newProjStartup] = useState(
     'Open document, create section headings, and draft first 3 lines.'
   );
   const [pendingIntakeTriage, setPendingIntakeTriage] =
     useState<PendingIntakeDeliverable | null>(null);
 
   const sequentialSteps = generateSequentialChecklist(state);
-  const [simulateExamProximityDate, setSimulateExamProximityDate] = useState<boolean>(false);
-
-  const examCheckDate = simulateExamProximityDate
-    ? new Date(new Date().getFullYear(), 10, 10, 12, 0, 0)
-    : new Date();
-  const examSuggestion = getPreExamTaperSuggestion(examCheckDate);
-  const isAveryPresetActive = Boolean(
-    architectModeUnlocked && state.profilePresetId === 'AVERY_DEFAULT'
-  );
 
   // Rule 3: Block flashcards from being scheduled/executed as the final block of the night
   const isFinalBlockOfNight = metrics.remainingBlocks <= 1 && metrics.remainingBlocks > 0;
@@ -330,22 +383,6 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
-  const formatCognitiveDemandBadge = (tag: CognitiveDemandTag) => {
-    if (tag === 'DEEP_SYNTHESIS') return 'DEEP SYNTHESIS';
-    if (tag === 'MECHANICAL_RECALL') return 'MECHANICAL RECALL';
-    return 'LIGHT ADMIN';
-  };
-
-  const getCognitiveDemandColorClass = (tag: CognitiveDemandTag) => {
-    if (tag === 'DEEP_SYNTHESIS') {
-      return 'bg-indigo-500/15 border-indigo-400/30 text-indigo-200';
-    }
-    if (tag === 'MECHANICAL_RECALL') {
-      return 'bg-cyan-500/15 border-cyan-400/30 text-cyan-200';
-    }
-    return 'bg-emerald-500/15 border-emerald-400/30 text-emerald-200';
-  };
-
   // Active Focus Project respects Dual-Slot mode when enabled in Settings
   const primaryProject = getActiveFocusProject(state);
   const isDualSlotEnabled =
@@ -354,9 +391,47 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   const activeDualSlotNum =
     isDualSlotEnabled && state.flexibilityTuning?.activeDualSlotNumber === 2 ? 2 : 1;
 
-  // Auto-Router: compute the exact "Up Next" recommended block based on Energy-State Bandwidth
+  // Launch helper that honors optional auto-open launchUrl on "Start 5m Startup"
+  const launchWithOptionalResource = (
+    sourceId: string,
+    title: string,
+    taskType: 'FLASHCARDS' | 'READING' | 'SYNTHESIS' | 'PROJECT',
+    startupPrompt: string,
+    launchUrl?: string,
+    autoLaunchUrl?: boolean
+  ) => {
+    if (autoLaunchUrl && isValidResourceLaunchUrl(launchUrl)) {
+      openResourceLaunchUrl(launchUrl);
+    }
+    onLaunchBlockInTimer(sourceId, title, taskType, startupPrompt);
+  };
+
+  // Active item launchUrl lookup for Timer HUD
+  const activeSourceResource = (() => {
+    const baseMatch = state.baselineBlocks.find(
+      (b) => b.id === timer.activeBlockSourceId
+    );
+    if (baseMatch) {
+      return {
+        launchUrl: baseMatch.launchUrl,
+        autoLaunchUrl: baseMatch.autoLaunchUrl,
+      };
+    }
+    const projMatch = state.projectQueue.find(
+      (p) => p.id === timer.activeBlockSourceId
+    );
+    if (projMatch) {
+      return {
+        launchUrl: projMatch.launchUrl,
+        autoLaunchUrl: projMatch.autoLaunchUrl,
+      };
+    }
+    return { launchUrl: undefined, autoLaunchUrl: false };
+  })();
+
+  // Auto-Router: compute the exact "Up Next" recommended block based on Energy-State Bandwidth + Daily Ambition Drip capstone
   const eligibleBaselines = state.baselineBlocks.filter((b) => {
-    if (b.completed || b.bankedViaEarlyClearance) return false;
+    if (isBaselineSlotClearedForToday(b)) return false;
     if (state.preExamTaperActive && (b.category === 'SYNTHESIS' || b.category === 'READING')) {
       return false;
     }
@@ -383,6 +458,8 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
     taskType: 'FLASHCARDS' | 'READING' | 'SYNTHESIS' | 'PROJECT';
     cognitiveDemand: CognitiveDemandTag;
     startupStep: string;
+    launchUrl?: string;
+    autoLaunchUrl?: boolean;
   } => {
     const demand = getBaselineCognitiveDemand(b);
     const coreLabel = isFlashcardBlock(b)
@@ -401,16 +478,33 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
         : 'READING',
       cognitiveDemand: demand,
       startupStep: b.startupStep,
+      launchUrl: b.launchUrl,
+      autoLaunchUrl: b.autoLaunchUrl,
     };
   };
 
   const projectRemainingBlocks = primaryProject
     ? Math.max(0, primaryProject.totalBlocks - primaryProject.completedBlocks)
     : 0;
-  const discretionaryQuotaAvailable =
-    metrics.totalTargetBlocks > totalBaselineFloorBlocks &&
-    state.discretionaryBlocksCompletedToday <
-      metrics.totalTargetBlocks - totalBaselineFloorBlocks;
+  const totalDiscretionaryBudgetToday = Math.max(
+    0,
+    metrics.totalTargetBlocks - effectiveScheduledFloorBlocks
+  );
+  const remainingDiscretionaryToday = Math.max(
+    0,
+    totalDiscretionaryBudgetToday - state.discretionaryBlocksCompletedToday
+  );
+  const discretionaryQuotaAvailable = remainingDiscretionaryToday > 0;
+
+  // Reserve 1 block/day on non-exam days for the active Ambition Drip slot as the capstone project block
+  const shouldReserveDripCapstoneNow = Boolean(
+    !examDayAutoPaused &&
+      dripConfig.enabled &&
+      !dripCompletedToday &&
+      activeAmbitionDripProj &&
+      activeAmbitionDripProj.completedBlocks < activeAmbitionDripProj.totalBlocks &&
+      (remainingDiscretionaryToday === 1 || projectRemainingBlocks === 0)
+  );
 
   const upNextBlock = (() => {
     if (state.preExamTaperActive) {
@@ -422,6 +516,8 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
           taskType: 'FLASHCARDS' as const,
           cognitiveDemand: 'MECHANICAL_RECALL' as const,
           startupStep: nextSteadyBaseline.startupStep,
+          launchUrl: nextSteadyBaseline.launchUrl,
+          autoLaunchUrl: nextSteadyBaseline.autoLaunchUrl,
         };
       }
       return {
@@ -432,6 +528,8 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
         cognitiveDemand: 'MECHANICAL_RECALL' as const,
         startupStep:
           'Open high-yield missed card tags + complete 15 active recall questions without notes.',
+        launchUrl: undefined,
+        autoLaunchUrl: false,
       };
     }
 
@@ -440,6 +538,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
         primaryProject &&
         projectRemainingBlocks > 0 &&
         discretionaryQuotaAvailable &&
+        !shouldReserveDripCapstoneNow &&
         getProjectCognitiveDemand(primaryProject) === 'DEEP_SYNTHESIS' &&
         metrics.totalCompletedBlocks === 0
       ) {
@@ -449,20 +548,40 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
           badge: `FOCUS #${primaryProject.slot}`,
           taskType: 'PROJECT' as const,
           cognitiveDemand: getProjectCognitiveDemand(primaryProject),
-          startupStep: primaryProject.startupStep,
+          startupStep: getProjectActiveStartupStep(primaryProject),
+          launchUrl: primaryProject.launchUrl,
+          autoLaunchUrl: primaryProject.autoLaunchUrl,
         };
       }
       if (nextDeepBaseline) {
         return baselineHelperToSpec(nextDeepBaseline, 'DEEP SYNTHESIS');
       }
-      if (primaryProject && projectRemainingBlocks > 0) {
+      if (
+        shouldReserveDripCapstoneNow &&
+        activeAmbitionDripProj &&
+        !nextSteadyBaseline
+      ) {
+        return {
+          sourceId: activeAmbitionDripProj.id,
+          title: activeAmbitionDripProj.title,
+          badge: `AMBITION DRIP • SLOT #${activeAmbitionDripProj.slot} (1B CAPSTONE)`,
+          taskType: 'PROJECT' as const,
+          cognitiveDemand: getProjectCognitiveDemand(activeAmbitionDripProj),
+          startupStep: getProjectActiveStartupStep(activeAmbitionDripProj),
+          launchUrl: activeAmbitionDripProj.launchUrl,
+          autoLaunchUrl: activeAmbitionDripProj.autoLaunchUrl,
+        };
+      }
+      if (primaryProject && projectRemainingBlocks > 0 && !shouldReserveDripCapstoneNow) {
         return {
           sourceId: primaryProject.id,
           title: primaryProject.title,
           badge: `FOCUS #${primaryProject.slot}`,
           taskType: 'PROJECT' as const,
           cognitiveDemand: getProjectCognitiveDemand(primaryProject),
-          startupStep: primaryProject.startupStep,
+          startupStep: getProjectActiveStartupStep(primaryProject),
+          launchUrl: primaryProject.launchUrl,
+          autoLaunchUrl: primaryProject.autoLaunchUrl,
         };
       }
       if (nextSteadyBaseline) {
@@ -482,6 +601,8 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
           taskType: 'PROJECT' as const,
           cognitiveDemand: 'LIGHT_ADMIN' as const,
           startupStep: `Low-fog admin pass: open "${primaryProject.title}", format citations/headings, or outline 2 bullet stubs without forcing cold prose.`,
+          launchUrl: primaryProject.launchUrl,
+          autoLaunchUrl: primaryProject.autoLaunchUrl,
         };
       }
     }
@@ -489,21 +610,47 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
     if (nextSteadyBaseline) {
       return baselineHelperToSpec(nextSteadyBaseline);
     }
+
+    if (shouldReserveDripCapstoneNow && activeAmbitionDripProj) {
+      return {
+        sourceId: activeAmbitionDripProj.id,
+        title: activeAmbitionDripProj.title,
+        badge: `AMBITION DRIP • SLOT #${activeAmbitionDripProj.slot} (1B CAPSTONE)`,
+        taskType: 'PROJECT' as const,
+        cognitiveDemand: getProjectCognitiveDemand(activeAmbitionDripProj),
+        startupStep: getProjectActiveStartupStep(activeAmbitionDripProj),
+        launchUrl: activeAmbitionDripProj.launchUrl,
+        autoLaunchUrl: activeAmbitionDripProj.autoLaunchUrl,
+      };
+    }
+
     return {
       sourceId: primaryProject?.id || 'proj_1',
-      title: primaryProject?.title || 'Anatomy & Comp Exam Prep Sprint',
+      title: primaryProject?.title || 'Primary Focus Deliverable',
       badge: `FOCUS #${primaryProject?.slot || 1}`,
       taskType: 'PROJECT' as const,
       cognitiveDemand: primaryProject
         ? getProjectCognitiveDemand(primaryProject)
         : ('DEEP_SYNTHESIS' as const),
-      startupStep:
-        primaryProject?.startupStep || 'Open deck + clear first 15 cards',
+      startupStep: primaryProject
+        ? getProjectActiveStartupStep(primaryProject)
+        : 'Open workspace + complete first 5m startup step',
+      launchUrl: primaryProject?.launchUrl,
+      autoLaunchUrl: primaryProject?.autoLaunchUrl,
     };
   })();
 
   const flashcardBlocks = state.baselineBlocks.filter(isFlashcardBlock);
-  const halfChapterBlocks = state.baselineBlocks.filter((b) => !isFlashcardBlock(b));
+  const unclearedEligibleBaselineSlots = state.baselineBlocks.filter(
+    (b) => isBaselineSlotEarlyClearanceEligible(b) && !isBaselineSlotClearedForToday(b)
+  );
+  const isCardCapOrZeroDueReached =
+    (state.flashcardsDailyCap > 0 &&
+      state.flashcardsReviewedCount >= state.flashcardsDailyCap) ||
+    zeroDueForcedPrompt;
+  const shouldShowFlashcardEarlyClearanceToast =
+    isCardCapOrZeroDueReached && unclearedEligibleBaselineSlots.length > 0;
+
   const selectedBaseline =
     state.baselineBlocks.find((b) => b.id === selectedBaselineId) ||
     state.baselineBlocks[0];
@@ -511,7 +658,8 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
   const lockedSecondaryProjects = state.projectQueue.filter(
     (p) => p.id !== primaryProject?.id
   );
-  const openBacklogList = state.openListBacklog ?? state.projectBacklog ?? [];
+  const openBacklogList: OpenListItem[] =
+    state.openList ?? state.openListBacklog ?? state.projectBacklog ?? [];
 
   const stageBadgeText =
     timer.mode === 'WORK_20M'
@@ -533,25 +681,67 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
     shrinkLevel
   );
 
-  const [isSplittingDeliverable, setIsSplittingDeliverable] = useState(false);
-
-  const handleSplitPrimaryDeliverable = async () => {
-    if (!primaryProject || isSplittingDeliverable) return;
+  const handleAutoSplitProject = async (proj: ProjectItem) => {
+    if (splittingProjectId) return;
     triggerHaptic([12]);
-    setIsSplittingDeliverable(true);
+    setSplittingProjectId(proj.id);
     try {
       const splitResult = await splitDeliverableWithGemini(
-        primaryProject.title,
-        primaryProject.totalBlocks,
-        primaryProject.trackId
+        proj.title,
+        proj.totalBlocks,
+        proj.trackId
       );
-      onUpdateProjectItem?.(primaryProject.id, {
-        startupStep: splitResult.startupStep5m,
+      const activeIdx = Math.min(
+        splitResult.blockSubSteps.length - 1,
+        Math.max(0, Math.floor(proj.completedBlocks || 0))
+      );
+      const currentBlockStartup =
+        splitResult.blockSubSteps[activeIdx] || splitResult.startupStep5m;
+      onUpdateProjectItem?.(proj.id, {
+        blockSubSteps: splitResult.blockSubSteps,
+        startupStep: currentBlockStartup,
         nextStepNote: splitResult.subStepsSummary,
       });
     } finally {
-      setIsSplittingDeliverable(false);
+      setSplittingProjectId(null);
     }
+  };
+
+  const handleSyncAnkiConnect = async () => {
+    if (ankiSyncLoading) return;
+    setAnkiSyncLoading(true);
+    setAnkiSyncStatus(null);
+    const res = await fetchAnkiConnectReviewedToday(
+      state.ankiConnectUrl || 'http://127.0.0.1:8765'
+    );
+    setAnkiSyncLoading(false);
+    if (res.ok && typeof res.reviewedToday === 'number') {
+      const clamped = Math.min(Math.max(0, res.reviewedToday), 999);
+      onUpdateFlashcardCount(clamped);
+      setCardCountDraft(String(clamped));
+      if (res.reviewedToday === 0) {
+        setAnkiSyncStatus('Synced 0 reviewed today from AnkiConnect.');
+      } else {
+        setAnkiSyncStatus(`Synced ${res.reviewedToday} cards from AnkiConnect.`);
+      }
+    } else {
+      setAnkiSyncStatus(res.error || 'AnkiConnect offline — tap count for manual entry.');
+    }
+  };
+
+  const handleTrigger2WayEarlyClearance = (
+    slotId: string | 'ALL_ELIGIBLE',
+    mode: EarlyClearanceActionMode
+  ) => {
+    triggerHaptic([15]);
+    soundEngine.playTactileClick('MODE_TOGGLE');
+    if (onApplySlotEarlyClearance) {
+      onApplySlotEarlyClearance(slotId, mode);
+    } else {
+      onToggleEarlyClearance();
+    }
+    setEarlyClearanceChoiceSlotId(null);
+    setZeroDueForcedPrompt(false);
   };
 
   const handleAddProjectSubmit = async (e: React.FormEvent) => {
@@ -560,11 +750,11 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
     if (!cleanTitle) return;
     const blocks =
       newProjPreset === 'PAPER_8'
-        ? 8
+        ? state.taskWeights?.heavyBlocks || 8
         : newProjPreset === 'SLIDES_4'
-        ? 4
+        ? state.taskWeights?.mediumBlocks || 4
         : newProjPreset === 'QUICK_2'
-        ? 2
+        ? state.taskWeights?.quickBlocks || 2
         : newProjCustomBlocks;
 
     const splitResult = await splitDeliverableWithGemini(
@@ -573,11 +763,28 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
       newProjTrack
     );
     const cleanStartup =
+      splitResult.blockSubSteps?.[0] ||
       splitResult.startupStep5m ||
       newProjStartup.trim() ||
       'Open file and complete initial 5m startup step.';
+    const cleanBlockedBy = newProjBlockedBy.trim() || undefined;
 
-    const floorLen = totalBaselineFloorBlocks || 7;
+    // If a prerequisite lock is set, queue directly to Open List backlog
+    if (cleanBlockedBy) {
+      onDemoteDeliverableToBacklog(
+        cleanTitle,
+        newProjPreset,
+        blocks,
+        newProjTrack,
+        cleanStartup,
+        cleanBlockedBy
+      );
+      setNewProjTitle('');
+      setNewProjBlockedBy('');
+      return;
+    }
+
+    const floorLen = effectiveScheduledFloorBlocks || 7;
     const exceedsClosedListCap = state.projectQueue.length >= 3;
     const forcesSurgeDay =
       state.loadMode !== 'SURGE' &&
@@ -591,6 +798,8 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
         totalBlocks: blocks,
         trackId: newProjTrack,
         startupStep: cleanStartup,
+        blockSubSteps: splitResult.blockSubSteps,
+        blockedByTitle: cleanBlockedBy,
         reason:
           exceedsClosedListCap && forcesSurgeDay
             ? `Closed List is full (${state.projectQueue.length}/3 items) and adding a ${blocks}-block deliverable exceeds today's ${state.loadMode} ceiling.`
@@ -606,19 +815,25 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
       newProjPreset,
       blocks,
       newProjTrack,
-      cleanStartup
+      cleanStartup,
+      { blockSubSteps: splitResult.blockSubSteps }
     );
     setNewProjTitle('');
+    setNewProjBlockedBy('');
   };
 
   const handleClickSequentialStep = (step: SequentialChecklistStep) => {
     triggerHaptic([15]);
     if (step.kind === 'WORK_BLOCK') {
-      onLaunchBlockInTimer(
+      const matchedBase = state.baselineBlocks.find((b) => b.id === step.sourceId);
+      const matchedProj = state.projectQueue.find((p) => p.id === step.sourceId);
+      launchWithOptionalResource(
         step.sourceId || 'proj_1',
         step.title,
         step.taskType || 'PROJECT',
-        step.startupStep
+        step.startupStep,
+        matchedBase?.launchUrl || matchedProj?.launchUrl,
+        matchedBase?.autoLaunchUrl || matchedProj?.autoLaunchUrl
       );
     } else if (
       step.kind === 'BREAK_L1' ||
@@ -778,6 +993,15 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     type="button"
                     onClick={() => {
                       triggerHaptic([15]);
+                      if (
+                        !timer.isRunning &&
+                        timer.mode === 'WORK_20M' &&
+                        timer.workStage === 'IGNITION_5M' &&
+                        activeSourceResource.autoLaunchUrl &&
+                        isValidResourceLaunchUrl(activeSourceResource.launchUrl)
+                      ) {
+                        openResourceLaunchUrl(activeSourceResource.launchUrl);
+                      }
                       onToggleTimerRun();
                     }}
                     className={`flex-1 py-2 px-3 rounded-full font-mono font-medium text-xs flex items-center justify-center gap-1.5 cursor-pointer transition ${
@@ -796,7 +1020,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                         <Play className="w-3.5 h-3.5 fill-current" />
                         <span>
                           {timer.mode === 'WORK_20M' && timer.workStage === 'IGNITION_5M'
-                            ? `Start ${activeDurations.startupMinutes}m`
+                            ? `Start ${activeDurations.startupMinutes}m Startup`
                             : 'Start'}
                         </span>
                       </>
@@ -837,22 +1061,156 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
               <div className="flex flex-col justify-between space-y-5 min-w-0 w-full">
             {/* Active Task Section */}
             <div className="space-y-3">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-400/25 font-mono text-[10px] uppercase tracking-widest text-cyan-200">
                   {timer.activeTaskType}
                 </span>
+
+                {isValidResourceLaunchUrl(activeSourceResource.launchUrl) && (
+                  <button
+                    id="btn-hud-open-launch-url"
+                    type="button"
+                    onClick={() => openResourceLaunchUrl(activeSourceResource.launchUrl)}
+                    className="px-2.5 py-0.5 rounded-full bg-teal-500/15 hover:bg-teal-500/25 border border-teal-400/35 font-mono text-[10px] text-teal-200 inline-flex items-center gap-1 cursor-pointer transition"
+                    title={`Open resource: ${activeSourceResource.launchUrl}`}
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    <span>Open Resource</span>
+                  </button>
+                )}
+
+                {timer.activeTaskType === 'FLASHCARDS' && (
+                  <div
+                    id="hud-flashcard-progress-pill"
+                    className="inline-flex flex-wrap items-center gap-1.5"
+                  >
+                    {editingCardCountInline ? (
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const parsed = Math.max(0, Math.min(999, Number(cardCountDraft) || 0));
+                          onUpdateFlashcardCount(parsed);
+                          setEditingCardCountInline(false);
+                        }}
+                        className="inline-flex items-center gap-1"
+                      >
+                        <input
+                          type="number"
+                          min={0}
+                          max={999}
+                          value={cardCountDraft}
+                          onChange={(e) => setCardCountDraft(e.target.value)}
+                          onBlur={() => {
+                            const parsed = Math.max(0, Math.min(999, Number(cardCountDraft) || 0));
+                            onUpdateFlashcardCount(parsed);
+                            setEditingCardCountInline(false);
+                          }}
+                          autoFocus
+                          className="w-16 px-2 py-0.5 rounded bg-slate-950 border border-cyan-400/50 font-mono text-[10px] text-cyan-100"
+                        />
+                        <span className="font-mono text-[10px] text-slate-400">
+                          / {state.flashcardsDailyCap} cards
+                        </span>
+                      </form>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCardCountDraft(String(state.flashcardsReviewedCount || 0));
+                          setEditingCardCountInline(true);
+                        }}
+                        title="Tap to enter exact RemNote/SRS card count"
+                        className="px-2.5 py-0.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/35 font-mono text-[10px] text-emerald-200 tabular-nums cursor-pointer"
+                      >
+                        {state.flashcardsReviewedCount} / {state.flashcardsDailyCap} cards
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = Math.min(
+                          999,
+                          (state.flashcardsReviewedCount || 0) + 25
+                        );
+                        onUpdateFlashcardCount(next);
+                        setCardCountDraft(String(next));
+                      }}
+                      className="px-2 py-0.5 rounded-full bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] font-mono text-[10px] text-slate-300 cursor-pointer"
+                      title="Quick +25 reviewed cards"
+                    >
+                      +25
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setZeroDueForcedPrompt(true)}
+                      className="px-2 py-0.5 rounded-full bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-400/30 font-mono text-[10px] text-cyan-200 cursor-pointer"
+                      title="Mark 0 cards due to trigger 2-way Early Clearance"
+                    >
+                      0 Due
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => void handleSyncAnkiConnect()}
+                      disabled={ankiSyncLoading}
+                      className="px-2 py-0.5 rounded-full bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-400/35 font-mono text-[10px] text-indigo-200 inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                      title="Poll desktop AnkiConnect (http://127.0.0.1:8765)"
+                    >
+                      <RefreshCw className={`w-2.5 h-2.5 ${ankiSyncLoading ? 'animate-spin' : ''}`} />
+                      <span>Anki</span>
+                    </button>
+                  </div>
+                )}
               </div>
+
+              {shouldShowFlashcardEarlyClearanceToast && (
+                <div
+                  id="hud-early-clearance-2way-toast"
+                  className="p-3 rounded-2xl bg-emerald-950/45 border border-emerald-400/40 flex flex-wrap items-center justify-between gap-2"
+                >
+                  <div className="text-xs text-emerald-100">
+                    <span className="font-mono font-semibold text-emerald-300 mr-1.5">
+                      Early Clearance Ready:
+                    </span>
+                    Daily card cap / zero-due reached ({unclearedEligibleBaselineSlots.length} recall slot{unclearedEligibleBaselineSlots.length === 1 ? '' : 's'} remaining).
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      id="btn-hud-early-clearance-bank"
+                      type="button"
+                      onClick={() =>
+                        handleTrigger2WayEarlyClearance('ALL_ELIGIBLE', 'BANK_FREE_TIME')
+                      }
+                      className="px-2.5 py-1 rounded-full bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-mono text-[10px] font-semibold cursor-pointer"
+                    >
+                      Bank Free Time
+                    </button>
+                    <button
+                      id="btn-hud-early-clearance-reallocate"
+                      type="button"
+                      onClick={() =>
+                        handleTrigger2WayEarlyClearance('ALL_ELIGIBLE', 'REALLOCATE_TO_QUEUE')
+                      }
+                      className="px-2.5 py-1 rounded-full bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/45 text-cyan-100 font-mono text-[10px] cursor-pointer"
+                    >
+                      Reallocate to Queue
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <h2 className="font-serif text-3xl sm:text-4xl font-medium tracking-tight text-white leading-tight">
                 <InlineEditableText
                   value={timer.activeTaskTitle}
                   onSave={(newTitle) => {
                     onUpdateActiveTimerTask?.({ title: newTitle });
-                    if (
-                      primaryProject &&
-                      timer.activeBlockSourceId === primaryProject.id
-                    ) {
-                      onUpdateProjectItem?.(primaryProject.id, { title: newTitle });
+                    const matchedProj = state.projectQueue.find(
+                      (p) => p.id === timer.activeBlockSourceId
+                    );
+                    if (matchedProj) {
+                      onUpdateProjectItem?.(matchedProj.id, { title: newTitle });
                     } else {
                       const matchBase = state.baselineBlocks.find(
                         (b) => b.id === timer.activeBlockSourceId
@@ -890,11 +1248,11 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     value={activeDisplayedStartupPrompt}
                     onSave={(newStartup) => {
                       onUpdateActiveTimerTask?.({ startupPrompt: newStartup });
-                      if (
-                        primaryProject &&
-                        timer.activeBlockSourceId === primaryProject.id
-                      ) {
-                        onUpdateProjectItem?.(primaryProject.id, {
+                      const matchedProj = state.projectQueue.find(
+                        (p) => p.id === timer.activeBlockSourceId
+                      );
+                      if (matchedProj) {
+                        onUpdateProjectItem?.(matchedProj.id, {
                           startupStep: newStartup,
                         });
                       } else {
@@ -924,11 +1282,13 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 if (info.offset.x > 65 || info.velocity.x > 340) {
                   triggerHaptic([15]);
                   soundEngine.playTactileClick('MODE_TOGGLE');
-                  onLaunchBlockInTimer(
+                  launchWithOptionalResource(
                     upNextBlock.sourceId,
                     upNextBlock.title,
                     upNextBlock.taskType,
-                    upNextBlock.startupStep
+                    upNextBlock.startupStep,
+                    upNextBlock.launchUrl,
+                    upNextBlock.autoLaunchUrl
                   );
                 } else if (
                   (info.offset.x < -65 || info.velocity.x < -340) &&
@@ -936,7 +1296,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 ) {
                   triggerHaptic([15]);
                   soundEngine.playTactileClick('MODE_TOGGLE');
-                  onToggleEarlyClearance();
+                  setEarlyClearanceChoiceSlotId('ALL_ELIGIBLE');
                 }
               }}
               className="p-4 sm:p-5 rounded-2xl bg-white/[0.025] border border-white/[0.05] flex flex-wrap items-center justify-between gap-4 cursor-grab active:cursor-grabbing"
@@ -947,6 +1307,20 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                   <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400">
                     Up Next • {upNextBlock.badge}
                   </span>
+                  {isValidResourceLaunchUrl(upNextBlock.launchUrl) && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openResourceLaunchUrl(upNextBlock.launchUrl);
+                      }}
+                      className="text-[10px] font-mono text-teal-300 hover:text-teal-200 inline-flex items-center gap-0.5 cursor-pointer"
+                      title={`Open resource: ${upNextBlock.launchUrl}`}
+                    >
+                      <ExternalLink className="w-2.5 h-2.5" />
+                      <span>Link</span>
+                    </button>
+                  )}
                 </div>
                 <div className="font-serif text-xl sm:text-2xl font-medium text-slate-100 truncate">
                   <InlineEditableText
@@ -955,10 +1329,13 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       const base = state.baselineBlocks.find(
                         (b) => b.id === upNextBlock.sourceId
                       );
+                      const proj = state.projectQueue.find(
+                        (p) => p.id === upNextBlock.sourceId
+                      );
                       if (base) {
                         onUpdateBaselineBlock?.(base.id, { title: newVal });
-                      } else if (primaryProject) {
-                        onUpdateProjectItem?.(primaryProject.id, { title: newVal });
+                      } else if (proj) {
+                        onUpdateProjectItem?.(proj.id, { title: newVal });
                       }
                     }}
                   />
@@ -970,10 +1347,13 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       const base = state.baselineBlocks.find(
                         (b) => b.id === upNextBlock.sourceId
                       );
+                      const proj = state.projectQueue.find(
+                        (p) => p.id === upNextBlock.sourceId
+                      );
                       if (base) {
                         onUpdateBaselineBlock?.(base.id, { startupStep: newVal });
-                      } else if (primaryProject) {
-                        onUpdateProjectItem?.(primaryProject.id, {
+                      } else if (proj) {
+                        onUpdateProjectItem?.(proj.id, {
                           startupStep: newVal,
                         });
                       }
@@ -989,17 +1369,19 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 onClick={() => {
                   triggerHaptic([15]);
                   soundEngine.playTactileClick('MODE_TOGGLE');
-                  onLaunchBlockInTimer(
+                  launchWithOptionalResource(
                     upNextBlock.sourceId,
                     upNextBlock.title,
                     upNextBlock.taskType,
-                    upNextBlock.startupStep
+                    upNextBlock.startupStep,
+                    upNextBlock.launchUrl,
+                    upNextBlock.autoLaunchUrl
                   );
                 }}
                 className="px-4 py-2.5 rounded-full bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.08] disabled:opacity-40 text-white font-mono text-xs font-medium flex items-center gap-2 cursor-pointer shrink-0 transition"
               >
                 <Play className="w-3 h-3 fill-current text-cyan-300" />
-                <span>Queue {activeDurations.startupMinutes}m</span>
+                <span>Start {activeDurations.startupMinutes}m Startup</span>
               </button>
             </motion.div>
 
@@ -1472,26 +1854,40 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 onToggleSovereignDripDone?.();
               }}
               title={
-                state.dailySovereignDripDone
-                  ? 'Daily Sovereign Ambition Drip [1/1 DONE] — Today was not a 100%-school day. Click to toggle.'
-                  : 'Daily Sovereign Ambition Drip [0/1] — Guarantees at least 1 dedicated 20m non-school block today. Click to toggle.'
+                examDayAutoPaused
+                  ? 'Daily Ambition Drip paused automatically on Exam / Pre-Exam Taper Day.'
+                  : !dripConfig.enabled
+                  ? 'Daily Ambition Drip disabled. Click to toggle completion or re-enable in Closed List.'
+                  : dripCompletedToday
+                  ? `Daily Ambition Drip [${dripConfig.completedToday}/${dripConfig.targetBlocksPerDay} DONE] — Zero 100%-institutional day secured. Click to toggle.`
+                  : `Daily Ambition Drip [0/${dripConfig.targetBlocksPerDay}] — Reserves 1 capstone 20m block today. Click to toggle.`
               }
               className={`px-2.5 py-0.5 rounded-full border font-mono text-[11px] inline-flex items-center gap-1.5 transition cursor-pointer ${
-                state.dailySovereignDripDone
+                examDayAutoPaused || !dripConfig.enabled
+                  ? 'bg-slate-800/60 border-white/[0.08] text-slate-400'
+                  : dripCompletedToday
                   ? 'bg-amber-500/15 border-amber-400/40 text-amber-200 shadow-[0_0_12px_rgba(245,158,11,0.18)]'
                   : 'bg-violet-500/15 border-violet-400/35 text-violet-200 hover:bg-violet-500/25'
               }`}
             >
-              <Sparkles
-                className={`w-3 h-3 shrink-0 ${
-                  state.dailySovereignDripDone ? 'text-amber-300' : 'text-violet-300'
-                }`}
-              />
+              {examDayAutoPaused ? (
+                <GraduationCap className="w-3 h-3 shrink-0 text-indigo-300" />
+              ) : (
+                <Sparkles
+                  className={`w-3 h-3 shrink-0 ${
+                    dripCompletedToday ? 'text-amber-300' : 'text-violet-300'
+                  }`}
+                />
+              )}
               <span>
-                Sovereign Drip:{' '}
-                {state.dailySovereignDripDone
-                  ? `[1/${state.dailySovereignDripTarget || 1} DONE]`
-                  : `[0/${state.dailySovereignDripTarget || 1}]`}
+                Ambition Drip:{' '}
+                {examDayAutoPaused
+                  ? '[Exam Pause]'
+                  : !dripConfig.enabled
+                  ? '[OFF]'
+                  : dripCompletedToday
+                  ? `[${dripConfig.completedToday}/${dripConfig.targetBlocksPerDay} DONE]`
+                  : `[${dripConfig.completedToday}/${dripConfig.targetBlocksPerDay}]`}
               </span>
             </button>
           </div>
@@ -1526,7 +1922,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
             >
               {/* Two-Column Expanded Baseline & Focus #1 Grid */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Left Column: Daily Core Baseline (Inline Editable + Legacy Avery Segments) */}
+                {/* Left Column: Daily Core Baseline (Inline Editable + 2-Way Early Clearance + Live Card Progress) */}
                 <div
                   id="bento-baseline-card"
                   className="p-5 rounded-2xl bg-white/[0.015] border border-white/[0.05] space-y-4"
@@ -1539,6 +1935,11 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       <h3 className="font-serif text-2xl font-medium text-white">
                         {totalBaselineFloorBlocks}-Block Floor ({state.baselineBlocks.length} Slots)
                       </h3>
+                      {effectiveScheduledFloorBlocks < totalBaselineFloorBlocks && (
+                        <p className="text-[10px] font-mono text-cyan-300/90 mt-0.5">
+                          Active floor today: {effectiveScheduledFloorBlocks}b ({totalBaselineFloorBlocks - effectiveScheduledFloorBlocks}b reallocated to Project / Drip queue)
+                        </p>
+                      )}
                     </div>
                     <div className="flex items-center gap-1.5">
                       <button
@@ -1555,46 +1956,121 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                         disabled={metrics.isZeroWorkLeft}
                         onClick={() => {
                           triggerHaptic([15]);
-                          onToggleEarlyClearance();
+                          if (state.earlyClearanceEnabled) {
+                            onToggleEarlyClearance();
+                            setEarlyClearanceChoiceSlotId(null);
+                          } else if (onApplySlotEarlyClearance) {
+                            setEarlyClearanceChoiceSlotId((prev) =>
+                              prev === 'ALL_ELIGIBLE' ? null : 'ALL_ELIGIBLE'
+                            );
+                          } else {
+                            onToggleEarlyClearance();
+                          }
                         }}
                         className={`px-2.5 py-1 rounded-full border font-mono text-[10px] transition cursor-pointer ${
                           state.earlyClearanceEnabled
                             ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-200'
+                            : earlyClearanceChoiceSlotId === 'ALL_ELIGIBLE'
+                            ? 'bg-cyan-500/20 border-cyan-400/45 text-cyan-100'
                             : 'bg-white/[0.03] hover:bg-white/[0.07] border-white/[0.05] text-slate-300'
                         }`}
                       >
                         {state.earlyClearanceEnabled
-                          ? '✓ Early Clearance Banked'
-                          : 'Early Clearance'}
+                          ? '✓ Early Clearance Active (Undo)'
+                          : 'Early Clearance ▾'}
                       </button>
                     </div>
                   </div>
 
-                  {/* Direct Inline Baseline Slots List (Rename, 1b-6b target, 5m startup script, Early Clearance, Late-Night Blocker, Delete x) */}
+                  {/* 1-Click 2-Way Early Clearance Choice Banner (Triggered manually or when card cap / 0 due hit) */}
+                  {(earlyClearanceChoiceSlotId === 'ALL_ELIGIBLE' ||
+                    shouldShowFlashcardEarlyClearanceToast) && (
+                    <div
+                      id="baseline-early-clearance-2way-choice"
+                      className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-400/40 space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-mono font-semibold text-emerald-200">
+                          Early Clearance Reallocation ({unclearedEligibleBaselineSlots.length} eligible slot{unclearedEligibleBaselineSlots.length === 1 ? '' : 's'})
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEarlyClearanceChoiceSlotId(null);
+                            setZeroDueForcedPrompt(false);
+                          }}
+                          className="text-[10px] font-mono text-slate-400 hover:text-slate-200 cursor-pointer"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <button
+                          id="btn-early-clearance-option-a-bank"
+                          type="button"
+                          onClick={() =>
+                            handleTrigger2WayEarlyClearance('ALL_ELIGIBLE', 'BANK_FREE_TIME')
+                          }
+                          className="p-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/45 text-left transition cursor-pointer"
+                        >
+                          <div className="font-mono text-[10px] font-semibold text-emerald-200">
+                            Option A — Bank as Free Recovery
+                          </div>
+                          <div className="text-[10px] text-emerald-100/80 mt-0.5">
+                            Deducts remaining recall blocks from work left so End-of-Shift arrives earlier.
+                          </div>
+                        </button>
+                        <button
+                          id="btn-early-clearance-option-b-reallocate"
+                          type="button"
+                          onClick={() =>
+                            handleTrigger2WayEarlyClearance(
+                              'ALL_ELIGIBLE',
+                              'REALLOCATE_TO_QUEUE'
+                            )
+                          }
+                          className="p-2 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/45 text-left transition cursor-pointer"
+                        >
+                          <div className="font-mono text-[10px] font-semibold text-cyan-200">
+                            Option B — Reallocate to Queue
+                          </div>
+                          <div className="text-[10px] text-cyan-100/80 mt-0.5">
+                            Keeps shift length constant; converts freed blocks 1-for-1 into Project / Ambition Drip blocks.
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Direct Inline Baseline Slots List */}
                   <div className="space-y-2">
                     {state.baselineBlocks.map((b) => {
                       const slotTarget = getBaselineSlotTargetBlocks(b);
+                      const effectiveSlotTarget = getBaselineSlotEffectiveTargetBlocks(b);
                       const slotDone = getBaselineSlotCompletedBlocks(b);
                       const isEarlyElig = isBaselineSlotEarlyClearanceEligible(b);
                       const isLateBlocked = isBaselineSlotLateNightBlocked(b);
+                      const isClearedToday = isBaselineSlotClearedForToday(b);
                       const blockedAsFinal =
                         isFinalBlockOfNight &&
                         isLateBlocked &&
-                        !b.completed &&
-                        !b.bankedViaEarlyClearance;
+                        !isClearedToday;
                       const isCanceledByTaper =
                         state.preExamTaperActive && b.category === 'SYNTHESIS';
                       const isEditingThisSlot = editingBaselineSlotId === b.id;
+                      const isSlot2WayOpen = earlyClearanceChoiceSlotId === b.id;
 
                       return (
                         <div
                           key={b.id}
                           id={`pill-segment-${b.id}`}
-                          className={`p-3 rounded-xl border transition ${
+                          className={`p-3 rounded-xl border transition space-y-2 ${
                             isCanceledByTaper
                               ? 'bg-indigo-950/25 border-indigo-500/30 text-indigo-300/60'
                               : b.completed
                               ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-100'
+                              : b.reallocatedViaEarlyClearance
+                              ? 'bg-violet-500/15 border-violet-400/35 text-violet-100'
                               : b.bankedViaEarlyClearance
                               ? 'bg-cyan-500/15 border-cyan-400/35 text-cyan-100'
                               : blockedAsFinal
@@ -1620,6 +2096,8 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                                 className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 cursor-pointer ${
                                   b.completed
                                     ? 'bg-emerald-400 border-emerald-300 text-slate-950'
+                                    : b.reallocatedViaEarlyClearance
+                                    ? 'bg-violet-400 border-violet-300 text-slate-950'
                                     : b.bankedViaEarlyClearance
                                     ? 'bg-cyan-400 border-cyan-300 text-slate-950'
                                     : 'bg-slate-900 border-slate-700 text-transparent hover:border-teal-400'
@@ -1638,15 +2116,56 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                                       })
                                     }
                                   />
-                                  {isEarlyElig && (
-                                    <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-500/30 text-[9px] font-mono text-emerald-300">
-                                      Early Clearance
+                                  {b.reallocatedViaEarlyClearance && (
+                                    <span className="px-1.5 py-0.5 rounded bg-violet-500/20 border border-violet-400/40 text-[9px] font-mono text-violet-200">
+                                      Reallocated +{b.reallocatedBlocksCount || Math.max(1, slotTarget - effectiveSlotTarget)}b → Queue
                                     </span>
                                   )}
+                                  {b.bankedViaEarlyClearance && (
+                                    <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 border border-cyan-400/40 text-[9px] font-mono text-cyan-200">
+                                      Banked Free Time
+                                    </span>
+                                  )}
+                                  {isEarlyElig && !isClearedToday && (
+                                    <button
+                                      id={`btn-slot-early-clearance-${b.id}`}
+                                      type="button"
+                                      onClick={() =>
+                                        setEarlyClearanceChoiceSlotId((prev) =>
+                                          prev === b.id ? null : b.id
+                                        )
+                                      }
+                                      className="px-1.5 py-0.5 rounded bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/35 text-[9px] font-mono text-emerald-200 cursor-pointer"
+                                      title="Clear remaining blocks in this slot early (Bank Free Time vs. Reallocate to Queue)"
+                                    >
+                                      Early Clearance ▾
+                                    </button>
+                                  )}
+                                  {(b.bankedViaEarlyClearance || b.reallocatedViaEarlyClearance) &&
+                                    onRestoreSlotEarlyClearance && (
+                                      <button
+                                        type="button"
+                                        onClick={() => onRestoreSlotEarlyClearance(b.id)}
+                                        className="px-1.5 py-0.5 rounded bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.1] text-[9px] font-mono text-slate-300 cursor-pointer"
+                                      >
+                                        Restore
+                                      </button>
+                                    )}
                                   {isLateBlocked && (
                                     <span className="px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-[9px] font-mono text-amber-300">
                                       Late-Night Blocker
                                     </span>
+                                  )}
+                                  {isValidResourceLaunchUrl(b.launchUrl) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openResourceLaunchUrl(b.launchUrl)}
+                                      className="px-1.5 py-0.5 rounded bg-teal-500/15 hover:bg-teal-500/25 border border-teal-400/35 text-[9px] font-mono text-teal-200 inline-flex items-center gap-0.5 cursor-pointer"
+                                      title={`Open resource: ${b.launchUrl}`}
+                                    >
+                                      <ExternalLink className="w-2.5 h-2.5" />
+                                      <span>Link</span>
+                                    </button>
                                   )}
                                 </div>
                                 <div className="text-[11px] text-slate-400 mt-0.5">
@@ -1688,7 +2207,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                                     prev === b.id ? null : b.id
                                   )
                                 }
-                                title="Configure Slot (Early Clearance, Late-Night Blocker, Track)"
+                                title="Configure Slot (Early Clearance, Late-Night Blocker, Resource Link, Track)"
                                 className={`p-1 rounded border text-slate-400 hover:text-teal-300 transition ${
                                   isEditingThisSlot
                                     ? 'bg-teal-500/20 border-teal-400 text-teal-200'
@@ -1711,6 +2230,39 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                             </div>
                           </div>
 
+                          {isSlot2WayOpen && (
+                            <div
+                              id={`slot-early-clearance-choice-${b.id}`}
+                              className="p-2 rounded-lg bg-slate-950/90 border border-emerald-400/35 flex flex-wrap items-center justify-between gap-1.5"
+                            >
+                              <span className="text-[10px] font-mono text-emerald-200">
+                                Clear {Math.max(1, slotTarget - slotDone)} remaining block{slotTarget - slotDone === 1 ? '' : 's'}:
+                              </span>
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <button
+                                  id={`btn-slot-bank-${b.id}`}
+                                  type="button"
+                                  onClick={() =>
+                                    handleTrigger2WayEarlyClearance(b.id, 'BANK_FREE_TIME')
+                                  }
+                                  className="px-2 py-0.5 rounded bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-mono text-[10px] font-semibold cursor-pointer"
+                                >
+                                  Bank Free Time
+                                </button>
+                                <button
+                                  id={`btn-slot-reallocate-${b.id}`}
+                                  type="button"
+                                  onClick={() =>
+                                    handleTrigger2WayEarlyClearance(b.id, 'REALLOCATE_TO_QUEUE')
+                                  }
+                                  className="px-2 py-0.5 rounded bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/45 text-cyan-100 font-mono text-[10px] cursor-pointer"
+                                >
+                                  Reallocate to Queue
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
                           {isEditingThisSlot && (
                             <InlineSlotEditor
                               block={b}
@@ -1730,25 +2282,129 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     })}
                   </div>
 
-                  {/* Card counter slider when Flashcard / Recall slots exist */}
+                  {/* Live Flashcard Progress Pill (RemNote Manual Tap-Entry + Optional Desktop AnkiConnect) */}
                   {flashcardBlocks.length > 0 && (
-                    <div className="space-y-1.5 pt-2 border-t border-white/[0.05]">
-                      <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
-                        <span>Active Recall / Flashcard Queue</span>
-                        <span>
-                          {state.flashcardsReviewedCount}/{state.flashcardsDailyCap} cards
-                        </span>
+                    <div
+                      id="flashcard-live-progress-pill"
+                      className="space-y-2 pt-2 border-t border-white/[0.05]"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
+                        <span className="text-slate-400">Active Recall / SRS Card Cap</span>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {editingCardCountInline ? (
+                            <form
+                              onSubmit={(e) => {
+                                e.preventDefault();
+                                const parsed = Math.max(
+                                  0,
+                                  Math.min(999, Number(cardCountDraft) || 0)
+                                );
+                                onUpdateFlashcardCount(parsed);
+                                setEditingCardCountInline(false);
+                              }}
+                              className="inline-flex items-center gap-1"
+                            >
+                              <input
+                                id="input-flashcard-manual-tap"
+                                type="number"
+                                min={0}
+                                max={999}
+                                value={cardCountDraft}
+                                onChange={(e) => setCardCountDraft(e.target.value)}
+                                onBlur={() => {
+                                  const parsed = Math.max(
+                                    0,
+                                    Math.min(999, Number(cardCountDraft) || 0)
+                                  );
+                                  onUpdateFlashcardCount(parsed);
+                                  setEditingCardCountInline(false);
+                                }}
+                                autoFocus
+                                className="w-16 px-1.5 py-0.5 rounded bg-slate-950 border border-cyan-400/50 text-[11px] font-mono text-cyan-100"
+                              />
+                              <span className="text-slate-400">
+                                / {state.flashcardsDailyCap} cards
+                              </span>
+                            </form>
+                          ) : (
+                            <button
+                              id="btn-flashcard-tap-entry"
+                              type="button"
+                              onClick={() => {
+                                setCardCountDraft(
+                                  String(state.flashcardsReviewedCount || 0)
+                                );
+                                setEditingCardCountInline(true);
+                              }}
+                              title="Tap to type RemNote / SRS reviewed count"
+                              className="px-2 py-0.5 rounded-full bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/35 text-cyan-200 tabular-nums cursor-pointer"
+                            >
+                              {state.flashcardsReviewedCount} / {state.flashcardsDailyCap} cards
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = Math.min(
+                                999,
+                                (state.flashcardsReviewedCount || 0) + 25
+                              );
+                              onUpdateFlashcardCount(next);
+                              setCardCountDraft(String(next));
+                            }}
+                            className="px-1.5 py-0.5 rounded bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.07] text-[10px] text-slate-300 cursor-pointer"
+                          >
+                            +25
+                          </button>
+
+                          <button
+                            id="btn-flashcard-zero-due"
+                            type="button"
+                            onClick={() => setZeroDueForcedPrompt(true)}
+                            className="px-1.5 py-0.5 rounded bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/35 text-[10px] text-emerald-200 cursor-pointer"
+                            title="Zero cards due — open 2-way Early Clearance"
+                          >
+                            0 Due
+                          </button>
+                        </div>
                       </div>
+
                       <input
                         id="input-flashcard-count"
                         type="range"
                         min={0}
                         max={state.flashcardsDailyCap}
                         step={5}
-                        value={state.flashcardsReviewedCount}
+                        value={Math.min(state.flashcardsDailyCap, state.flashcardsReviewedCount)}
                         onChange={(e) => onUpdateFlashcardCount(Number(e.target.value))}
                         className="w-full accent-cyan-400 cursor-pointer"
                       />
+
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] font-mono">
+                        <label className="inline-flex items-center gap-1.5 text-slate-400 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(state.ankiConnectEnabled)}
+                            onChange={(e) => onToggleAnkiConnect?.(e.target.checked)}
+                            className="rounded border-slate-700 bg-slate-950 text-indigo-400"
+                          />
+                          <span>AnkiConnect Poll (127.0.0.1:8765)</span>
+                        </label>
+                        <button
+                          id="btn-sync-ankiconnect"
+                          type="button"
+                          disabled={ankiSyncLoading}
+                          onClick={() => void handleSyncAnkiConnect()}
+                          className="px-2 py-0.5 rounded bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-400/35 text-indigo-200 inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                        >
+                          <RefreshCw className={`w-2.5 h-2.5 ${ankiSyncLoading ? 'animate-spin' : ''}`} />
+                          <span>{ankiSyncLoading ? 'Polling...' : 'Sync Anki'}</span>
+                        </button>
+                      </div>
+                      {ankiSyncStatus && (
+                        <p className="text-[10px] font-mono text-slate-400">{ankiSyncStatus}</p>
+                      )}
                     </div>
                   )}
 
@@ -1762,7 +2418,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                         type="button"
                         onClick={() => {
                           triggerHaptic([15]);
-                          onLaunchBlockInTimer(
+                          launchWithOptionalResource(
                             selectedBaseline.id,
                             selectedBaseline.title,
                             isFlashcardBlock(selectedBaseline)
@@ -1770,18 +2426,20 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                               : selectedBaseline.category === 'SYNTHESIS'
                               ? 'SYNTHESIS'
                               : 'READING',
-                            selectedBaseline.startupStep
+                            selectedBaseline.startupStep,
+                            selectedBaseline.launchUrl,
+                            selectedBaseline.autoLaunchUrl
                           );
                         }}
                         className="px-3 py-1 rounded-full bg-cyan-400/20 hover:bg-cyan-400/30 border border-cyan-400/40 text-cyan-200 font-mono text-[11px] cursor-pointer shrink-0"
                       >
-                        Queue {activeDurations.startupMinutes}m
+                        Start {activeDurations.startupMinutes}m Startup
                       </button>
                     </div>
                   )}
                 </div>
 
-                {/* Right Column: Closed List (Max 3 Active Slots) — Slot #1 Institutional Focus + Dual-Slot Serialization Exception for Sovereign Ambition Drip */}
+                {/* Right Column: Closed List (Max 3 Active Slots) — Serialized Focus #1 + Daily Ambition Drip */}
                 <div
                   id="bento-project-lock-card"
                   className="p-5 rounded-2xl bg-white/[0.015] border border-white/[0.05] flex flex-col justify-between space-y-4"
@@ -1827,9 +2485,57 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                               className="px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-400/40 text-[10px] font-mono font-semibold uppercase tracking-wider text-emerald-200 flex items-center gap-1"
                             >
                               <Unlock className="w-3 h-3 text-emerald-300" />
-                              <span>[SERIALIZED INSTITUTIONAL FOCUS #{primaryProject.slot}]</span>
+                              <span>[SERIALIZED FOCUS #{primaryProject.slot}]</span>
                             </span>
+
+                            {primaryProject.trackId === 'science' && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nextSub: MajorSubTrackId =
+                                    primaryProject.subTrack === '1B_INDEPENDENT'
+                                      ? '1A_INSTITUTIONAL'
+                                      : '1B_INDEPENDENT';
+                                  onUpdateProjectItem?.(primaryProject.id, {
+                                    subTrack: nextSub,
+                                  });
+                                }}
+                                className="px-1.5 py-0.5 rounded bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-400/35 font-mono text-[9px] text-cyan-200 cursor-pointer"
+                                title="Toggle Major Track 1 Sub-Track (1A Institutional vs. 1B Independent)"
+                              >
+                                {primaryProject.subTrack === '1B_INDEPENDENT'
+                                  ? '1B Independent'
+                                  : '1A Institutional'}
+                              </button>
+                            )}
+
+                            {isValidResourceLaunchUrl(primaryProject.launchUrl) && (
+                              <button
+                                type="button"
+                                onClick={() => openResourceLaunchUrl(primaryProject.launchUrl)}
+                                className="px-1.5 py-0.5 rounded bg-teal-500/15 hover:bg-teal-500/25 border border-teal-400/35 font-mono text-[9px] text-teal-200 inline-flex items-center gap-0.5 cursor-pointer"
+                                title={`Open resource: ${primaryProject.launchUrl}`}
+                              >
+                                <ExternalLink className="w-2.5 h-2.5" />
+                                <span>Open Link</span>
+                              </button>
+                            )}
+
+                            <button
+                              id={`btn-project-link-${primaryProject.id}`}
+                              type="button"
+                              onClick={() =>
+                                setEditingProjectLinkId((prev) =>
+                                  prev === primaryProject.id ? null : primaryProject.id
+                                )
+                              }
+                              className="p-1 rounded bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-slate-400 hover:text-teal-200 cursor-pointer"
+                              title="Attach web URL or anki:// / remnote:// deep link"
+                            >
+                              <Link2 className="w-3 h-3" />
+                            </button>
                           </div>
+
                           <h3 className="font-serif text-xl sm:text-2xl font-medium text-white mt-1.5">
                             <InlineEditableText
                               value={primaryProject.title}
@@ -1847,10 +2553,10 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                           )}
                           <div className="text-xs text-slate-400 mt-1">
                             <span className="text-[10px] font-mono uppercase text-amber-300/80 mr-1.5">
-                              5m Startup:
+                              5m Startup (Block {Math.min(primaryProject.totalBlocks, primaryProject.completedBlocks + 1)}):
                             </span>
                             <InlineEditableText
-                              value={primaryProject.startupStep}
+                              value={getProjectActiveStartupStep(primaryProject)}
                               onSave={(newStep) =>
                                 onUpdateProjectItem?.(primaryProject.id, {
                                   startupStep: newStep,
@@ -1858,16 +2564,56 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                               }
                             />
                           </div>
+
+                          {editingProjectLinkId === primaryProject.id && (
+                            <div className="mt-2 p-2.5 rounded-xl bg-slate-950/90 border border-teal-500/35 space-y-1.5">
+                              <input
+                                type="text"
+                                value={primaryProject.launchUrl ?? ''}
+                                onChange={(e) =>
+                                  onUpdateProjectItem?.(primaryProject.id, {
+                                    launchUrl: e.target.value,
+                                  })
+                                }
+                                placeholder="https://docs.google.com/... or remnote://..."
+                                className="w-full px-2 py-1 rounded bg-slate-900 border border-slate-700 text-[11px] font-mono text-slate-100"
+                              />
+                              <label className="flex items-center gap-1.5 text-[10px] font-mono text-slate-300 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(primaryProject.autoLaunchUrl)}
+                                  onChange={(e) =>
+                                    onUpdateProjectItem?.(primaryProject.id, {
+                                      autoLaunchUrl: e.target.checked,
+                                    })
+                                  }
+                                  className="rounded border-slate-700 bg-slate-900 text-teal-400"
+                                />
+                                <span>Auto-open link on &ldquo;Start 5m Startup&rdquo;</span>
+                              </label>
+                            </div>
+                          )}
+
                           {primaryProject.blockSubSteps && primaryProject.blockSubSteps.length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-1.5">
-                              {primaryProject.blockSubSteps.map((stepLabel, idx) => (
-                                <span
-                                  key={idx}
-                                  className="px-1.5 py-0.5 rounded bg-white/[0.03] border border-white/[0.06] font-mono text-[10px] text-slate-300"
-                                >
-                                  {stepLabel}
-                                </span>
-                              ))}
+                              {primaryProject.blockSubSteps.map((stepLabel, idx) => {
+                                const isCurrentBlock = idx === primaryProject.completedBlocks;
+                                const isDoneBlock = idx < primaryProject.completedBlocks;
+                                return (
+                                  <span
+                                    key={idx}
+                                    className={`px-1.5 py-0.5 rounded border font-mono text-[10px] ${
+                                      isCurrentBlock
+                                        ? 'bg-cyan-500/20 border-cyan-400/50 text-cyan-100'
+                                        : isDoneBlock
+                                        ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300/70 line-through'
+                                        : 'bg-white/[0.03] border-white/[0.06] text-slate-300'
+                                    }`}
+                                  >
+                                    {stepLabel}
+                                  </span>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
@@ -1941,16 +2687,18 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                           disabled={metrics.isZeroWorkLeft || isSurgeMidDayResetRequired}
                           onClick={() => {
                             triggerHaptic([15]);
-                            onLaunchBlockInTimer(
+                            launchWithOptionalResource(
                               primaryProject.id,
                               primaryProject.title,
                               'PROJECT',
-                              primaryProject.startupStep
+                              getProjectActiveStartupStep(primaryProject),
+                              primaryProject.launchUrl,
+                              primaryProject.autoLaunchUrl
                             );
                           }}
                           className="flex-1 py-2 px-3 rounded-full bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-mono font-medium text-xs cursor-pointer"
                         >
-                          Start {activeDurations.startupMinutes}m Ignition
+                          Start {activeDurations.startupMinutes}m Startup
                         </button>
                         <button
                           id="btn-log-project-1-block"
@@ -1963,13 +2711,17 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                         <button
                           id="btn-split-deliverable-1"
                           type="button"
-                          disabled={isSplittingDeliverable}
-                          onClick={() => void handleSplitPrimaryDeliverable()}
-                          title="8-Block Deliverable Splitter (Generates 5m Startup & Block Milestones)"
+                          disabled={splittingProjectId === primaryProject.id}
+                          onClick={() => void handleAutoSplitProject(primaryProject)}
+                          title="Auto-Split Blocks into distinct 5m startup micro-scripts"
                           className="py-2 px-3 rounded-full bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/35 text-sky-200 font-mono text-xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
                         >
                           <Sparkles className="w-3.5 h-3.5 text-sky-300" />
-                          <span>{isSplittingDeliverable ? 'Splitting...' : 'Split Blocks'}</span>
+                          <span>
+                            {splittingProjectId === primaryProject.id
+                              ? 'Splitting...'
+                              : 'Auto-Split Blocks'}
+                          </span>
                         </button>
                         <button
                           id="btn-complete-project-1"
@@ -1988,7 +2740,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     </div>
                   )}
 
-                  {/* Dual-Slot Serialization Exception: Slots #2 & #3 Always Visible in Closed List */}
+                  {/* Daily Ambition Drip ("Zero 100%-Institutional Days" Engine): Slots #2 & #3 */}
                   <div
                     id="closed-list-secondary-slots"
                     className="pt-3 border-t border-white/[0.06] space-y-2.5"
@@ -1997,42 +2749,96 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                       <span className="text-[10px] font-mono uppercase tracking-wider text-amber-200/90 flex items-center gap-1.5">
                         <Sparkles className="w-3 h-3 text-amber-300" />
                         <span>
-                          Dual-Slot Serialization Exception (Slots #2–#3)
+                          Daily Ambition Drip • Slots #2–#3
                         </span>
                       </span>
-                      <button
-                        id="btn-closed-list-golden-rule"
-                        type="button"
-                        onClick={() => onToggleGoldenRuleMode?.()}
-                        className={`px-2 py-0.5 rounded-full border font-mono text-[10px] transition cursor-pointer ${
-                          state.sovereignGoldenRuleMode !== false
-                            ? 'bg-amber-500/15 border-amber-400/40 text-amber-200'
-                            : 'bg-white/[0.02] border-white/[0.06] text-slate-400'
-                        }`}
-                        title="Toggle Golden Rule deadline pacing reminder"
-                      >
-                        Golden Rule: {state.sovereignGoldenRuleMode !== false ? 'ON' : 'OFF'}
-                      </button>
+
+                      <div className="flex flex-wrap items-center gap-1">
+                        <button
+                          id="btn-toggle-ambition-drip-enabled"
+                          type="button"
+                          onClick={() =>
+                            onUpdateDailyAmbitionDrip?.({
+                              enabled: !dripConfig.enabled,
+                            })
+                          }
+                          className={`px-2 py-0.5 rounded-full border font-mono text-[10px] transition cursor-pointer ${
+                            dripConfig.enabled && !examDayAutoPaused
+                              ? 'bg-violet-500/15 border-violet-400/40 text-violet-200'
+                              : 'bg-white/[0.02] border-white/[0.06] text-slate-400'
+                          }`}
+                          title="Reserve 1 capstone block/day (20m) for your active Ambition Drip slot on every non-exam day"
+                        >
+                          {examDayAutoPaused
+                            ? 'Exam Pause'
+                            : dripConfig.enabled
+                            ? '1b/Day ON'
+                            : '1b/Day OFF'}
+                        </button>
+
+                        {dripConfig.enabled && (
+                          <button
+                            id="btn-cycle-preferred-drip-slot"
+                            type="button"
+                            onClick={() =>
+                              onUpdateDailyAmbitionDrip?.({
+                                preferredSlotIndex:
+                                  dripConfig.preferredSlotIndex === 1 ? 2 : 1,
+                              })
+                            }
+                            className="px-2 py-0.5 rounded-full bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.07] font-mono text-[10px] text-slate-300 cursor-pointer"
+                            title="Switch preferred Ambition Drip target between Slot #2 and Slot #3"
+                          >
+                            Target: #{dripConfig.preferredSlotIndex === 2 ? 3 : 2}
+                          </button>
+                        )}
+
+                        <button
+                          id="btn-closed-list-golden-rule"
+                          type="button"
+                          onClick={() => onToggleGoldenRuleMode?.()}
+                          className={`px-2 py-0.5 rounded-full border font-mono text-[10px] transition cursor-pointer ${
+                            state.sovereignGoldenRuleMode !== false
+                              ? 'bg-amber-500/15 border-amber-400/40 text-amber-200'
+                              : 'bg-white/[0.02] border-white/[0.06] text-slate-400'
+                          }`}
+                          title="Toggle Capstone Pacing Rule banner"
+                        >
+                          Capstone Rule: {state.sovereignGoldenRuleMode !== false ? 'ON' : 'OFF'}
+                        </button>
+                      </div>
                     </div>
 
-                    {state.sovereignGoldenRuleMode !== false && (
-                      <div
-                        id="closed-list-golden-rule-banner"
-                        className="px-3 py-2 rounded-xl bg-gradient-to-r from-amber-500/10 via-violet-500/10 to-amber-500/10 border border-amber-400/25 text-[11px] text-amber-100/90 leading-relaxed"
-                      >
-                        <span className="font-mono font-semibold uppercase text-amber-300 mr-1.5">
-                          [Golden Rule]:
+                    {examDayAutoPaused ? (
+                      <div className="px-3 py-2 rounded-xl bg-indigo-950/35 border border-indigo-400/30 text-[11px] text-indigo-200 leading-relaxed">
+                        <span className="font-mono font-semibold uppercase text-indigo-300 mr-1.5">
+                          [Exam Day Auto-Pause]:
                         </span>
-                        On days with an imminent school deadline, knock out today&apos;s scheduled Focus #1 blocks first or run your 1b Sovereign Drip as the high-reward capstone block of the shift (strictly stopwatch-capped at 20m unless Flow Extension is active).
+                        Pre-Exam Taper / Exam Day active — Daily Ambition Drip is temporarily paused so 100% of blocks stay on recall and recovery.
                       </div>
+                    ) : (
+                      state.sovereignGoldenRuleMode !== false && (
+                        <div
+                          id="closed-list-golden-rule-banner"
+                          className="px-3 py-2 rounded-xl bg-gradient-to-r from-amber-500/10 via-violet-500/10 to-amber-500/10 border border-amber-400/25 text-[11px] text-amber-100/90 leading-relaxed"
+                        >
+                          <span className="font-mono font-semibold uppercase text-amber-300 mr-1.5">
+                            [Zero 100%-Institutional Days]:
+                          </span>
+                          Complete scheduled Focus #1 blocks and recall sprints first, slotting your 1-block Ambition Drip as the shift capstone — strictly stopwatch-capped at 1 block (20m) unless Flow Extension is unlocked.
+                        </div>
+                      )
                     )}
 
                     {lockedSecondaryProjects.map((proj) => {
-                      const isSov = isProjectSovereignDrip(proj);
-                      const dripAlreadyBanked = Boolean(state.dailySovereignDripDone);
+                      const isDrip = isProjectAmbitionDripEligible(proj);
+                      const isPreferredTarget =
+                        activeAmbitionDripProj?.id === proj.id;
                       const isIgnitionUnlocked =
-                        isSov &&
-                        !dripAlreadyBanked &&
+                        isDrip &&
+                        dripConfig.enabled &&
+                        !examDayAutoPaused &&
+                        !isDripCapEnforced &&
                         !metrics.isZeroWorkLeft &&
                         !isSurgeMidDayResetRequired;
 
@@ -2041,40 +2847,74 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                           key={proj.id}
                           id={`project-card-slot-${proj.slot}`}
                           className={`p-3 rounded-xl border space-y-2 text-xs transition ${
-                            isSov
+                            isDrip
                               ? 'bg-gradient-to-br from-amber-500/[0.07] via-violet-500/[0.07] to-slate-950/80 border-amber-400/35'
                               : 'bg-black/30 border-white/[0.05]'
                           }`}
                         >
                           <div className="flex flex-wrap items-center justify-between gap-1.5">
                             <div className="flex flex-wrap items-center gap-1.5">
-                              {isSov ? (
+                              {isDrip ? (
                                 <span
                                   id={`sovereign-drip-badge-slot-${proj.slot}`}
                                   className="px-2 py-0.5 rounded-md bg-gradient-to-r from-amber-500/20 to-violet-500/25 border border-amber-400/45 text-[10px] font-mono font-semibold uppercase tracking-wider text-amber-200 flex items-center gap-1"
                                 >
                                   <Sparkles className="w-3 h-3 text-amber-300" />
-                                  <span>[SOVEREIGN AMBITION DRIP — 1B/DAY]</span>
+                                  <span>
+                                    {isPreferredTarget
+                                      ? '[ACTIVE AMBITION DRIP — 1B/DAY]'
+                                      : '[AMBITION DRIP SLOT]'}
+                                  </span>
                                 </span>
                               ) : (
                                 <span className="px-2 py-0.5 rounded-md bg-white/[0.04] border border-white/[0.08] text-[10px] font-mono uppercase text-slate-400 flex items-center gap-1">
                                   <Lock className="w-3 h-3" />
-                                  <span>[QUEUED INSTITUTIONAL #{proj.slot}]</span>
+                                  <span>[QUEUED DELIVERABLE #{proj.slot}]</span>
                                 </span>
                               )}
+
                               <button
                                 id={`btn-toggle-sovereign-flag-${proj.slot}`}
                                 type="button"
                                 onClick={() =>
                                   onUpdateProjectItem?.(proj.id, {
-                                    isSovereignDrip: !isSov,
-                                    category: !isSov ? 'sovereign' : 'institutional',
+                                    isAmbitionDrip: !isDrip,
+                                    isSovereignDrip: !isDrip,
+                                    category: !isDrip ? 'sovereign' : 'institutional',
+                                    subTrack:
+                                      !isDrip && proj.trackId === 'science'
+                                        ? '1B_INDEPENDENT'
+                                        : proj.subTrack,
                                   })
                                 }
                                 className="px-1.5 py-0.5 rounded bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] font-mono text-[9px] text-slate-400 cursor-pointer"
-                                title="Toggle Sovereign Ambition Drip exception on this Closed List slot"
+                                title="Toggle Daily Ambition Drip eligibility on this Closed List slot"
                               >
-                                {isSov ? 'Sovereign' : 'Set Sovereign'}
+                                {isDrip ? 'Ambition Drip' : 'Set Drip'}
+                              </button>
+
+                              {isValidResourceLaunchUrl(proj.launchUrl) && (
+                                <button
+                                  type="button"
+                                  onClick={() => openResourceLaunchUrl(proj.launchUrl)}
+                                  className="px-1.5 py-0.5 rounded bg-teal-500/15 hover:bg-teal-500/25 border border-teal-400/35 font-mono text-[9px] text-teal-200 inline-flex items-center gap-0.5 cursor-pointer"
+                                >
+                                  <ExternalLink className="w-2.5 h-2.5" />
+                                  <span>Link</span>
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setEditingProjectLinkId((prev) =>
+                                    prev === proj.id ? null : proj.id
+                                  )
+                                }
+                                className="p-1 rounded bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.06] text-slate-400 hover:text-teal-200 cursor-pointer"
+                                title="Attach web URL or deep link"
+                              >
+                                <Link2 className="w-2.5 h-2.5" />
                               </button>
                             </div>
 
@@ -2111,16 +2951,52 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                             </p>
                           )}
 
+                          {editingProjectLinkId === proj.id && (
+                            <div className="p-2 rounded-lg bg-slate-950/90 border border-teal-500/35 space-y-1">
+                              <input
+                                type="text"
+                                value={proj.launchUrl ?? ''}
+                                onChange={(e) =>
+                                  onUpdateProjectItem?.(proj.id, {
+                                    launchUrl: e.target.value,
+                                  })
+                                }
+                                placeholder="https://... or remnote://..."
+                                className="w-full px-2 py-1 rounded bg-slate-900 border border-slate-700 text-[10px] font-mono text-slate-100"
+                              />
+                              <label className="flex items-center gap-1.5 text-[10px] font-mono text-slate-300 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(proj.autoLaunchUrl)}
+                                  onChange={(e) =>
+                                    onUpdateProjectItem?.(proj.id, {
+                                      autoLaunchUrl: e.target.checked,
+                                    })
+                                  }
+                                  className="rounded border-slate-700 bg-slate-900 text-teal-400"
+                                />
+                                <span>Auto-open on &ldquo;Start 5m Startup&rdquo;</span>
+                              </label>
+                            </div>
+                          )}
+
                           {proj.blockSubSteps && proj.blockSubSteps.length > 0 && (
                             <div className="flex flex-wrap gap-1">
-                              {proj.blockSubSteps.map((stepText, sIdx) => (
-                                <span
-                                  key={sIdx}
-                                  className="px-1.5 py-0.5 rounded bg-violet-500/15 border border-violet-400/30 font-mono text-[10px] text-violet-200"
-                                >
-                                  {stepText}
-                                </span>
-                              ))}
+                              {proj.blockSubSteps.map((stepText, sIdx) => {
+                                const isCurrent = sIdx === proj.completedBlocks;
+                                return (
+                                  <span
+                                    key={sIdx}
+                                    className={`px-1.5 py-0.5 rounded border font-mono text-[10px] ${
+                                      isCurrent
+                                        ? 'bg-amber-500/20 border-amber-400/45 text-amber-100'
+                                        : 'bg-violet-500/15 border-violet-400/30 text-violet-200'
+                                    }`}
+                                  >
+                                    {stepText}
+                                  </span>
+                                );
+                              })}
                             </div>
                           )}
 
@@ -2129,15 +3005,15 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                               5m Startup:
                             </span>
                             <InlineEditableText
-                              value={proj.startupStep}
+                              value={getProjectActiveStartupStep(proj)}
                               onSave={(val) =>
                                 onUpdateProjectItem?.(proj.id, { startupStep: val })
                               }
                             />
                           </div>
 
-                          {/* Unlocked Sovereign Drip Ignition Controls */}
-                          {isSov ? (
+                          {/* Unlocked Ambition Drip Controls (Stopwatch-capped at 1 block / 20m unless Flow Extension is active) */}
+                          {isDrip ? (
                             <div className="flex flex-wrap items-center gap-1.5 pt-1">
                               <button
                                 id={`btn-launch-sovereign-slot-${proj.slot}`}
@@ -2145,11 +3021,13 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                                 disabled={!isIgnitionUnlocked}
                                 onClick={() => {
                                   triggerHaptic([15]);
-                                  onLaunchBlockInTimer(
+                                  launchWithOptionalResource(
                                     proj.id,
                                     proj.title,
                                     'PROJECT',
-                                    proj.startupStep
+                                    getProjectActiveStartupStep(proj),
+                                    proj.launchUrl,
+                                    proj.autoLaunchUrl
                                   );
                                 }}
                                 className={`flex-1 py-1.5 px-3 rounded-full font-mono font-medium text-[11px] transition flex items-center justify-center gap-1.5 ${
@@ -2158,16 +3036,18 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                                     : 'bg-emerald-500/15 border border-emerald-400/35 text-emerald-200 cursor-not-allowed opacity-80'
                                 }`}
                               >
-                                {dripAlreadyBanked ? (
+                                {isDripCapEnforced ? (
                                   <>
                                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
-                                    <span>1/1 Daily Drip Banked</span>
+                                    <span>1/1 Drip Capped (20m)</span>
                                   </>
+                                ) : examDayAutoPaused ? (
+                                  <span>Paused for Exam Day</span>
                                 ) : (
                                   <>
                                     <Unlock className="w-3 h-3" />
                                     <span>
-                                      Start {activeDurations.startupMinutes}m Ignition (20m Drip)
+                                      Start {activeDurations.startupMinutes}m Startup (20m Drip)
                                     </span>
                                   </>
                                 )}
@@ -2175,14 +3055,29 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                               <button
                                 id={`btn-log-sovereign-slot-${proj.slot}`}
                                 type="button"
-                                disabled={metrics.isZeroWorkLeft || isSurgeMidDayResetRequired}
+                                disabled={
+                                  metrics.isZeroWorkLeft ||
+                                  isSurgeMidDayResetRequired ||
+                                  examDayAutoPaused ||
+                                  isDripCapEnforced
+                                }
                                 onClick={() => {
                                   triggerHaptic([10]);
                                   onIncrementProjectBlock(proj.id);
                                 }}
-                                className="py-1.5 px-2.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/35 text-amber-200 font-mono text-[11px] cursor-pointer"
+                                className="py-1.5 px-2.5 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/35 text-amber-200 font-mono text-[11px] cursor-pointer disabled:opacity-45"
                               >
                                 +1 Drip Block
+                              </button>
+                              <button
+                                id={`btn-split-deliverable-${proj.slot}`}
+                                type="button"
+                                disabled={splittingProjectId === proj.id}
+                                onClick={() => void handleAutoSplitProject(proj)}
+                                className="py-1.5 px-2.5 rounded-full bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/35 text-sky-200 font-mono text-[11px] cursor-pointer disabled:opacity-50"
+                                title="Auto-Split Blocks into 5m micro-scripts"
+                              >
+                                {splittingProjectId === proj.id ? 'Splitting...' : 'Auto-Split'}
                               </button>
                               {onCompleteProjectById && (
                                 <button
@@ -2190,16 +3085,27 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                                   type="button"
                                   onClick={() => onCompleteProjectById(proj.id)}
                                   className="py-1.5 px-2.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/35 text-emerald-200 font-mono text-[11px] cursor-pointer"
-                                  title="Mark Deliverable Complete & Promote Next Open List Item"
+                                  title="Mark Deliverable Complete & Promote Next Unlocked Open List Item"
                                 >
                                   Complete
                                 </button>
                               )}
                             </div>
                           ) : (
-                            <div className="text-[10px] font-mono text-slate-500 flex items-center gap-1 pt-0.5">
-                              <Lock className="w-3 h-3" />
-                              <span>Waiting for Slot #1 to complete</span>
+                            <div className="flex items-center justify-between gap-2 pt-0.5">
+                              <span className="text-[10px] font-mono text-slate-500 flex items-center gap-1">
+                                <Lock className="w-3 h-3" />
+                                <span>Serialized behind Slot #1</span>
+                              </span>
+                              <button
+                                id={`btn-split-deliverable-${proj.slot}`}
+                                type="button"
+                                disabled={splittingProjectId === proj.id}
+                                onClick={() => void handleAutoSplitProject(proj)}
+                                className="px-2 py-0.5 rounded-full bg-sky-500/10 hover:bg-sky-500/20 border border-sky-400/30 text-sky-200 font-mono text-[10px] cursor-pointer"
+                              >
+                                {splittingProjectId === proj.id ? 'Splitting...' : 'Auto-Split Blocks'}
+                              </button>
                             </div>
                           )}
                         </div>
@@ -2207,7 +3113,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     })}
                   </div>
 
-                  {/* Secondary Accordions inside Checklist Drawer: Standby Open List ("Whatever Is After That" Domino Queue) + Add Deliverable */}
+                  {/* Secondary Accordions inside Checklist Drawer: Open List Domino Queue (with Prerequisite Locks) + Add Deliverable */}
                   <div className="pt-3 border-t border-white/[0.05] flex flex-wrap items-center gap-2">
                     <button
                       id="btn-toggle-locked-projects-drawer"
@@ -2217,7 +3123,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     >
                       <Lock className="w-3 h-3 text-cyan-300" />
                       <span>
-                        Open List Domino Queue ({openBacklogList.length}) • Add Deliverable
+                        Open List Queue ({openBacklogList.length}) • Prereq Locks &amp; Add
                       </span>
                     </button>
 
@@ -2239,45 +3145,156 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                           className="p-2.5 rounded-xl bg-black/30 border border-white/[0.06] space-y-1.5"
                         >
                           <div className="text-[10px] font-mono uppercase tracking-wider text-cyan-300/90">
-                            Standby Open List (&ldquo;Whatever Is After That&rdquo; Domino Queue)
+                            Open List Backlog (Promotes First Unlocked Item into Slot #3)
                           </div>
                           {openBacklogList.map((item, idx) => {
-                            const itemSov = isProjectSovereignDrip(item);
+                            const itemDrip = isProjectAmbitionDripEligible(item);
+                            const isUnlocked = isOpenListItemUnlocked(
+                              item,
+                              state.completedDeliverablesLog
+                            );
+                            const isEditingPrereq = editingPrereqItemId === item.id;
+                            const totalB = item.blocksTotal ?? item.totalBlocks ?? 4;
+
                             return (
                               <div
                                 key={item.id}
-                                className="p-2 rounded-lg bg-white/[0.02] border border-white/[0.05] flex items-start justify-between gap-2 text-xs"
+                                id={`open-list-row-${item.id}`}
+                                className={`p-2 rounded-lg border space-y-1.5 text-xs ${
+                                  !isUnlocked
+                                    ? 'bg-amber-950/15 border-amber-500/25'
+                                    : 'bg-white/[0.02] border-white/[0.05]'
+                                }`}
                               >
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex flex-wrap items-center gap-1.5">
-                                    <span className="font-mono text-[10px] text-slate-400">
-                                      #{idx + 1}
-                                    </span>
-                                    {itemSov && (
-                                      <span className="px-1.5 py-0.2 rounded bg-amber-500/15 border border-amber-400/35 font-mono text-[9px] uppercase text-amber-200">
-                                        Sovereign Drip
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      <span className="font-mono text-[10px] text-slate-400">
+                                        #{idx + 1}
                                       </span>
+                                      {itemDrip && (
+                                        <span className="px-1.5 py-0.2 rounded bg-violet-500/15 border border-violet-400/35 font-mono text-[9px] uppercase text-violet-200">
+                                          Ambition Drip
+                                        </span>
+                                      )}
+                                      <span className="text-slate-200 font-medium">
+                                        {item.title}
+                                      </span>
+                                    </div>
+
+                                    {/* Intra-Track Prerequisite Lock Pill */}
+                                    {item.blockedByTitle && !isUnlocked && (
+                                      <div className="flex flex-wrap items-center gap-1 mt-1">
+                                        <span
+                                          id={`prereq-lock-pill-${item.id}`}
+                                          className="px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-400/40 font-mono text-[10px] text-amber-200 inline-flex items-center gap-1"
+                                        >
+                                          <Lock className="w-2.5 h-2.5 text-amber-300 shrink-0" />
+                                          <span>
+                                            Locked until &ldquo;{item.blockedByTitle}&rdquo; is 100%
+                                          </span>
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            onUpdateOpenListItem?.(item.id, {
+                                              blockedByTitle: undefined,
+                                            })
+                                          }
+                                          className="px-1.5 py-0.5 rounded bg-white/[0.04] hover:bg-white/[0.1] font-mono text-[9px] text-slate-400 hover:text-slate-200 cursor-pointer"
+                                          title="Clear prerequisite lock"
+                                        >
+                                          Clear Lock
+                                        </button>
+                                      </div>
                                     )}
-                                    <span className="text-slate-200 font-medium">
-                                      {item.title}
+
+                                    {item.blockedByTitle && isUnlocked && (
+                                      <div className="mt-1">
+                                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-400/35 font-mono text-[10px] text-emerald-200 inline-flex items-center gap-1">
+                                          <Unlock className="w-2.5 h-2.5 text-emerald-300 shrink-0" />
+                                          <span>
+                                            Prerequisite &ldquo;{item.blockedByTitle}&rdquo; 100% — Ready to promote
+                                          </span>
+                                        </span>
+                                      </div>
+                                    )}
+
+                                    {(item.notes || item.nextStepNote) && (
+                                      <p className="text-[10px] font-mono text-slate-400 mt-0.5">
+                                        {item.notes || item.nextStepNote}
+                                      </p>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      id={`btn-edit-prereq-${item.id}`}
+                                      type="button"
+                                      onClick={() => {
+                                        if (isEditingPrereq) {
+                                          setEditingPrereqItemId(null);
+                                        } else {
+                                          setPrereqDraftText(item.blockedByTitle || '');
+                                          setEditingPrereqItemId(item.id);
+                                        }
+                                      }}
+                                      className="px-1.5 py-0.5 rounded bg-white/[0.04] hover:bg-white/[0.1] border border-white/[0.07] font-mono text-[9px] text-slate-300 cursor-pointer"
+                                      title="Set or edit prerequisite deliverable lock"
+                                    >
+                                      {item.blockedByTitle ? 'Edit Lock' : '+ Lock'}
+                                    </button>
+                                    <span className="px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.07] font-mono text-[10px] text-slate-300">
+                                      {item.completedBlocks || 0}/{totalB}b
                                     </span>
                                   </div>
-                                  {item.nextStepNote && (
-                                    <p className="text-[10px] font-mono text-slate-400 mt-0.5">
-                                      {item.nextStepNote}
-                                    </p>
-                                  )}
                                 </div>
-                                <span className="px-2 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.07] font-mono text-[10px] text-slate-300 shrink-0">
-                                  {item.completedBlocks}/{item.totalBlocks}b
-                                </span>
+
+                                {isEditingPrereq && (
+                                  <form
+                                    onSubmit={(e) => {
+                                      e.preventDefault();
+                                      onUpdateOpenListItem?.(item.id, {
+                                        blockedByTitle: prereqDraftText.trim() || undefined,
+                                      });
+                                      setEditingPrereqItemId(null);
+                                    }}
+                                    className="flex flex-wrap items-center gap-1.5 pt-1"
+                                  >
+                                    <input
+                                      type="text"
+                                      value={prereqDraftText}
+                                      onChange={(e) => setPrereqDraftText(e.target.value)}
+                                      placeholder="Blocked until deliverable title is 100%..."
+                                      className="flex-1 min-w-[140px] px-2 py-1 rounded bg-slate-950 border border-amber-400/40 font-mono text-[10px] text-slate-100"
+                                    />
+                                    <button
+                                      type="submit"
+                                      className="px-2 py-1 rounded bg-amber-400 text-slate-950 font-mono text-[10px] font-semibold cursor-pointer"
+                                    >
+                                      Save
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        onUpdateOpenListItem?.(item.id, {
+                                          blockedByTitle: undefined,
+                                        });
+                                        setEditingPrereqItemId(null);
+                                      }}
+                                      className="px-2 py-1 rounded bg-white/[0.06] text-slate-300 font-mono text-[10px] cursor-pointer"
+                                    >
+                                      Clear
+                                    </button>
+                                  </form>
+                                )}
                               </div>
                             );
                           })}
                         </div>
                       )}
 
-                      {/* Add Deliverable Form */}
+                      {/* Add Deliverable Form (with optional Prerequisite Lock) */}
                       <form
                         onSubmit={handleAddProjectSubmit}
                         className="p-2.5 rounded-xl bg-black/25 border border-white/[0.05] space-y-2"
@@ -2313,6 +3330,18 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                             </option>
                             <option value="CUSTOM">Custom</option>
                           </select>
+                          <select
+                            id="select-new-project-track"
+                            value={newProjTrack}
+                            onChange={(e) => setNewProjTrack(e.target.value as TrackId)}
+                            className="bg-slate-950 border border-white/[0.07] rounded-lg px-2 py-1 text-[11px] font-mono text-slate-200"
+                          >
+                            <option value="science">Major 1: Vocation</option>
+                            <option value="writing">Major 2: Writing</option>
+                            <option value="coding">Sandbox 1: Eng/Craft</option>
+                            <option value="music">Sandbox 2: Music</option>
+                            <option value="culture">Sandbox 3: Culture</option>
+                          </select>
                           <button
                             id="btn-submit-smart-intake"
                             type="submit"
@@ -2321,6 +3350,14 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                             Add
                           </button>
                         </div>
+                        <input
+                          id="input-new-project-prereq"
+                          type="text"
+                          value={newProjBlockedBy}
+                          onChange={(e) => setNewProjBlockedBy(e.target.value)}
+                          placeholder="Optional prerequisite: Locked until deliverable title is 100%..."
+                          className="w-full bg-slate-950/80 border border-white/[0.06] rounded-lg px-2.5 py-1 text-[11px] font-mono text-slate-300"
+                        />
                       </form>
 
                       {pendingIntakeTriage && (
@@ -2345,6 +3382,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                                 );
                                 setPendingIntakeTriage(null);
                                 setNewProjTitle('');
+                                setNewProjBlockedBy('');
                               }}
                               className="px-3 py-1 rounded-lg bg-amber-400 text-slate-950 font-mono text-xs cursor-pointer"
                             >
@@ -2359,10 +3397,12 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                                   pendingIntakeTriage.presetType,
                                   pendingIntakeTriage.totalBlocks,
                                   pendingIntakeTriage.trackId,
-                                  pendingIntakeTriage.startupStep
+                                  pendingIntakeTriage.startupStep,
+                                  pendingIntakeTriage.blockedByTitle
                                 );
                                 setPendingIntakeTriage(null);
                                 setNewProjTitle('');
+                                setNewProjBlockedBy('');
                               }}
                               className="px-3 py-1 rounded-lg bg-white/[0.06] text-cyan-100 font-mono text-xs cursor-pointer"
                             >
@@ -2376,7 +3416,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 </div>
               </div>
 
-                  {/* On-Demand Collapsible Accordions for Sequential Checklist, Smart Intake, and 7-Day Table */}
+                  {/* On-Demand Collapsible Accordions for Sequential Checklist, Smart Intake, 7-Day Table, and Calendar Importer */}
                   <div className="pt-3 border-t border-white/[0.05] flex flex-wrap items-center gap-2">
                     <button
                       id="btn-toggle-sequential-checklist"
@@ -2416,6 +3456,16 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                     >
                       <Calendar className="w-3.5 h-3.5" />
                       <span>7-Day Pipeline Table</span>
+                    </button>
+
+                    <button
+                      id="btn-pipeline-import-calendar-quick"
+                      type="button"
+                      onClick={onOpenPipelineDrawer}
+                      className="px-3 py-1.5 rounded-full bg-teal-500/10 hover:bg-teal-500/20 border border-teal-400/30 font-mono text-xs text-teal-200 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Calendar className="w-3.5 h-3.5 text-teal-300" />
+                      <span>Import Calendar / Anchors</span>
                     </button>
                   </div>
                 </motion.div>
@@ -2710,17 +3760,26 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
           id="bento-interactive-7day-pipeline"
           className="w-full p-5 rounded-3xl bento-surface space-y-3"
         >
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs font-mono text-slate-300">
               7-Day Master Pipeline
             </span>
-            <button
-              type="button"
-              onClick={onOpenPipelineDrawer}
-              className="text-[11px] font-mono text-cyan-300 underline cursor-pointer"
-            >
-              Open Full Drawer →
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onOpenPipelineDrawer}
+                className="px-2.5 py-1 rounded-full bg-teal-500/15 hover:bg-teal-500/25 border border-teal-400/35 text-[11px] font-mono text-teal-200 cursor-pointer"
+              >
+                Import Calendar / Anchors
+              </button>
+              <button
+                type="button"
+                onClick={onOpenPipelineDrawer}
+                className="text-[11px] font-mono text-cyan-300 underline cursor-pointer"
+              >
+                Open Full Drawer →
+              </button>
+            </div>
           </div>
           <InteractivePipelineTable
             state={state}

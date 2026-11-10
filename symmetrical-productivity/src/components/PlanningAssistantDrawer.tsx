@@ -402,10 +402,10 @@ export const PlanningAssistantDrawer: React.FC<PlanningAssistantDrawerProps> = (
     if (hasActiveGeminiAccess()) {
       const systemInstruction = `You are the Symmetrical Productivity (wl-balancer) Planning Assistant.
 Tone rules:
-1. ZERO philosophical, religious, or preachy text. Never use terms like Halakha, Aggadah, Teshuvah, Chavruta, Hora'at Sha'ah, or family lore.
+1. ZERO philosophical, religious, or preachy text. Keep all terminology strictly secular, neutral, mechanical, and lifestyle-agnostic.
 2. Keep all replies strictly concise, candid, zero-fluff, mechanical, and partner-oriented.
 3. Always provide 2-3 actionable quickOptions (formatted as "Option A: ...", "Option B: ...", etc.).
-4. When the user requests a state change (e.g. stress reset + queue flashcards, stepping down load mode, logging a fixed event like a 6pm show, banking flashcards via early clearance, or logging blocks), include a valid partial SymmetryState object in "statePatch".
+4. When the user requests a state change (e.g. stress reset + queue flashcards, stepping down load mode, logging a fixed event like a 6pm show, banking or reallocating flashcards via 2-way early clearance, toggling Daily Ambition Drip, or logging blocks), include a valid partial SymmetryState object in "statePatch".
 
 Current live AppState JSON:
 ${JSON.stringify(state)}

@@ -314,18 +314,23 @@ export function parseGeminiResponseToStatePatch(
           surgeConsecutiveDays: schemaApplied.nextState.surgeConsecutiveDays,
           energyBandwidth: schemaApplied.nextState.energyBandwidth,
           bandwidth: schemaApplied.nextState.bandwidth,
+          dailyAmbitionDrip: schemaApplied.nextState.dailyAmbitionDrip,
           baselineBlocks: Array.isArray(parsedJson.baselineBlocks)
             ? parsedJson.baselineBlocks
             : schemaApplied.nextState.baselineBlocks,
           projectQueue: Array.isArray(parsedJson.projectQueue)
             ? parsedJson.projectQueue
             : schemaApplied.nextState.projectQueue,
+          openList: schemaApplied.nextState.openList,
           openListBacklog: schemaApplied.nextState.openListBacklog,
           projectBacklog: schemaApplied.nextState.projectBacklog,
           pipelineDays: Array.isArray(parsedJson.pipelineDays)
             ? parsedJson.pipelineDays
             : schemaApplied.nextState.pipelineDays,
           recharge: schemaApplied.nextState.recharge,
+          roadmapShelter: schemaApplied.nextState.roadmapShelter,
+          roadmapFoundation: schemaApplied.nextState.roadmapFoundation,
+          roadmapTracks: schemaApplied.nextState.roadmapTracks,
         };
 
         if (
@@ -1153,6 +1158,25 @@ export function parseGeminiResponseToStatePatch(
       startupStep:
         cat4Match[2]?.trim() ||
         workingState.recharge.fluidCategories.CAT4_COMFORT.startupStep,
+    };
+    matchedAnyStructure = true;
+  }
+
+  const cat6Match = mdText.match(
+    /Category 6\s*—\s*[^\n[]*\[Fluid\]\*\*:\s*(?:\*\*)?([^*\n—]+)(?:\*\*)?(?:[^\n]*?5m Startup(?:\s*Prompt)?:\s*\*([^*\n]+)\*)?/i
+  );
+  if (cat6Match && workingState.recharge.fluidCategories) {
+    const baseCat6 = workingState.recharge.fluidCategories.CAT6_CULTURE || {
+      label: '6. Culture & Language',
+      activeTitle: 'Culture & Language',
+      subtitle: 'Low-pressure cultural & spoken language immersion — zero SRS flashcards.',
+      startupStep:
+        '5m spoken audio lesson, foreign music/cinema, or culinary prep — zero SRS flashcards.',
+    };
+    workingState.recharge.fluidCategories.CAT6_CULTURE = {
+      ...baseCat6,
+      activeTitle: cat6Match[1].trim(),
+      startupStep: cat6Match[2]?.trim() || baseCat6.startupStep,
     };
     matchedAnyStructure = true;
   }

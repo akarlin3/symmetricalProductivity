@@ -35,6 +35,8 @@ import {
   BlockCadencePreset,
   ClosedListLockMode,
   CompletedDeliverableEntry,
+  DailyAmbitionDripConfig,
+  EarlyClearanceActionMode,
   ElasticBlockMultiplier,
   EnergyBandwidthState,
   EveningPulseSensitivity,
@@ -42,11 +44,15 @@ import {
   LayoutMode,
   Level2BreakProtocol,
   LoadMode,
+  MajorSubTrackId,
   MediaSubTrackId,
+  OpenListItem,
   PipelineDay,
   ProfilePresetId,
   ProjectPresetType,
   RechargeCategoryId,
+  RoadmapFoundationConfig,
+  RoadmapShelterConfig,
   ShockAbsorberMode,
   SmartIntakePlanResult,
   SoundscapeMode,
@@ -67,6 +73,8 @@ import {
   DEFAULT_AUDIO_ENGINE_SETTINGS,
   cycleCognitiveDemandTag,
   DEFAULT_FLEXIBILITY_TUNING,
+  DEFAULT_HOUSE_FOUNDATION,
+  DEFAULT_HOUSE_SHELTER,
   DEFAULT_SYMMETRY_STATE,
   formatRolloverHourLabel,
   generateSequentialChecklist,
@@ -75,10 +83,16 @@ import {
   getBaselineCognitiveDemand,
   getBaselineSlotCompletedBlocks,
   getBaselineSlotTargetBlocks,
+  getEffectiveDailyAmbitionDrip,
   getLogicalDayKey,
   getPreExamTaperSuggestion,
+  getProjectActiveStartupStep,
+  isBaselineSlotClearedForToday,
   isBaselineSlotEarlyClearanceEligible,
+  isOpenListItemUnlocked,
+  isProjectAmbitionDripEligible,
   isProjectSovereignDrip,
+  isTodayExamDay,
   getProjectCognitiveDemand,
   parseFromStateInput,
   pushStateBackup,
@@ -93,12 +107,14 @@ import {
   getStoredArchitectModeUnlocked,
   getVisibleProfilePresets,
   isArchitectDomain,
+  isArchitectUrlPath,
   ONBOARDING_COMPLETED_KEY,
   PROFILE_PRESET_METADATA,
   setStoredArchitectModeUnlocked,
   syncCategoryCardsToLegacyRecharge,
   UniversalPresetDefinition,
 } from './state/profilePresets';
+import { fetchAnkiConnectReviewedToday } from './utils/ankiConnectClient';
 import {
   cancelAllScheduledStageAlarms,
   fireSymmetryNotification,
@@ -168,7 +184,13 @@ function detectInitialArchitectUnlock(): {
     const url = new URL(window.location.href);
     const modeParam = url.searchParams.get('mode')?.toLowerCase();
     const hashValue = url.hash.replace(/^#/, '').toLowerCase();
-    const isUrlTrigger = modeParam === 'avery' || hashValue === 'avery';
+    const isPathTrigger = isArchitectUrlPath(url.pathname);
+    const isUrlTrigger =
+      isPathTrigger ||
+      modeParam === 'avery' ||
+      modeParam === 'architect' ||
+      hashValue === 'avery' ||
+      hashValue === 'architect';
 
     if (isUrlTrigger) {
       setStoredArchitectModeUnlocked(true);
@@ -177,12 +199,16 @@ function detectInitialArchitectUnlock(): {
       } catch {
         // Ignore storage errors
       }
-      if (modeParam === 'avery') {
+      if (modeParam === 'avery' || modeParam === 'architect') {
         url.searchParams.delete('mode');
       }
       const nextSearch = url.searchParams.toString();
-      const nextHash = hashValue === 'avery' ? '' : url.hash;
-      const cleanUrl = `${url.pathname}${nextSearch ? `?${nextSearch}` : ''}${nextHash}`;
+      const nextHash =
+        hashValue === 'avery' || hashValue === 'architect' ? '' : url.hash;
+      const normalizedPath = isPathTrigger
+        ? url.pathname.replace(/\/(avery|architect)\/?$/i, '/') || '/'
+        : url.pathname;
+      const cleanUrl = `${normalizedPath}${nextSearch ? `?${nextSearch}` : ''}${nextHash}`;
       window.history.replaceState({}, document.title, cleanUrl);
       return { unlocked: true, triggeredViaUrl: true };
     }
@@ -996,11 +1022,17 @@ export function App() {
           earlyClearanceEnabled: false,
           discretionaryBlocksCompletedToday: 0,
           dailySovereignDripDone: false,
+          dailyAmbitionDrip: {
+            ...getEffectiveDailyAmbitionDrip(prev),
+            completedToday: 0,
+          },
           baselineBlocks: prev.baselineBlocks.map((b) => ({
             ...b,
             completed: false,
             completedBlocks: 0,
             bankedViaEarlyClearance: false,
+            reallocatedViaEarlyClearance: false,
+            reallocatedBlocksCount: 0,
           })),
           pipelineDays: prev.pipelineDays.map((d, idx) =>
             idx === 0
@@ -1026,8 +1058,9 @@ export function App() {
             activeTaskTitle:
               primaryProject?.title || 'Anatomy Flashcards — Block 1/1',
             activeTaskType: primaryProject ? 'PROJECT' : 'FLASHCARDS',
-            activeStartupPrompt:
-              primaryProject?.startupStep || 'Open deck + clear first 15 cards',
+            activeStartupPrompt: primaryProject
+              ? getProjectActiveStartupStep(primaryProject)
+              : 'Open deck + clear first 15 cards',
             queuedRecoveryFlashcard5m: false,
             recoveryFlashcardRunning: false,
             recoveryFlashcardSecondsLeft: 300,
@@ -1069,6 +1102,43 @@ export function App() {
       window.removeEventListener('focus', checkFourAmRollover);
     };
   }, []);
+
+  // Optional Desktop AnkiConnect Polling during active Flashcard timers
+  useEffect(() => {
+    if (
+      !state.ankiConnectEnabled ||
+      !state.timer.isRunning ||
+      state.timer.activeTaskType !== 'FLASHCARDS'
+    ) {
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      const res = await fetchAnkiConnectReviewedToday(
+        state.ankiConnectUrl || 'http://127.0.0.1:8765'
+      );
+      if (!cancelled && res.ok && typeof res.reviewedToday === 'number') {
+        const clamped = Math.min(Math.max(0, res.reviewedToday), 999);
+        setState((prev) =>
+          prev.flashcardsReviewedCount === clamped
+            ? prev
+            : { ...prev, flashcardsReviewedCount: clamped }
+        );
+      }
+    };
+    void poll();
+    const id = window.setInterval(() => void poll(), 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [
+    state.ankiConnectEnabled,
+    state.ankiConnectUrl,
+    state.timer.isRunning,
+    state.timer.activeTaskType,
+    setState,
+  ]);
 
   // 10-Second Undo Toast Expiration Countdown
   useEffect(() => {
@@ -1393,16 +1463,18 @@ export function App() {
     metrics.durationPrefix,
   ]);
 
-  // Helper to credit Roadmap Input (50%) or Output (50%)
+  // Helper to credit Roadmap Input (50%) or Output (50%), with Major Track 1 (1A vs 1B) sub-track split
   const creditRoadmapTrack = (
     prevTracks: SymmetryState['roadmapTracks'],
     trackId: TrackId,
     ledgerType: 'INPUT' | 'OUTPUT',
     rungNumber: 1 | 2 | 3 | 4 = ledgerType === 'INPUT' ? 1 : 3,
-    blockCredit = 1
+    blockCredit = 1,
+    subTrack?: MajorSubTrackId
   ) => {
     return prevTracks.map((t) => {
       if (t.id !== trackId) return t;
+      const is1B = subTrack === '1B_INDEPENDENT';
       return {
         ...t,
         activeThisWeek: true,
@@ -1414,6 +1486,14 @@ export function App() {
           ledgerType === 'OUTPUT'
             ? Number((t.outputBlocksCredited + blockCredit).toFixed(2))
             : t.outputBlocksCredited,
+        subTrack1ABlocksCredited:
+          t.id === 'science' && ledgerType === 'OUTPUT' && !is1B
+            ? Number(((t.subTrack1ABlocksCredited || 0) + blockCredit).toFixed(2))
+            : t.subTrack1ABlocksCredited,
+        subTrack1BBlocksCredited:
+          t.id === 'science' && ledgerType === 'OUTPUT' && is1B
+            ? Number(((t.subTrack1BBlocksCredited || 0) + blockCredit).toFixed(2))
+            : t.subTrack1BBlocksCredited,
         rungs: t.rungs.map((r) =>
           r.rungNumber === rungNumber
             ? {
@@ -1434,10 +1514,12 @@ export function App() {
     trackId: string,
     ledgerType: 'INPUT' | 'OUTPUT',
     rungNumber: 1 | 2 | 3 | 4 = ledgerType === 'INPUT' ? 1 : 3,
-    blockCredit = 1
+    blockCredit = 1,
+    subTrack?: MajorSubTrackId
   ) => {
     return prevTracks.map((t) => {
       if (t.id !== trackId) return t;
+      const is1B = subTrack === '1B_INDEPENDENT';
       return {
         ...t,
         inputBlocksCredited:
@@ -1448,6 +1530,20 @@ export function App() {
           ledgerType === 'OUTPUT'
             ? Math.max(0, Number((t.outputBlocksCredited - blockCredit).toFixed(2)))
             : t.outputBlocksCredited,
+        subTrack1ABlocksCredited:
+          t.id === 'science' && ledgerType === 'OUTPUT' && !is1B
+            ? Math.max(
+                0,
+                Number(((t.subTrack1ABlocksCredited || 0) - blockCredit).toFixed(2))
+              )
+            : t.subTrack1ABlocksCredited,
+        subTrack1BBlocksCredited:
+          t.id === 'science' && ledgerType === 'OUTPUT' && is1B
+            ? Math.max(
+                0,
+                Number(((t.subTrack1BBlocksCredited || 0) - blockCredit).toFixed(2))
+              )
+            : t.subTrack1BBlocksCredited,
         rungs: t.rungs.map((r) =>
           r.rungNumber === rungNumber
             ? {
@@ -1521,7 +1617,7 @@ export function App() {
     const mult = prev.timer.elasticMultiplier ?? 1.0;
     const activeDurations = getActiveBlockDurationsSeconds(prev);
     const matchingBaseline = prev.baselineBlocks.find(
-      (b) => b.id === prev.timer.activeBlockSourceId && !b.completed
+      (b) => b.id === prev.timer.activeBlockSourceId && !isBaselineSlotClearedForToday(b)
     );
 
     let updatedBaseline = prev.baselineBlocks;
@@ -1531,12 +1627,20 @@ export function App() {
     let newLogEntry: TodayBlockLogEntry;
 
     if (matchingBaseline) {
+      const slotTarget = getBaselineSlotTargetBlocks(matchingBaseline);
+      const prevSlotDone = getBaselineSlotCompletedBlocks(matchingBaseline);
       if (mult === 0.5) {
         const existingPartial = matchingBaseline.partialCredit || 0;
         if (existingPartial >= 0.5) {
+          const nextDone = Math.min(slotTarget, prevSlotDone + 1);
           updatedBaseline = prev.baselineBlocks.map((b) =>
             b.id === matchingBaseline.id
-              ? { ...b, completed: true, partialCredit: 0 }
+              ? {
+                  ...b,
+                  completedBlocks: nextDone,
+                  completed: nextDone >= slotTarget,
+                  partialCredit: 0,
+                }
               : b
           );
         } else {
@@ -1547,15 +1651,22 @@ export function App() {
           );
         }
       } else {
+        const blockGain = mult === 2.0 ? 2 : 1;
+        const nextDone = Math.min(slotTarget, prevSlotDone + blockGain);
         updatedBaseline = prev.baselineBlocks.map((b) =>
           b.id === matchingBaseline.id
-            ? { ...b, completed: true, partialCredit: 0 }
+            ? {
+                ...b,
+                completedBlocks: nextDone,
+                completed: nextDone >= slotTarget,
+                partialCredit: 0,
+              }
             : b
         );
-        // If 2.0x Chained Flow Block was run on a baseline block, credit the extra 1.0 block to discretionary/project
-        if (mult === 2.0) {
-          const remainingCredit = 1 - (matchingBaseline.partialCredit || 0);
-          const overflowCredit = Number((2.0 - remainingCredit).toFixed(2));
+        // If 2.0x Chained Flow Block overflowed the baseline slot target, credit extra to discretionary
+        const absorbedByFloor = Math.max(0, nextDone - prevSlotDone);
+        if (mult > absorbedByFloor) {
+          const overflowCredit = Number((mult - absorbedByFloor).toFixed(2));
           updatedDiscretionary = Number(
             (updatedDiscretionary + overflowCredit).toFixed(2)
           );
@@ -1571,7 +1682,8 @@ export function App() {
         matchingBaseline.trackId,
         stroke,
         rungNum,
-        mult
+        mult,
+        '1A_INSTITUTIONAL'
       );
       newLogEntry = createTodayLogEntry(prev, {
         category: baselineCategoryToLogCategory(matchingBaseline.category),
@@ -1610,7 +1722,11 @@ export function App() {
         rungNumber: 2,
       });
     }
+
+    const prevDrip = getEffectiveDailyAmbitionDrip(prev);
     let updatedSovereignDripDone = Boolean(prev.dailySovereignDripDone);
+    let updatedDailyAmbitionDrip: DailyAmbitionDripConfig = { ...prevDrip };
+
     if (!matchingBaseline && prev.timer.activeBlockSourceId !== 'sandbox_curiosity') {
       updatedDiscretionary = Number((updatedDiscretionary + mult).toFixed(2));
       const matchedBySourceId = prev.projectQueue.find(
@@ -1618,27 +1734,45 @@ export function App() {
       );
       const activeFocusProj = matchedBySourceId || getActiveFocusProject(prev);
       const targetProjId = activeFocusProj?.id;
-      if (activeFocusProj && isProjectSovereignDrip(activeFocusProj)) {
-        updatedSovereignDripDone = true;
-      }
-      updatedProjects = prev.projectQueue.map((p) =>
-        p.id === targetProjId
-          ? {
-              ...p,
-              completedBlocks: Math.min(
-                p.totalBlocks,
-                Number((p.completedBlocks + mult).toFixed(2))
-              ),
-            }
-          : p
+      const isDripRun = Boolean(
+        activeFocusProj && isProjectAmbitionDripEligible(activeFocusProj)
       );
+      if (isDripRun) {
+        updatedSovereignDripDone = true;
+        updatedDailyAmbitionDrip = {
+          ...prevDrip,
+          completedToday: prevDrip.completedToday + 1,
+        };
+      }
+      updatedProjects = prev.projectQueue.map((p) => {
+        if (p.id !== targetProjId) return p;
+        const nextCompleted = Math.min(
+          p.totalBlocks,
+          Number((p.completedBlocks + mult).toFixed(2))
+        );
+        const nextSubStep =
+          p.blockSubSteps && p.blockSubSteps.length > 0
+            ? p.blockSubSteps[
+                Math.min(p.blockSubSteps.length - 1, Math.floor(nextCompleted))
+              ]
+            : undefined;
+        return {
+          ...p,
+          completedBlocks: nextCompleted,
+          startupStep: nextSubStep || p.startupStep,
+        };
+      });
       const primaryTrack = activeFocusProj?.trackId || 'writing';
+      const resolvedSubTrack: MajorSubTrackId =
+        activeFocusProj?.subTrack ||
+        (isDripRun ? '1B_INDEPENDENT' : '1A_INSTITUTIONAL');
       updatedTracks = creditRoadmapTrack(
         updatedTracks,
         primaryTrack,
         'OUTPUT',
         3,
-        mult
+        mult,
+        resolvedSubTrack
       );
       newLogEntry = createTodayLogEntry(prev, {
         category: 'PROJECT_FOCUS_1',
@@ -1647,6 +1781,8 @@ export function App() {
             ? `${activeFocusProj?.title || prev.timer.activeTaskTitle} (0.5x Micro-Block)`
             : mult === 2.0
             ? `${activeFocusProj?.title || prev.timer.activeTaskTitle} (2.0x Chained Flow Block)`
+            : isDripRun
+            ? `[Ambition Drip] ${activeFocusProj?.title || prev.timer.activeTaskTitle}`
             : activeFocusProj?.title || prev.timer.activeTaskTitle,
         durationMinutes: activeDurations.totalMinutes,
         blockCredit: mult,
@@ -1668,6 +1804,7 @@ export function App() {
       baselineBlocks: updatedBaseline,
       discretionaryBlocksCompletedToday: updatedDiscretionary,
       dailySovereignDripDone: updatedSovereignDripDone,
+      dailyAmbitionDrip: updatedDailyAmbitionDrip,
       projectQueue: updatedProjects,
       roadmapTracks: updatedTracks,
     };
@@ -2354,6 +2491,8 @@ export function App() {
         return {
           ...b,
           bankedViaEarlyClearance: nextEnabled,
+          reallocatedViaEarlyClearance: false,
+          reallocatedBlocksCount: 0,
         };
       });
       pushUndoSnapshot(
@@ -2371,12 +2510,128 @@ export function App() {
     showNotice('Toggled Early Clearance banking.');
   };
 
+  const handleApplySlotEarlyClearance = (
+    slotId: string | 'ALL_ELIGIBLE',
+    mode: EarlyClearanceActionMode
+  ) => {
+    soundEngine.playTactileClick('MODE_TOGGLE');
+    setState((prev) => {
+      let totalFreedBlocks = 0;
+      const updatedBaseline = prev.baselineBlocks.map((b) => {
+        const matchesTarget =
+          slotId === 'ALL_ELIGIBLE'
+            ? isBaselineSlotEarlyClearanceEligible(b) && !isBaselineSlotClearedForToday(b)
+            : b.id === slotId;
+        if (!matchesTarget || b.completed) return b;
+        const slotTarget = getBaselineSlotTargetBlocks(b);
+        const slotDone = getBaselineSlotCompletedBlocks(b);
+        const freed = Math.max(1, slotTarget - slotDone);
+        totalFreedBlocks += freed;
+        if (mode === 'BANK_FREE_TIME') {
+          return {
+            ...b,
+            bankedViaEarlyClearance: true,
+            reallocatedViaEarlyClearance: false,
+            reallocatedBlocksCount: 0,
+          };
+        }
+        return {
+          ...b,
+          bankedViaEarlyClearance: false,
+          reallocatedViaEarlyClearance: true,
+          reallocatedBlocksCount: freed,
+        };
+      });
+
+      const anyEligibleRemaining = updatedBaseline.some(
+        (b) => isBaselineSlotEarlyClearanceEligible(b) && !isBaselineSlotClearedForToday(b)
+      );
+
+      pushUndoSnapshot(
+        prev,
+        mode === 'BANK_FREE_TIME'
+          ? `Early Clearance Option A: Banked ${totalFreedBlocks}b as Free Recovery`
+          : `Early Clearance Option B: Reallocated ${totalFreedBlocks}b to Project / Drip Queue`
+      );
+
+      return {
+        ...prev,
+        earlyClearanceEnabled: !anyEligibleRemaining,
+        baselineBlocks: updatedBaseline,
+      };
+    });
+    showNotice(
+      mode === 'BANK_FREE_TIME'
+        ? 'Early Clearance Option A: Banked remaining recall blocks as Free Recovery.'
+        : 'Early Clearance Option B: Reallocated freed recall blocks 1-for-1 into Project / Ambition Drip queue.'
+    );
+  };
+
+  const handleRestoreSlotEarlyClearance = (slotId: string) => {
+    soundEngine.playTactileClick('MODE_TOGGLE');
+    setState((prev) => {
+      const updatedBaseline = prev.baselineBlocks.map((b) =>
+        b.id === slotId
+          ? {
+              ...b,
+              bankedViaEarlyClearance: false,
+              reallocatedViaEarlyClearance: false,
+              reallocatedBlocksCount: 0,
+            }
+          : b
+      );
+      return {
+        ...prev,
+        earlyClearanceEnabled: false,
+        baselineBlocks: updatedBaseline,
+      };
+    });
+    showNotice('Restored Baseline recall slot to active schedule.');
+  };
+
+  const handleToggleAnkiConnect = (enabled: boolean) => {
+    setState((prev) => ({
+      ...prev,
+      ankiConnectEnabled: enabled,
+      ankiConnectUrl: prev.ankiConnectUrl || 'http://127.0.0.1:8765',
+    }));
+    showNotice(
+      enabled
+        ? 'Enabled desktop AnkiConnect polling (http://127.0.0.1:8765).'
+        : 'Disabled desktop AnkiConnect polling.'
+    );
+  };
+
   const handleLaunchBlockInTimer = (
     sourceId: string,
     title: string,
     taskType: 'FLASHCARDS' | 'READING' | 'SYNTHESIS' | 'PROJECT',
     startupPrompt: string
   ) => {
+    // Enforce strict 1-block (20m) stopwatch cap on Ambition Drip secondary slots unless Flow Extension is unlocked
+    const matchedProj = state.projectQueue.find((p) => p.id === sourceId);
+    const activeFocus = getActiveFocusProject(state);
+    if (
+      matchedProj &&
+      matchedProj.id !== activeFocus?.id &&
+      isProjectAmbitionDripEligible(matchedProj)
+    ) {
+      const drip = getEffectiveDailyAmbitionDrip(state);
+      if (isTodayExamDay(state)) {
+        showNotice('Daily Ambition Drip is auto-paused for Exam / Pre-Exam Taper Day.');
+        return;
+      }
+      if (
+        drip.completedToday >= drip.targetBlocksPerDay &&
+        !state.recharge.flowExtensionActive
+      ) {
+        showNotice(
+          'Daily Ambition Drip is strictly stopwatch-capped at 1 block (20m) unless Flow Extension is unlocked.'
+        );
+        return;
+      }
+    }
+
     soundEngine.playTactileClick('MODE_TOGGLE');
     const now = Date.now();
     setState((prev) => {
@@ -2405,32 +2660,64 @@ export function App() {
   };
 
   const handleIncrementProjectBlock = (projectId: string) => {
+    const matchedCheck = state.projectQueue.find((p) => p.id === projectId);
+    const activeFocusCheck = getActiveFocusProject(state);
+    if (
+      matchedCheck &&
+      matchedCheck.id !== activeFocusCheck?.id &&
+      isProjectAmbitionDripEligible(matchedCheck)
+    ) {
+      const drip = getEffectiveDailyAmbitionDrip(state);
+      if (isTodayExamDay(state)) {
+        showNotice('Daily Ambition Drip is auto-paused for Exam / Pre-Exam Taper Day.');
+        return;
+      }
+      if (
+        drip.completedToday >= drip.targetBlocksPerDay &&
+        !state.recharge.flowExtensionActive
+      ) {
+        showNotice(
+          'Daily Ambition Drip is strictly capped at 1 block (20m) today unless Flow Extension is unlocked.'
+        );
+        return;
+      }
+    }
+
     soundEngine.playTactileClick('BLOCK_COMPLETE');
     setState((prev) => {
       const targetProj =
         prev.projectQueue.find((p) => p.id === projectId) ||
         getActiveFocusProject(prev);
       if (!targetProj) return prev;
-      const isSov = isProjectSovereignDrip(targetProj);
-      const updatedQueue = prev.projectQueue.map((p) =>
-        p.id === targetProj.id
-          ? {
-              ...p,
-              completedBlocks: Math.min(p.totalBlocks, p.completedBlocks + 1),
-            }
-          : p
-      );
+      const isDrip = isProjectAmbitionDripEligible(targetProj);
+      const prevDrip = getEffectiveDailyAmbitionDrip(prev);
+      const updatedQueue = prev.projectQueue.map((p) => {
+        if (p.id !== targetProj.id) return p;
+        const nextDone = Math.min(p.totalBlocks, p.completedBlocks + 1);
+        const nextSubStep =
+          p.blockSubSteps && p.blockSubSteps.length > 0
+            ? p.blockSubSteps[Math.min(p.blockSubSteps.length - 1, nextDone)]
+            : undefined;
+        return {
+          ...p,
+          completedBlocks: nextDone,
+          startupStep: nextSubStep || p.startupStep,
+        };
+      });
+      const resolvedSubTrack: MajorSubTrackId =
+        targetProj.subTrack || (isDrip ? '1B_INDEPENDENT' : '1A_INSTITUTIONAL');
       const updatedTracks = creditRoadmapTrack(
         prev.roadmapTracks,
         targetProj.trackId,
         'OUTPUT',
         3,
-        1
+        1,
+        resolvedSubTrack
       );
       const newEntry = createTodayLogEntry(prev, {
         category: 'PROJECT_FOCUS_1',
-        title: isSov
-          ? `[Sovereign Drip] ${targetProj.title}`
+        title: isDrip
+          ? `[Ambition Drip] ${targetProj.title}`
           : targetProj.title,
         durationMinutes: 20,
         blockCredit: 1,
@@ -2444,7 +2731,13 @@ export function App() {
         ...prev,
         todayBlockLog: [...(prev.todayBlockLog || []), newEntry],
         discretionaryBlocksCompletedToday: prev.discretionaryBlocksCompletedToday + 1,
-        dailySovereignDripDone: isSov ? true : Boolean(prev.dailySovereignDripDone),
+        dailySovereignDripDone: isDrip ? true : Boolean(prev.dailySovereignDripDone),
+        dailyAmbitionDrip: isDrip
+          ? {
+              ...prevDrip,
+              completedToday: prevDrip.completedToday + 1,
+            }
+          : prevDrip,
         projectQueue: updatedQueue,
         roadmapTracks: updatedTracks,
       };
@@ -2454,10 +2747,63 @@ export function App() {
 
   const handleToggleSovereignDripDone = () => {
     soundEngine.playTactileClick('MODE_TOGGLE');
-    setState((prev) => ({
-      ...prev,
-      dailySovereignDripDone: !prev.dailySovereignDripDone,
-    }));
+    setState((prev) => {
+      const prevDrip = getEffectiveDailyAmbitionDrip(prev);
+      const nextDone = !(
+        prev.dailySovereignDripDone ||
+        prevDrip.completedToday >= prevDrip.targetBlocksPerDay
+      );
+      return {
+        ...prev,
+        dailySovereignDripDone: nextDone,
+        dailyAmbitionDrip: {
+          ...prevDrip,
+          completedToday: nextDone ? prevDrip.targetBlocksPerDay : 0,
+        },
+      };
+    });
+  };
+
+  const handleUpdateDailyAmbitionDrip = (patch: Partial<DailyAmbitionDripConfig>) => {
+    soundEngine.playTactileClick('MODE_TOGGLE');
+    setState((prev) => {
+      const merged: DailyAmbitionDripConfig = {
+        ...getEffectiveDailyAmbitionDrip(prev),
+        ...patch,
+      };
+      return {
+        ...prev,
+        dailyAmbitionDrip: merged,
+        dailySovereignDripTarget: merged.targetBlocksPerDay,
+        dailySovereignDripDone: merged.completedToday >= merged.targetBlocksPerDay,
+      };
+    });
+  };
+
+  const handleUpdateOpenListItem = (
+    itemId: string,
+    patch: Partial<OpenListItem>
+  ) => {
+    setState((prev) => {
+      const source = prev.openList ?? prev.openListBacklog ?? prev.projectBacklog ?? [];
+      const updated = source.map((item) => {
+        if (item.id !== itemId) return item;
+        const merged = { ...item, ...patch };
+        const total = merged.blocksTotal ?? merged.totalBlocks ?? 4;
+        return {
+          ...merged,
+          blocksTotal: total,
+          totalBlocks: total,
+        };
+      });
+      return {
+        ...prev,
+        openList: updated,
+        openListBacklog: updated,
+        projectBacklog: updated,
+      };
+    });
+    showNotice('Updated Open List item & prerequisite settings.');
   };
 
   const handleToggleGoldenRuleMode = () => {
@@ -2581,7 +2927,7 @@ export function App() {
           ? {
               ...prev.timer,
               activeTaskTitle: updatedProj.title,
-              activeStartupPrompt: updatedProj.startupStep,
+              activeStartupPrompt: getProjectActiveStartupStep(updatedProj),
             }
           : prev.timer,
       };
@@ -2686,6 +3032,33 @@ export function App() {
       roadmapTracks: prev.roadmapTracks.map((t) =>
         t.id === trackId ? { ...t, ...patch } : t
       ),
+    }));
+  };
+
+  const handleUpdateRoadmapShelter = (patch: Partial<RoadmapShelterConfig>) => {
+    setState((prev) => ({
+      ...prev,
+      roadmapShelter: {
+        ...(prev.roadmapShelter || DEFAULT_HOUSE_SHELTER),
+        ...patch,
+        horizonMilestones: {
+          ...(prev.roadmapShelter?.horizonMilestones ||
+            DEFAULT_HOUSE_SHELTER.horizonMilestones),
+          ...(patch.horizonMilestones || {}),
+        },
+      },
+    }));
+  };
+
+  const handleUpdateRoadmapFoundation = (
+    patch: Partial<RoadmapFoundationConfig>
+  ) => {
+    setState((prev) => ({
+      ...prev,
+      roadmapFoundation: {
+        ...(prev.roadmapFoundation || DEFAULT_HOUSE_FOUNDATION),
+        ...patch,
+      },
     }));
   };
 
@@ -3119,7 +3492,7 @@ export function App() {
     });
   };
 
-  // One-Tap Backlog Promotion & Completed Ledger Archive on Closed List Focus #1 (or Sovereign Drip Slot #2/#3)
+  // One-Tap Backlog Promotion & Completed Ledger Archive on Closed List Focus #1 (or Ambition Drip Slot #2/#3)
   const handleCompleteProjectById = (projectId?: string) => {
     setState((prev) => {
       const targetIndex = projectId
@@ -3128,32 +3501,6 @@ export function App() {
       const resolvedIndex = targetIndex >= 0 ? targetIndex : 0;
       const completedItem = prev.projectQueue[resolvedIndex];
       const remaining = prev.projectQueue.filter((_, idx) => idx !== resolvedIndex);
-      const sourceBacklog =
-        prev.openListBacklog && prev.openListBacklog.length > 0
-          ? prev.openListBacklog
-          : prev.projectBacklog;
-      const [nextFromBacklog, ...restBacklog] = sourceBacklog;
-
-      const newQueue = remaining.map((item, index) => ({
-        ...item,
-        slot: (index + 1) as 1 | 2 | 3,
-        nextStepNote:
-          index === 0 && !isProjectSovereignDrip(item)
-            ? 'Promoted to Active Focus #1 — 100% of discretionary blocks locked here.'
-            : item.nextStepNote,
-      }));
-
-      if (nextFromBacklog && newQueue.length < 3) {
-        newQueue.push({
-          ...nextFromBacklog,
-          slot: (newQueue.length + 1) as 1 | 2 | 3,
-          nextStepNote:
-            nextFromBacklog.nextStepNote ||
-            (newQueue.length === 0
-              ? 'Promoted to Active Focus #1.'
-              : 'Promoted from Open Backlog into Slot #3.'),
-        });
-      }
 
       const logDate = prev.logicalDayKey || getLogicalDayKey();
       const recordedBlocks = completedItem
@@ -3175,6 +3522,7 @@ export function App() {
           }
         : null;
 
+      // Build updated ledger FIRST so items gated on completedItem.title unlock immediately
       const updatedLedger = newLedgerEntry
         ? [newLedgerEntry, ...(prev.completedDeliverablesLog ?? [])]
         : prev.completedDeliverablesLog ?? [];
@@ -3184,8 +3532,79 @@ export function App() {
         ? [newLedgerEntry, ...prevArchive]
         : prevArchive;
 
+      const sourceBacklog: OpenListItem[] =
+        prev.openList && prev.openList.length > 0
+          ? prev.openList
+          : prev.openListBacklog && prev.openListBacklog.length > 0
+          ? prev.openListBacklog
+          : prev.projectBacklog;
+
+      const unlockedIndex = sourceBacklog.findIndex((item) =>
+        isOpenListItemUnlocked(item, updatedLedger)
+      );
+      const nextFromBacklog =
+        unlockedIndex >= 0 ? sourceBacklog[unlockedIndex] : undefined;
+      const restBacklog =
+        unlockedIndex >= 0
+          ? sourceBacklog.filter((_, idx) => idx !== unlockedIndex)
+          : sourceBacklog;
+
+      const newQueue = remaining.map((item, index) => ({
+        ...item,
+        slot: (index + 1) as 1 | 2 | 3,
+        nextStepNote:
+          index === 0 && !isProjectSovereignDrip(item)
+            ? 'Promoted to Active Focus #1 — discretionary blocks serialized here.'
+            : item.nextStepNote,
+      }));
+
+      if (nextFromBacklog && newQueue.length < 3) {
+        const resolvedTotal =
+          nextFromBacklog.totalBlocks ?? nextFromBacklog.blocksTotal ?? 4;
+        newQueue.push({
+          id: nextFromBacklog.id,
+          slot: (newQueue.length + 1) as 1 | 2 | 3,
+          title: nextFromBacklog.title,
+          presetType: nextFromBacklog.presetType || 'SLIDES_4',
+          completedBlocks: nextFromBacklog.completedBlocks || 0,
+          totalBlocks: resolvedTotal,
+          trackId: nextFromBacklog.trackId || 'science',
+          subTrack: nextFromBacklog.subTrack,
+          startupStep:
+            nextFromBacklog.startupStep ||
+            'Open workspace and complete first 5m startup step.',
+          blockSubSteps: nextFromBacklog.blockSubSteps,
+          launchUrl: nextFromBacklog.launchUrl,
+          autoLaunchUrl: nextFromBacklog.autoLaunchUrl,
+          isAmbitionDrip: nextFromBacklog.isAmbitionDrip,
+          isSovereignDrip: nextFromBacklog.isSovereignDrip,
+          category: nextFromBacklog.category,
+          cognitiveDemand: nextFromBacklog.cognitiveDemand,
+          nextStepNote:
+            nextFromBacklog.notes ||
+            nextFromBacklog.nextStepNote ||
+            (newQueue.length === 0
+              ? 'Promoted to Active Focus #1.'
+              : 'Promoted from Open List into Slot #3.'),
+        });
+      }
+
+      const completedSubTrack: MajorSubTrackId | undefined = completedItem
+        ? completedItem.subTrack ||
+          (isProjectAmbitionDripEligible(completedItem)
+            ? '1B_INDEPENDENT'
+            : '1A_INSTITUTIONAL')
+        : undefined;
+
       const updatedTracks = completedItem
-        ? creditRoadmapTrack(prev.roadmapTracks, completedItem.trackId, 'OUTPUT', 4)
+        ? creditRoadmapTrack(
+            prev.roadmapTracks,
+            completedItem.trackId,
+            'OUTPUT',
+            4,
+            1,
+            completedSubTrack
+          )
         : prev.roadmapTracks;
 
       pushUndoSnapshot(
@@ -3196,6 +3615,7 @@ export function App() {
       return {
         ...prev,
         projectQueue: newQueue,
+        openList: restBacklog,
         projectBacklog: restBacklog,
         openListBacklog: restBacklog,
         completedDeliverablesLog: updatedLedger,
@@ -3204,7 +3624,7 @@ export function App() {
       };
     });
     showNotice(
-      'Archived Deliverable to Completed Ledger, incremented 4-Rung Output bar, and promoted next item from Open List Domino Queue.'
+      'Archived Deliverable to Completed Ledger, credited Roadmap Output, and promoted highest-priority unlocked Open List item.'
     );
   };
 
@@ -3217,28 +3637,43 @@ export function App() {
     presetType: ProjectPresetType,
     totalBlocks: number,
     trackId: TrackId,
-    startupStep: string
+    startupStep: string,
+    extra?: { blockSubSteps?: string[]; blockedByTitle?: string }
   ) => {
     setState((prev) => {
-      if (prev.projectQueue.length >= 3) {
-        const backlogItem = {
+      if (prev.projectQueue.length >= 3 || extra?.blockedByTitle) {
+        const backlogItem: OpenListItem = {
           id: `proj_${Date.now()}`,
           title,
           presetType,
           completedBlocks: 0,
           totalBlocks,
+          blocksTotal: totalBlocks,
           trackId,
           startupStep,
-          nextStepNote: 'Queued in Open List Backlog.',
+          blockSubSteps: extra?.blockSubSteps,
+          blockedByTitle: extra?.blockedByTitle,
+          nextStepNote: extra?.blockedByTitle
+            ? `Locked until "${extra.blockedByTitle}" is 100%.`
+            : 'Queued in Open List Backlog.',
         };
-        const nextBacklog = [...(prev.openListBacklog ?? prev.projectBacklog), backlogItem];
+        const currentBacklog =
+          prev.openList ?? prev.openListBacklog ?? prev.projectBacklog ?? [];
+        const nextBacklog = [...currentBacklog, backlogItem];
         return {
           ...prev,
+          openList: nextBacklog,
           projectBacklog: nextBacklog,
           openListBacklog: nextBacklog,
         };
       }
       const newSlot = (prev.projectQueue.length + 1) as 1 | 2 | 3;
+      const isDripDefault =
+        newSlot >= 2 &&
+        (trackId === 'writing' ||
+          trackId === 'coding' ||
+          trackId === 'music' ||
+          trackId === 'culture');
       return {
         ...prev,
         projectQueue: [
@@ -3251,11 +3686,17 @@ export function App() {
             completedBlocks: 0,
             totalBlocks,
             trackId,
+            subTrack: trackId === 'science' ? '1A_INSTITUTIONAL' : undefined,
+            isAmbitionDrip: isDripDefault,
+            isSovereignDrip: isDripDefault,
             startupStep,
+            blockSubSteps: extra?.blockSubSteps,
             nextStepNote:
               newSlot === 1
                 ? 'Active primary target.'
-                : 'Locked until Item #1 completes.',
+                : isDripDefault
+                ? 'Ambition Drip Slot (1b/day capstone).'
+                : 'Serialized behind Item #1.',
           },
         ],
       };
@@ -3288,11 +3729,18 @@ export function App() {
         ...item,
         slot: (idx + 1) as 1 | 2 | 3,
       }));
-      const displaced = combined.slice(3).map(({ slot: _slot, ...rest }) => rest);
+      const displaced: OpenListItem[] = combined
+        .slice(3)
+        .map(({ slot: _slot, ...rest }) => ({
+          ...rest,
+          blocksTotal: rest.totalBlocks,
+        }));
       const canSurge = prev.surgeConsecutiveDays < 2 || prev.loadMode === 'SURGE';
       const nextMode: LoadMode = canSurge ? 'SURGE' : prev.loadMode;
       const nextCeiling = canSurge ? 14 : prev.customModeBlockAdjustment;
-      const nextBacklog = [...displaced, ...(prev.openListBacklog ?? prev.projectBacklog)];
+      const currentBacklog =
+        prev.openList ?? prev.openListBacklog ?? prev.projectBacklog ?? [];
+      const nextBacklog = [...displaced, ...currentBacklog];
 
       return {
         ...prev,
@@ -3300,6 +3748,7 @@ export function App() {
         cruisePlus: false,
         customModeBlockAdjustment: nextCeiling,
         projectQueue: nextQueue,
+        openList: nextBacklog,
         projectBacklog: nextBacklog,
         openListBacklog: nextBacklog,
         pipelineDays: prev.pipelineDays.map((d) =>
@@ -3324,30 +3773,43 @@ export function App() {
     presetType: ProjectPresetType,
     totalBlocks: number,
     trackId: TrackId,
-    startupStep: string
+    startupStep: string,
+    blockedByTitle?: string
   ) => {
     setState((prev) => {
-      const newBacklog = [
-        ...(prev.openListBacklog ?? prev.projectBacklog),
+      const currentBacklog =
+        prev.openList ?? prev.openListBacklog ?? prev.projectBacklog ?? [];
+      const newBacklog: OpenListItem[] = [
+        ...currentBacklog,
         {
           id: `proj_${Date.now()}`,
           title,
           presetType,
           completedBlocks: 0,
           totalBlocks,
+          blocksTotal: totalBlocks,
           trackId,
           startupStep,
-          nextStepNote: 'Demoted to Open List backlog to preserve Cruise Mode.',
+          blockedByTitle,
+          notes: blockedByTitle
+            ? `Locked until "${blockedByTitle}" is 100%.`
+            : 'Queued in Open List backlog to preserve Cruise Mode.',
+          nextStepNote: blockedByTitle
+            ? `Locked until "${blockedByTitle}" is 100%.`
+            : 'Demoted to Open List backlog to preserve Cruise Mode.',
         },
       ];
       return {
         ...prev,
+        openList: newBacklog,
         projectBacklog: newBacklog,
         openListBacklog: newBacklog,
       };
     });
     showNotice(
-      `Option B applied: Added "${title}" to Open List Backlog (Cruise Mode & Closed List preserved).`
+      blockedByTitle
+        ? `Added "${title}" to Open List with prerequisite lock ("${blockedByTitle}").`
+        : `Option B applied: Added "${title}" to Open List Backlog (Cruise Mode & Closed List preserved).`
     );
   };
 
@@ -4234,6 +4696,9 @@ export function App() {
               }
               onToggleBaselineBlock={handleToggleBaselineBlock}
               onToggleEarlyClearance={handleToggleEarlyClearance}
+              onApplySlotEarlyClearance={handleApplySlotEarlyClearance}
+              onRestoreSlotEarlyClearance={handleRestoreSlotEarlyClearance}
+              onToggleAnkiConnect={handleToggleAnkiConnect}
               onUpdateFlashcardCount={(count) =>
                 setState((prev) => ({ ...prev, flashcardsReviewedCount: count }))
               }
@@ -4243,10 +4708,12 @@ export function App() {
               onCompleteProjectItem1={handleCompleteProjectItem1}
               onCompleteProjectById={handleCompleteProjectById}
               onToggleSovereignDripDone={handleToggleSovereignDripDone}
+              onUpdateDailyAmbitionDrip={handleUpdateDailyAmbitionDrip}
               onToggleGoldenRuleMode={handleToggleGoldenRuleMode}
               onAddProjectToQueue={handleAddProjectToQueue}
               onPromoteDeliverableWithSurge={handlePromoteDeliverableWithSurge}
               onDemoteDeliverableToBacklog={handleDemoteDeliverableToBacklog}
+              onUpdateOpenListItem={handleUpdateOpenListItem}
               onRecalibrateStepDownTier={handleRecalibrateStepDownTier}
               onRecalibrateReSequenceNow={handleRecalibrateReSequenceNow}
               onOpenPipelineDrawer={() => setPipelineDrawerOpen(true)}
@@ -5092,10 +5559,15 @@ export function App() {
                   let updatedLog = prev.todayBlockLog || [];
 
                   if (isFresh5mStart) {
-                    let trackCredited: TrackId = 'personal';
+                    let trackCredited: TrackId = 'writing';
                     let strokeCredited: 'INPUT' | 'OUTPUT' = 'INPUT';
                     let rungCredited: 1 | 2 | 3 | 4 = 1;
-                    let rechargeTitle = 'Evening Recharge 5m Step';
+                    const matchingCustomCard = (r.categoryCards || []).find(
+                      (card) => card.id === r.activeCategory
+                    );
+                    let rechargeTitle = matchingCustomCard
+                      ? `${matchingCustomCard.activeTitle} (${matchingCustomCard.categoryName} 5m Start)`
+                      : 'Evening Recharge 5m Step';
 
                     if (r.activeCategory === 'CAT3_MEDIA') {
                       trackCredited = 'writing';
@@ -5124,6 +5596,7 @@ export function App() {
                       strokeCredited = 'OUTPUT';
                       rungCredited = 2;
                       rechargeTitle = `${
+                        matchingCustomCard?.activeTitle ||
                         r.fluidCategories?.CAT1_MUSIC.activeTitle ||
                         'Acoustic / Instrument Cold Song'
                       } (5m)`;
@@ -5134,18 +5607,50 @@ export function App() {
                         rungCredited
                       );
                     } else if (r.activeCategory === 'CAT5_GAMING') {
-                      trackCredited = 'personal';
+                      trackCredited = 'coding';
                       strokeCredited = 'INPUT';
                       rungCredited = 1;
                       rechargeTitle = `${updatedSlots.CAT5_GAMING.activeTitle} (Gaming 5m Start)`;
-                    } else if (r.activeCategory === 'CAT4_COMFORT') {
-                      trackCredited = 'personal';
+                      updatedTracks = creditRoadmapTrack(
+                        updatedTracks,
+                        trackCredited,
+                        strokeCredited,
+                        rungCredited
+                      );
+                    } else if (r.activeCategory === 'CAT6_CULTURE') {
+                      trackCredited = 'culture';
                       strokeCredited = 'INPUT';
                       rungCredited = 1;
                       rechargeTitle = `${
+                        matchingCustomCard?.activeTitle ||
+                        r.fluidCategories?.CAT6_CULTURE?.activeTitle ||
+                        'Culture & Language'
+                      } (5m Start)`;
+                      updatedTracks = creditRoadmapTrack(
+                        updatedTracks,
+                        trackCredited,
+                        strokeCredited,
+                        rungCredited
+                      );
+                    } else if (r.activeCategory === 'CAT4_COMFORT') {
+                      trackCredited = 'writing';
+                      strokeCredited = 'INPUT';
+                      rungCredited = 1;
+                      rechargeTitle = `${
+                        matchingCustomCard?.activeTitle ||
                         r.fluidCategories?.CAT4_COMFORT.activeTitle ||
                         "It's Always Sunny in Philadelphia"
                       } (5m Start)`;
+                    } else {
+                      trackCredited = 'culture';
+                      strokeCredited = 'INPUT';
+                      rungCredited = 1;
+                      updatedTracks = creditRoadmapTrack(
+                        updatedTracks,
+                        trackCredited,
+                        strokeCredited,
+                        rungCredited
+                      );
                     }
 
                     const newEntry = createTodayLogEntry(prev, {
@@ -5322,6 +5827,8 @@ export function App() {
               onUpdateRoadmapTrack={handleUpdateRoadmapTrack}
               onUpdateRoadmapRung={handleUpdateRoadmapRung}
               onToggleTrackSandboxType={handleToggleTrackSandboxType}
+              onUpdateRoadmapShelter={handleUpdateRoadmapShelter}
+              onUpdateRoadmapFoundation={handleUpdateRoadmapFoundation}
             />
           )}
         </main>
@@ -6498,12 +7005,20 @@ export function App() {
                   flashcardsReviewedCount: 0,
                   earlyClearanceEnabled: false,
                   discretionaryBlocksCompletedToday: 0,
+                  dailySovereignDripDone: false,
+                  dailyAmbitionDrip: {
+                    ...getEffectiveDailyAmbitionDrip(state),
+                    completedToday: 0,
+                  },
                   todayBlockLog: [],
                   baselineBlocks: state.baselineBlocks.map((b) => ({
                     ...b,
                     completed: false,
+                    completedBlocks: 0,
                     partialCredit: 0,
                     bankedViaEarlyClearance: false,
+                    reallocatedViaEarlyClearance: false,
+                    reallocatedBlocksCount: 0,
                   })),
                   pipelineDays: state.pipelineDays.map((d, idx) =>
                     idx === 0
@@ -6534,9 +7049,9 @@ export function App() {
                     activeTaskTitle:
                       primaryProject?.title || 'Core Flashcards — Block 1/1',
                     activeTaskType: primaryProject ? 'PROJECT' : 'FLASHCARDS',
-                    activeStartupPrompt:
-                      primaryProject?.startupStep ||
-                      'Open deck + clear first 15 cards',
+                    activeStartupPrompt: primaryProject
+                      ? getProjectActiveStartupStep(primaryProject)
+                      : 'Open deck + clear first 15 cards',
                     queuedRecoveryFlashcard5m: false,
                     recoveryFlashcardRunning: false,
                     recoveryFlashcardSecondsLeft: 300,

@@ -111,6 +111,33 @@ export const InlineSlotEditor: React.FC<InlineBaselineSlotEditorProps> = ({
         />
       </div>
 
+      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+        <div className="sm:col-span-8">
+          <label className="block text-[10px] font-mono uppercase text-slate-400 mb-0.5">
+            Optional Launch URL / Deep Link (remnote://, anki://, https://)
+          </label>
+          <input
+            type="text"
+            value={block.launchUrl || ''}
+            onChange={(e) => onUpdate({ launchUrl: e.target.value })}
+            onKeyDown={(e) => e.stopPropagation()}
+            placeholder="https://... or remnote:// / anki://"
+            className="w-full px-2 py-1 rounded bg-slate-900 border border-slate-700 text-xs text-slate-200 focus:outline-none focus:border-teal-400"
+          />
+        </div>
+        <div className="sm:col-span-4 pt-3">
+          <label className="inline-flex items-center gap-1.5 text-[10px] font-mono text-slate-300 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={Boolean(block.autoLaunchUrl)}
+              onChange={(e) => onUpdate({ autoLaunchUrl: e.target.checked })}
+              className="accent-teal-400"
+            />
+            <span>Auto-open on Start</span>
+          </label>
+        </div>
+      </div>
+
       <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-800/80">
         <div className="flex flex-wrap items-center gap-1.5">
           <button
@@ -119,6 +146,7 @@ export const InlineSlotEditor: React.FC<InlineBaselineSlotEditorProps> = ({
               const nextVal = !earlyClearance;
               onUpdate({
                 earlyClearanceEligible: nextVal,
+                supportsEarlyClearance: nextVal,
                 category:
                   nextVal && block.category !== 'FLASHCARDS_ANATOMY'
                     ? 'FLASHCARDS_COMP'
@@ -161,11 +189,11 @@ export const InlineSlotEditor: React.FC<InlineBaselineSlotEditorProps> = ({
             onChange={(e) => onUpdate({ trackId: e.target.value as RoadmapTrackId })}
             className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-[10px] font-mono text-slate-200"
           >
-            <option value="science">Track 1 (Science/Core 1)</option>
-            <option value="writing">Track 2 (Writing/Core 2)</option>
-            <option value="personal">Track 3 (Personal/Core 3)</option>
-            <option value="coding">Sandbox 1 (Coding/Craft A)</option>
-            <option value="music">Sandbox 2 (Music/Craft B)</option>
+            <option value="science">Major 1: Primary Vocation</option>
+            <option value="writing">Major 2: Writing &amp; Authorship</option>
+            <option value="coding">Sandbox 1: Engineering &amp; Craft</option>
+            <option value="music">Sandbox 2: Music &amp; Acoustic</option>
+            <option value="culture">Sandbox 3: Culture &amp; Language</option>
           </select>
         </div>
       </div>
