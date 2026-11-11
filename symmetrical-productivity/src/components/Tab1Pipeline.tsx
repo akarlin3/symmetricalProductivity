@@ -1880,7 +1880,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                 />
               )}
               <span>
-                Ambition Drip:{' '}
+                {state.uiTerminology?.ambitionDripLabel || 'Ambition Drip'}:{' '}
                 {examDayAutoPaused
                   ? '[Exam Pause]'
                   : !dripConfig.enabled
@@ -1930,7 +1930,7 @@ export const Tab1Pipeline: React.FC<Tab1PipelineProps> = ({
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <span className="text-[10px] font-mono uppercase tracking-widest text-slate-400">
-                        Daily Core Baseline
+                        {state.uiTerminology?.baselineFloorLabel || 'Daily Core Baseline'}
                       </span>
                       <h3 className="font-serif text-2xl font-medium text-white">
                         {totalBaselineFloorBlocks}-Block Floor ({state.baselineBlocks.length} Slots)

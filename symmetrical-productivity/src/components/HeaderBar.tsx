@@ -27,6 +27,7 @@ import {
   Upload,
   Volume2,
   VolumeX,
+  Wand2,
   X,
 } from 'lucide-react';
 import type { User } from 'firebase/auth';
@@ -65,6 +66,7 @@ interface HeaderBarProps {
   onOpenPipelineDrawer: () => void;
   onOpenStateModal: () => void;
   onOpenOnboardingWizard?: () => void;
+  onOpenConversationalArchitect?: () => void;
   onToggleAssistantDrawer: () => void;
   onToggleZeroWorkSimulation: () => void;
   onResetDefault: () => void;
@@ -112,6 +114,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   onOpenPipelineDrawer,
   onOpenStateModal,
   onOpenOnboardingWizard,
+  onOpenConversationalArchitect,
   onToggleAssistantDrawer,
   onToggleZeroWorkSimulation,
   onResetDefault,
@@ -214,9 +217,21 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
 
   // 3 Primary Views in the Sleek Center Pill Switcher
   const primaryViews: { id: TabId; label: string; navId: string }[] = [
-    { id: 'PIPELINE', label: 'Focus', navId: 'tab-nav-pipeline' },
-    { id: 'RECHARGE', label: 'Evening', navId: 'tab-nav-recharge' },
-    { id: 'ROADMAP', label: 'Roadmap', navId: 'tab-nav-roadmap' },
+    {
+      id: 'PIPELINE',
+      label: state.uiTerminology?.focusTabLabel || 'Focus',
+      navId: 'tab-nav-pipeline',
+    },
+    {
+      id: 'RECHARGE',
+      label: state.uiTerminology?.eveningTabLabel || 'Evening',
+      navId: 'tab-nav-recharge',
+    },
+    {
+      id: 'ROADMAP',
+      label: state.uiTerminology?.roadmapTabLabel || 'Roadmap',
+      navId: 'tab-nav-roadmap',
+    },
   ];
 
   const compactDurationText = metrics.isZeroWorkLeft
@@ -782,6 +797,28 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
               </button>
             )}
 
+            {onOpenConversationalArchitect && (
+              <button
+                id="btn-header-customize-with-ai"
+                type="button"
+                onClick={() => {
+                  triggerHaptic([10]);
+                  soundEngine.playTactileClick('UI_TAP');
+                  onOpenConversationalArchitect();
+                }}
+                className={`h-7 px-2.5 rounded-full border text-[11px] font-medium flex items-center gap-1 cursor-pointer transition shrink-0 ${
+                  isEveningTheme
+                    ? 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/35 text-amber-100'
+                    : 'bg-cyan-500/15 hover:bg-cyan-500/25 border-cyan-400/35 text-cyan-100'
+                }`}
+                title="Customize with AI — Conversational Workspace Architect (Cmd/Ctrl + Shift + K)"
+                aria-label="Customize with AI (Cmd/Ctrl + Shift + K)"
+              >
+                <Wand2 className="w-3 h-3 shrink-0" />
+                <span className="hidden xl:inline">Customize with AI</span>
+              </button>
+            )}
+
             {onOpenCommandDock && (
               <button
                 id="btn-open-command-dock"
@@ -1097,6 +1134,26 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
                         <span className="font-mono text-[11px] text-slate-400">
                           View
                         </span>
+                      </button>
+                    )}
+
+                    {onOpenConversationalArchitect && (
+                      <button
+                        id="btn-drawer-customize-with-ai"
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic([12]);
+                          soundEngine.playTactileClick('UI_TAP');
+                          setMenuDrawerOpen(false);
+                          onOpenConversationalArchitect();
+                        }}
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-400/30 text-xs font-medium flex items-center justify-between cursor-pointer"
+                      >
+                        <span className="flex items-center gap-2.5 text-cyan-100">
+                          <Wand2 className="w-4 h-4 text-cyan-400" />
+                          <span>Customize Workspace with AI</span>
+                        </span>
+                        <kbd className="text-[10px] font-mono text-cyan-300">⌘⇧K</kbd>
                       </button>
                     )}
 

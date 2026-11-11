@@ -16,6 +16,7 @@ import {
   Sparkles,
   Terminal,
   Timer,
+  Wand2,
   Wind,
   X,
   Zap,
@@ -56,6 +57,7 @@ interface CommandPaletteModalProps {
   smartIntakePreview: SmartIntakePlanResult | null;
   onSetSmartIntakePreview: (plan: SmartIntakePlanResult | null) => void;
   onApplySmartIntakePlan: (plan: SmartIntakePlanResult) => void;
+  onOpenConversationalArchitect?: () => void;
   onOpenGeminiBridgeModal?: () => void;
   architectModeUnlocked?: boolean;
   onUnlockArchitectMode?: (source: string) => void;
@@ -82,6 +84,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   smartIntakePreview,
   onSetSmartIntakePreview,
   onApplySmartIntakePlan,
+  onOpenConversationalArchitect,
   onOpenGeminiBridgeModal,
   onUnlockArchitectMode,
   onProModeStatusChange,
@@ -163,6 +166,24 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   };
 
   const quickActions = [
+    ...(onOpenConversationalArchitect
+      ? [
+          {
+            id: 'cmd-open-conversational-architect',
+            label: 'Customize with AI (Conversational Workspace Architect)',
+            subtitle:
+              'Describe your workflow, block length, baseline habits, evening hobbies, or labels in plain English',
+            shortcut: '⌘⇧K',
+            icon: Wand2,
+            accent: 'text-cyan-300',
+            action: () => {
+              triggerHaptic([12]);
+              onClose();
+              onOpenConversationalArchitect();
+            },
+          },
+        ]
+      : []),
     ...(onOpenGeminiBridgeModal
       ? [
           {

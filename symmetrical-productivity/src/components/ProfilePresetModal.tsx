@@ -40,6 +40,7 @@ import {
   Sliders,
   Sparkles,
   Trash2,
+  Wand2,
   X,
 } from 'lucide-react';
 
@@ -50,6 +51,7 @@ export interface ProfilePresetModalProps {
   isFirstVisit?: boolean;
   architectModeUnlocked?: boolean;
   onLockArchitectMode?: () => void;
+  onOpenConversationalArchitect?: () => void;
   onClose: () => void;
   onApplyPreset: (
     presetOrId: ProfilePresetId | ProfilePresetDefinition,
@@ -66,6 +68,7 @@ export const ProfilePresetModal: React.FC<ProfilePresetModalProps> = ({
   currentState: propCurrentState,
   state: propState,
   architectModeUnlocked = false,
+  onOpenConversationalArchitect,
   onClose,
   onApplyPreset,
 }) => {
@@ -338,7 +341,22 @@ export const ProfilePresetModal: React.FC<ProfilePresetModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {onOpenConversationalArchitect && (
+              <button
+                id="btn-preset-modal-customize-with-ai"
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenConversationalArchitect();
+                }}
+                className="px-3 py-1.5 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer shadow-sm"
+                title="Customize workflow, cadence, baseline, and evening slots via conversation (Cmd/Ctrl + Shift + K)"
+              >
+                <Wand2 className="w-3.5 h-3.5" />
+                <span>Customize with AI</span>
+              </button>
+            )}
             {!builderPreset && (
               <button
                 type="button"

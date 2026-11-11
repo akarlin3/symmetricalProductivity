@@ -733,20 +733,22 @@ export function getShrunkStartupPrompt(
 }
 
 /**
- * Logical Day-Rollover Boundary (Default 4:00 AM, adjustable 12:00 AM – 6:00 AM):
+ * Logical Day-Rollover Boundary (Default 4:00 AM, adjustable 0..23):
  * Any local hour < rolloverHour counts as part of the previous logical day.
  */
 export function formatRolloverHourLabel(rolloverHour: number = 4): string {
-  const clamped = Math.max(0, Math.min(6, Math.round(rolloverHour)));
+  const clamped = Math.max(0, Math.min(23, Math.round(rolloverHour)));
   if (clamped === 0) return '12:00 AM';
-  return `${clamped}:00 AM`;
+  if (clamped < 12) return `${clamped}:00 AM`;
+  if (clamped === 12) return '12:00 PM';
+  return `${clamped - 12}:00 PM`;
 }
 
 export function getLogicalDayKey(
   date: Date = new Date(),
   rolloverHour: number = 4
 ): string {
-  const clampedHour = Math.max(0, Math.min(6, Math.round(rolloverHour)));
+  const clampedHour = Math.max(0, Math.min(23, Math.round(rolloverHour)));
   const shifted = new Date(date.getTime());
   if (shifted.getHours() < clampedHour) {
     shifted.setDate(shifted.getDate() - 1);
@@ -761,7 +763,7 @@ export function isPre4amRolloverWindow(
   date: Date = new Date(),
   rolloverHour: number = 4
 ): boolean {
-  const clampedHour = Math.max(0, Math.min(6, Math.round(rolloverHour)));
+  const clampedHour = Math.max(0, Math.min(23, Math.round(rolloverHour)));
   return date.getHours() < clampedHour;
 }
 
@@ -3520,7 +3522,6 @@ export function validateAndRestoreStateSnapshot(
   if (
     !['CRUISE', 'SURGE', 'TAPER'].includes(String(rawObj.loadMode || '')) ||
     !Array.isArray(rawObj.baselineBlocks) ||
-    rawObj.baselineBlocks.length === 0 ||
     !Array.isArray(rawObj.projectQueue) ||
     !Array.isArray(rawObj.roadmapTracks) ||
     typeof rawObj.timer !== 'object' ||

@@ -339,6 +339,7 @@ export interface EveningCategoryCardConfig {
   id: string; // 'CAT1_MUSIC' | 'CAT2_MAKER' | 'CAT3_MEDIA' | 'CAT4_COMFORT' | 'CAT5_GAMING' | 'CAT6_CULTURE' | custom ID
   slotNumber?: number;
   categoryName: string;
+  icon?: string;
   subtitle?: string;
   behavior: 'FLUID' | 'STICKY';
   trackMode: 'SINGLE' | 'TRIPLE';
@@ -394,7 +395,20 @@ export interface BreakOptionsConfig {
   l2Option1Label?: string;
   l2Option2Label?: string;
   l2Option3Label?: string;
+  l3MidDayLabel?: string;
   stressResetLabel?: string;
+}
+
+export interface UiTerminologyOverrides {
+  cruiseLabel?: string;
+  surgeLabel?: string;
+  taperLabel?: string;
+  baselineFloorLabel?: string;
+  closedListLabel?: string;
+  ambitionDripLabel?: string;
+  focusTabLabel?: string;
+  eveningTabLabel?: string;
+  roadmapTabLabel?: string;
 }
 
 export interface RechargeState {
@@ -537,6 +551,7 @@ export type BackupTriggerReason =
   | 'NEW_DAY_RESET'
   | 'PRESET_SWITCH'
   | 'JSON_IMPORT'
+  | 'CONVERSATIONAL_ARCHITECT'
   | 'MANUAL_SNAPSHOT';
 
 export interface StateBackupSnapshot {
@@ -557,7 +572,9 @@ export interface SymmetryState {
   profilePresetId?: ProfilePresetId;
   profileName?: string;
   inlineEditModeActive?: boolean;
-  logicalDayRolloverHour?: number; // Default: 4 (4:00 AM), adjustable 0..6 (12:00 AM to 6:00 AM)
+  uiLayoutMode?: 'split' | 'widget' | 'full';
+  uiTerminology?: UiTerminologyOverrides;
+  logicalDayRolloverHour?: number; // Default: 4 (4:00 AM), adjustable 0..23
   earlyEveningShutdownTime?: string; // Default: '6:00 PM'
   taskWeights?: TaskWeightsConfig;
   breakOptions?: BreakOptionsConfig;

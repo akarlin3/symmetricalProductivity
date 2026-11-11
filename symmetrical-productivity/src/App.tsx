@@ -147,6 +147,7 @@ import { InsightsModal } from './components/InsightsModal';
 import { KeyboardShortcutModal } from './components/KeyboardShortcutModal';
 import { MobileBottomSheet } from './components/MobileBottomSheet';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
+import { ConversationalArchitectModal } from './components/ConversationalArchitectModal';
 import { GeminiBridgeModal } from './components/GeminiBridgeModal';
 import {
   extractGeminiSyncParamFromLocation,
@@ -326,6 +327,8 @@ export function App() {
   const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
   const [spotlightTourOpen, setSpotlightTourOpen] = useState(false);
   const [commandDockOpen, setCommandDockOpen] = useState(false);
+  const [conversationalArchitectOpen, setConversationalArchitectOpen] =
+    useState(false);
   const [cinemaFocusMode, setCinemaFocusMode] = useState(false);
   const [stateIoText, setStateIoText] = useState('');
   const [stateModalCustomPromptRequest, setStateModalCustomPromptRequest] =
@@ -367,8 +370,18 @@ export function App() {
     undoStackRef.current = rest;
     soundEngine.playTactileClick('MODE_TOGGLE');
     setState(latestSnapshot);
+    const restoredLayout: LayoutMode =
+      latestSnapshot.uiLayoutMode === 'widget' ? 'COMPACT' : 'FULL';
+    setLayoutMode(restoredLayout);
+    try {
+      localStorage.setItem('symmetrical_layout_mode', restoredLayout);
+    } catch {
+      // Ignore storage errors
+    }
     setUndoToast(null);
-    setStatusNotice('Undid last action — restored previous block counter, countdown, and Roadmap totals.');
+    setStatusNotice(
+      'Undid last action — restored previous workspace configuration, block counters, and Roadmap totals.'
+    );
   }, [setState]);
 
   const handleUpdateAudioSettings = useCallback(
@@ -1180,7 +1193,16 @@ export function App() {
         return;
       }
 
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        triggerHaptic([12]);
+        soundEngine.playTactileClick('MODE_TOGGLE');
+        setCommandDockOpen(false);
+        setConversationalArchitectOpen((prev) => !prev);
+        return;
+      }
+
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         triggerHaptic([12]);
         soundEngine.playTactileClick('MODE_TOGGLE');
@@ -1223,6 +1245,11 @@ export function App() {
           target.isContentEditable);
 
       if (e.key === 'Escape') {
+        if (conversationalArchitectOpen) {
+          e.preventDefault();
+          setConversationalArchitectOpen(false);
+          return;
+        }
         if (geminiBridgeOpen) {
           e.preventDefault();
           setGeminiBridgeOpen(false);
@@ -1381,6 +1408,7 @@ export function App() {
     activeTab,
     pipelineDrawerOpen,
     commandDockOpen,
+    conversationalArchitectOpen,
     geminiBridgeOpen,
     handleOneTapSyncFromClipboard,
     handleToggleLayoutMode,
@@ -4534,6 +4562,8 @@ export function App() {
         style={
           layoutMode === 'COMPACT'
             ? { maxWidth: '460px', marginInline: 'auto' }
+            : state.uiLayoutMode === 'split'
+            ? { maxWidth: '1440px', marginInline: 'auto' }
             : undefined
         }
         className="w-full max-w-none px-3 sm:px-5 py-3 flex flex-col gap-3"
@@ -4568,6 +4598,9 @@ export function App() {
             setIsFirstVisitOnboarding(false);
             setOnboardingWizardOpen(true);
           }}
+          onOpenConversationalArchitect={() =>
+            setConversationalArchitectOpen(true)
+          }
           onToggleAssistantDrawer={() =>
             setAssistantDrawerOpen((prev) => !prev)
           }
@@ -6054,6 +6087,19 @@ export function App() {
                 )}
 
                 <button
+                  id="btn-settings-customize-with-ai"
+                  type="button"
+                  onClick={() => {
+                    setStateModalOpen(false);
+                    setConversationalArchitectOpen(true);
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-mono font-extrabold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Customize with AI</span>
+                </button>
+
+                <button
                   id="btn-switch-reset-profile-template"
                   type="button"
                   onClick={() => {
@@ -7144,6 +7190,16 @@ export function App() {
         state={state}
         architectModeUnlocked={architectModeUnlocked}
         onLockArchitectMode={handleLockArchitectMode}
+        onOpenConversationalArchitect={() => {
+          try {
+            localStorage.setItem(ONBOARDING_COMPLETED_KEY, 'true');
+          } catch {
+            // Ignore storage errors
+          }
+          setIsFirstVisitOnboarding(false);
+          setOnboardingWizardOpen(false);
+          setConversationalArchitectOpen(true);
+        }}
         onClose={() => {
           try {
             localStorage.setItem(ONBOARDING_COMPLETED_KEY, 'true');
@@ -7346,12 +7402,63 @@ export function App() {
         smartIntakePreview={smartIntakePreview}
         onSetSmartIntakePreview={setSmartIntakePreview}
         onApplySmartIntakePlan={handleApplySmartIntakePlan}
+        onOpenConversationalArchitect={() =>
+          setConversationalArchitectOpen(true)
+        }
         onOpenGeminiBridgeModal={() => setGeminiBridgeOpen(true)}
         onUnlockArchitectMode={handleUnlockArchitectMode}
         onProModeStatusChange={(unlocked, msg) => {
           setProModeUnlocked(unlocked);
           setApiKeyVersion((v) => v + 1);
           if (msg) showNotice(msg);
+        }}
+      />
+
+      {/* Conversational Setup & Live Workspace Architect (Cmd/Ctrl + Shift + K) */}
+      <ConversationalArchitectModal
+        isOpen={conversationalArchitectOpen}
+        onClose={() => setConversationalArchitectOpen(false)}
+        state={state}
+        isEveningTheme={isEveningTheme}
+        canUndo={undoStackRef.current.length > 0 || Boolean(undoToast)}
+        onTriggerUndo={handleTriggerUndo}
+        onApplyCustomizedState={(nextState, undoSummary, layoutOverride) => {
+          setState((prev) => {
+            const snapshotPrev: SymmetryState = {
+              ...prev,
+              uiLayoutMode:
+                prev.uiLayoutMode ||
+                (layoutMode === 'COMPACT' ? 'widget' : 'full'),
+            };
+            const updatedBackups = pushStateBackup(
+              snapshotPrev,
+              'CONVERSATIONAL_ARCHITECT',
+              `Before AI Architect (${undoSummary})`
+            );
+            pushUndoSnapshot(
+              snapshotPrev,
+              `AI Architect Applied (${undoSummary}) — Press Cmd/Ctrl+Z to revert`
+            );
+            return {
+              ...nextState,
+              stateBackups: updatedBackups,
+            };
+          });
+
+          if (layoutOverride) {
+            const targetLayout: LayoutMode =
+              layoutOverride === 'widget' ? 'COMPACT' : 'FULL';
+            setLayoutMode(targetLayout);
+            try {
+              localStorage.setItem('symmetrical_layout_mode', targetLayout);
+            } catch {
+              // Ignore storage errors
+            }
+          }
+
+          showNotice(
+            `Applied AI Workspace Customization: ${undoSummary} (Cmd/Ctrl+Z to revert).`
+          );
         }}
       />
 

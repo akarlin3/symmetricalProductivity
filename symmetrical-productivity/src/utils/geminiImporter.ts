@@ -19,6 +19,11 @@ import {
 } from '../state/defaultState';
 import { applySmartIntakePlanToState } from './smartIntakePlanner';
 import { applyGeminiJsonSchemaToState } from './geminiPromptGenerator';
+import {
+  applyConfigPatchToState,
+  isWorkspaceArchitectJsonPayload,
+  parseExternalArchitectJson,
+} from './configCompiler';
 
 export type GeminiDetectedFormat =
   | 'FORMAT_A_JSON_SYNC'
@@ -294,6 +299,47 @@ export function parseGeminiResponseToStatePatch(
             nextState: syncedNext,
             statePatch: syncedNext,
             appliedChanges,
+            diffSummaryBanner: buildDiffSummaryBanner(highlights, appliedChanges),
+            detectedHighlights: highlights,
+          };
+        }
+
+        // Case A1.5: WorkspaceConfigPatch / ArchitectTurnResponse JSON (from "Copy Setup Prompt for Gemini Chat")
+        if (isWorkspaceArchitectJsonPayload(parsedJson)) {
+          const turnRes = parseExternalArchitectJson(
+            rawJsonCandidate,
+            workingState
+          );
+          const applied = applyConfigPatchToState(
+            workingState,
+            turnRes.configPatch
+          );
+          appliedChanges.push(...applied.appliedSummaryLines);
+          if (turnRes.guardrailNotes.length > 0) {
+            appliedChanges.push(...turnRes.guardrailNotes);
+          }
+          if (turnRes.configPatch.eveningCategories) {
+            highlights.rechargeCategoriesUpdated =
+              turnRes.configPatch.eveningCategories.length;
+          }
+          if (turnRes.configPatch.houseTracks?.tracks) {
+            highlights.roadmapTracksUpdated =
+              turnRes.configPatch.houseTracks.tracks.length;
+          }
+          highlights.loadModeLabel = formatModeBannerName(
+            applied.nextState.loadMode,
+            applied.nextState.cruisePlus
+          );
+          return {
+            detectedFormat: 'FORMAT_A_JSON_SYNC',
+            formatLabel:
+              'Format A — Conversational Workspace Architect Patch (WorkspaceConfigPatch)',
+            nextState: applied.nextState,
+            statePatch: applied.nextState,
+            appliedChanges:
+              appliedChanges.length > 0
+                ? appliedChanges
+                : ['Workspace configuration patch applied'],
             diffSummaryBanner: buildDiffSummaryBanner(highlights, appliedChanges),
             detectedHighlights: highlights,
           };

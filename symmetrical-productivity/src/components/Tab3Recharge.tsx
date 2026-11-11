@@ -5,6 +5,8 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  Code2,
+  Coffee,
   Cpu,
   Edit3,
   ExternalLink,
@@ -19,6 +21,7 @@ import {
   Lock,
   Moon,
   Music,
+  Palette,
   Pause,
   Play,
   Plus,
@@ -27,6 +30,7 @@ import {
   Trash2,
   Tv,
   Unlock,
+  Wrench,
 } from 'lucide-react';
 import {
   EveningCategoryCardConfig,
@@ -221,7 +225,19 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
     return `recharge-card-${card.id.toLowerCase()}`;
   };
 
-  const getCardIcon = (slotNumber: number) => {
+  const getCardIcon = (slotNumber: number, customIcon?: string) => {
+    const token = (customIcon || '').toLowerCase();
+    if (token === 'palette') return <Palette className="w-3 h-3 text-pink-300" />;
+    if (token === 'gamepad') return <Gamepad2 className="w-3 h-3 text-emerald-300" />;
+    if (token === 'tv') return <Tv className="w-3 h-3 text-amber-300" />;
+    if (token === 'film') return <Film className="w-3 h-3 text-amber-300" />;
+    if (token === 'book') return <BookOpen className="w-3 h-3 text-sky-300" />;
+    if (token === 'music') return <Music className="w-3 h-3 text-rose-300" />;
+    if (token === 'wrench') return <Wrench className="w-3 h-3 text-orange-300" />;
+    if (token === 'code') return <Code2 className="w-3 h-3 text-cyan-300" />;
+    if (token === 'coffee') return <Coffee className="w-3 h-3 text-amber-300" />;
+    if (token === 'globe') return <Globe className="w-3 h-3 text-cyan-300" />;
+    if (token === 'sparkles') return <Sparkles className="w-3 h-3 text-amber-300" />;
     if (slotNumber === 1) return <Music className="w-3 h-3 text-rose-300" />;
     if (slotNumber === 2) return <Cpu className="w-3 h-3 text-orange-300" />;
     if (slotNumber === 3) return <Headphones className="w-3 h-3 text-amber-300" />;
@@ -636,7 +652,7 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
                 {/* Card Top Header: Category Badge + Optional Launch Link + Inline "Edit Card" Button */}
                 <div className="flex items-center justify-between gap-1.5">
                   <span className="px-2.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-400/25 font-mono text-[10px] uppercase tracking-widest text-amber-200 flex items-center gap-1.5 min-w-0">
-                    {getCardIcon(card.slotNumber ?? 1)}
+                    {getCardIcon(card.slotNumber ?? 1, card.icon)}
                     <span className="truncate">
                       {card.slotNumber ?? 1}.{' '}
                       <InlineEditableText
