@@ -260,11 +260,66 @@ export function getProjectActiveStartupStep(
   return project.startupStep;
 }
 
+export function normalizeTrackAlias(
+  rawTrack: unknown,
+  fallbackSubTrack?: import('../types/symmetry').MajorSubTrackId,
+  fallbackIsDrip?: boolean
+): {
+  trackId?: import('../types/symmetry').TrackId;
+  subTrack?: import('../types/symmetry').MajorSubTrackId;
+} {
+  if (typeof rawTrack !== 'string') {
+    return fallbackSubTrack ? { subTrack: fallbackSubTrack } : {};
+  }
+  const upper = rawTrack.trim().toUpperCase();
+  if (upper === 'MAJOR_1A' || upper === '1A_INSTITUTIONAL') {
+    return { trackId: 'science', subTrack: '1A_INSTITUTIONAL' };
+  }
+  if (upper === 'MAJOR_1B' || upper === '1B_INDEPENDENT') {
+    return { trackId: 'science', subTrack: '1B_INDEPENDENT' };
+  }
+  if (upper === 'MAJOR_2') {
+    return { trackId: 'writing' };
+  }
+  if (upper === 'MINOR_1' || upper === 'SANDBOX_1') {
+    return { trackId: 'coding' };
+  }
+  if (upper === 'MINOR_2' || upper === 'SANDBOX_2') {
+    return { trackId: 'music' };
+  }
+  if (upper === 'MINOR_3' || upper === 'SANDBOX_3') {
+    return { trackId: 'culture' };
+  }
+  const lower = rawTrack.trim().toLowerCase();
+  if (lower === 'personal' || lower === 'science') {
+    return {
+      trackId: 'science',
+      subTrack:
+        fallbackSubTrack ||
+        (fallbackIsDrip ? '1B_INDEPENDENT' : '1A_INSTITUTIONAL'),
+    };
+  }
+  if (
+    lower === 'writing' ||
+    lower === 'coding' ||
+    lower === 'music' ||
+    lower === 'culture'
+  ) {
+    return { trackId: lower, subTrack: fallbackSubTrack };
+  }
+  return fallbackSubTrack ? { subTrack: fallbackSubTrack } : {};
+}
+
 export function isOpenListItemUnlocked(
-  item: Pick<import('../types/symmetry').OpenListItem, 'blockedByTitle'>,
+  item: Pick<
+    import('../types/symmetry').OpenListItem,
+    'blockedByTitle' | 'prerequisiteTitle'
+  >,
   completedLog: import('../types/symmetry').CompletedDeliverableEntry[] | undefined
 ): boolean {
-  const req = (item.blockedByTitle || '').trim().toLowerCase();
+  const req = (item.blockedByTitle || item.prerequisiteTitle || '')
+    .trim()
+    .toLowerCase();
   if (!req) return true;
   if (!Array.isArray(completedLog) || completedLog.length === 0) return false;
   return completedLog.some((entry) => {
@@ -312,11 +367,13 @@ export function normalizeOpenListArray(
     const obj = (item || {}) as Partial<import('../types/symmetry').OpenListItem> & {
       blocksDone?: number;
     };
+    const aliasMapped = normalizeTrackAlias(obj.trackId);
     const isDrip = Boolean(
       obj.isAmbitionDrip ||
         obj.isSovereignDrip ||
         obj.category === 'sovereign' ||
         obj.subTrack === '1B_INDEPENDENT' ||
+        aliasMapped.subTrack === '1B_INDEPENDENT' ||
         /sovereign\s+drip|ambition\s+drip/i.test(String(obj.title || ''))
     );
     const totalBlocks =
@@ -325,11 +382,11 @@ export function normalizeOpenListArray(
         : typeof obj.blocksTotal === 'number'
         ? obj.blocksTotal
         : 4;
-    const rawTrackId = obj.trackId === 'personal' ? 'science' : obj.trackId;
-    const blockedByTitle =
-      typeof obj.blockedByTitle === 'string' && obj.blockedByTitle.trim()
-        ? obj.blockedByTitle.trim()
-        : undefined;
+    const rawTrackId = aliasMapped.trackId;
+    const rawBlocked =
+      (typeof obj.blockedByTitle === 'string' && obj.blockedByTitle.trim()) ||
+      (typeof obj.prerequisiteTitle === 'string' && obj.prerequisiteTitle.trim()) ||
+      undefined;
     return {
       id: obj.id || `proj_open_${idx + 1}`,
       title: obj.title || `Backlog Deliverable #${idx + 1}`,
@@ -346,8 +403,9 @@ export function normalizeOpenListArray(
       subTrack:
         obj.subTrack === '1A_INSTITUTIONAL' || obj.subTrack === '1B_INDEPENDENT'
           ? obj.subTrack
-          : undefined,
-      blockedByTitle,
+          : aliasMapped.subTrack,
+      blockedByTitle: rawBlocked,
+      prerequisiteTitle: rawBlocked,
       notes: typeof obj.notes === 'string' ? obj.notes : undefined,
       dueDateLabel: typeof obj.dueDateLabel === 'string' ? obj.dueDateLabel : undefined,
       launchUrl: typeof obj.launchUrl === 'string' ? obj.launchUrl : undefined,
@@ -789,13 +847,11 @@ export function getPreExamTaperSuggestion(date: Date = new Date()): ExamProximit
   const daysToNov12 = Math.round((nov12Midnight - todayMidnight) / (1000 * 60 * 60 * 24));
   const daysToDec8 = Math.round((dec8Midnight - todayMidnight) / (1000 * 60 * 60 * 24));
 
-  const withinNov12 = daysToNov12 >= 0 && daysToNov12 <= 3;
   const withinDec8 = daysToDec8 >= 0 && daysToDec8 <= 3;
-  const isWithin3Days = withinNov12 || withinDec8;
+  const isWithin3Days = withinDec8;
 
-  const useNov12 = daysToNov12 >= 0 || daysToDec8 < 0;
-  const label = useNov12 ? 'Nov 12: Anatomy Exam' : 'Dec 8: Comp Exam';
-  const days = useNov12 ? daysToNov12 : daysToDec8;
+  const label = 'Dec 8–9: Comp Exam';
+  const days = daysToDec8;
   return {
     isWithin3Days,
     daysToNov12,
@@ -1194,7 +1250,7 @@ export function migrateRoadmapTracksToHouseTopology(
 const DEFAULT_OPEN_LIST_BACKLOG: SymmetryState['openListBacklog'] = [
   {
     id: 'open_1',
-    title: 'Lab Report #4 (Due Nov 24)',
+    title: 'Practicum Project Phase 1: Coding, Data Pipeline & Figures (Nov 25 – Dec 3)',
     presetType: 'PAPER_8',
     completedBlocks: 0,
     totalBlocks: 8,
@@ -1202,8 +1258,8 @@ const DEFAULT_OPEN_LIST_BACKLOG: SymmetryState['openListBacklog'] = [
     trackId: 'science',
     subTrack: '1A_INSTITUTIONAL',
     startupStep:
-      'Import raw measurement tables from Double Lab and plot baseline calibration curves.',
-    nextStepNote: 'Promotes after Practicum Proposal completes.',
+      'Initialize practicum analysis repository + run baseline dataset ingestion and figure script',
+    nextStepNote: 'Promotes to Focus #1 once Lab Report #4 is marked 100% complete.',
     cognitiveDemand: 'DEEP_SYNTHESIS',
     isAmbitionDrip: false,
     isSovereignDrip: false,
@@ -1218,6 +1274,7 @@ const DEFAULT_OPEN_LIST_BACKLOG: SymmetryState['openListBacklog'] = [
     blocksTotal: 8,
     trackId: 'writing',
     blockedByTitle: 'A Symmetrical Triptych: Edition 4 (Completion & Submissions)',
+    prerequisiteTitle: 'A Symmetrical Triptych: Edition 4 (Completion & Submissions)',
     notes: 'Intra-track prerequisite lock until Edition 4 submissions wrap.',
     startupStep:
       'Open worldbuilding ledger and draft 1 scene beat or premise paragraph.',
@@ -1230,16 +1287,33 @@ const DEFAULT_OPEN_LIST_BACKLOG: SymmetryState['openListBacklog'] = [
   },
   {
     id: 'open_3',
-    title: 'Practicum Project Phase 1: Coding, Data Pipeline & Figures',
-    presetType: 'PAPER_8',
+    title: 'Job Search Cover Letter Micro-Blocks (Late-Nov Weekend Pre-Warm)',
+    presetType: 'QUICK_2',
     completedBlocks: 0,
-    totalBlocks: 8,
-    blocksTotal: 8,
+    totalBlocks: 2,
+    blocksTotal: 2,
     trackId: 'science',
     subTrack: '1A_INSTITUTIONAL',
     startupStep:
-      'Initialize practicum analysis repository and run baseline dataset ingestion script.',
-    nextStepNote: 'Scheduled after Lab Report #4.',
+      'Open cover letter master template + tailor 1 institutional research paragraph',
+    nextStepNote: '2-block Late-Nov weekend pre-warm sprint.',
+    cognitiveDemand: 'DEEP_SYNTHESIS',
+    isAmbitionDrip: false,
+    isSovereignDrip: false,
+    category: 'institutional',
+  },
+  {
+    id: 'open_4',
+    title: 'Post-Comp Practicum 12-Page Paper & Final Slide Deck (Dec 10–16)',
+    presetType: 'CUSTOM',
+    completedBlocks: 0,
+    totalBlocks: 12,
+    blocksTotal: 12,
+    trackId: 'science',
+    subTrack: '1A_INSTITUTIONAL',
+    startupStep:
+      'Open 12-page practicum manuscript template + import Phase 1 figures and outline sections',
+    nextStepNote: 'Queued for Dec 10–16 post-Comp Exam sprint.',
     cognitiveDemand: 'DEEP_SYNTHESIS',
     isAmbitionDrip: false,
     isSovereignDrip: false,
@@ -1248,6 +1322,54 @@ const DEFAULT_OPEN_LIST_BACKLOG: SymmetryState['openListBacklog'] = [
 ];
 
 const DEFAULT_COMPLETED_DELIVERABLES: SymmetryState['completedDeliverablesLog'] = [
+  {
+    id: 'arch_win_post_anat_1',
+    title: 'Nov 12 Anatomy Exam Completed',
+    trackId: 'science',
+    presetType: 'CUSTOM',
+    totalBlocks: 7,
+    blockCount: 7,
+    blocksCompleted: 7,
+    date: '2026-11-12',
+    completedDate: '2026-11-12',
+    completedAt: '2026-11-12',
+  },
+  {
+    id: 'arch_win_post_anat_2',
+    title: 'Practicum Presentation Research Project Proposal (6/6)',
+    trackId: 'science',
+    presetType: 'CUSTOM',
+    totalBlocks: 6,
+    blockCount: 6,
+    blocksCompleted: 6,
+    date: '2026-11-12',
+    completedDate: '2026-11-12',
+    completedAt: '2026-11-12',
+  },
+  {
+    id: 'arch_win_post_anat_3',
+    title: 'IVIMBench v1.4.0 (Unified Ecosystem Bridge, NIfTI I/O, Gnomon & Forge)',
+    trackId: 'science',
+    presetType: 'CUSTOM',
+    totalBlocks: 6,
+    blockCount: 6,
+    blocksCompleted: 6,
+    date: '2026-11-11',
+    completedDate: '2026-11-11',
+    completedAt: '2026-11-11',
+  },
+  {
+    id: 'arch_win_post_anat_4',
+    title: 'conformalIVIM v1.1.0 (3D/4D NIfTI Volume Wrapper)',
+    trackId: 'science',
+    presetType: 'CUSTOM',
+    totalBlocks: 4,
+    blockCount: 4,
+    blocksCompleted: 4,
+    date: '2026-11-10',
+    completedDate: '2026-11-10',
+    completedAt: '2026-11-10',
+  },
   {
     id: 'arch_win_1',
     title: 'gm.averykarlin.org 5-Module Cockpit',
@@ -1345,7 +1467,7 @@ export function buildDefault90DayHistory(
     if (offset === 0) {
       entries.push({
         logicalDate: dateKey,
-        mode: 'TAPER',
+        mode: 'CRUISE',
         blocksCompleted: 0,
         inputBlocks: 0,
         outputBlocks: 0,
@@ -1429,42 +1551,21 @@ export const DEFAULT_DAILY_HISTORY: DailyHistoryEntry[] =
 
 const DEFAULT_BASELINE_SLOTS: BaselineBlock[] = [
   {
-    id: 'floor_fc_anatomy',
-    title: 'Anatomy Cards (Pre-Exam 50/50 Floor)',
-    category: 'FLASHCARDS_ANATOMY',
-    completed: false,
-    targetBlocks: 2,
-    blocksTarget: 2,
-    completedBlocks: 0,
-    bankedViaEarlyClearance: false,
-    reallocatedViaEarlyClearance: false,
-    reallocatedBlocksCount: 0,
-    earlyClearanceEligible: true,
-    supportsEarlyClearance: true,
-    lateNightBlocker: true,
-    startupStep:
-      'Open RemNote Anatomy Decks #1–#4 and clear first 15 due cards.',
-    trackId: 'science',
-    cognitiveDemand: 'MECHANICAL_RECALL',
-    launchUrl: 'https://www.remnote.com',
-    autoLaunchUrl: false,
-  },
-  {
     id: 'floor_fc_comp',
-    title: 'Comp Cards (250-card RemNote cap)',
+    title: '4b Comp Flashcard Sprints (250-card RemNote daily cap)',
     category: 'FLASHCARDS_COMP',
     completed: false,
-    targetBlocks: 2,
-    blocksTarget: 2,
+    targetBlocks: 4,
+    blocksTarget: 4,
     completedBlocks: 0,
     bankedViaEarlyClearance: false,
     reallocatedViaEarlyClearance: false,
     reallocatedBlocksCount: 0,
+    isMechanicalRecall: true,
     earlyClearanceEligible: true,
     supportsEarlyClearance: true,
     lateNightBlocker: true,
-    startupStep:
-      'Open RemNote Comp review queue (250-card cap) and clear first 20 due cards.',
+    startupStep: 'Open RemNote Comp queue + clear first 15 cards',
     trackId: 'science',
     cognitiveDemand: 'MECHANICAL_RECALL',
     launchUrl: 'https://www.remnote.com',
@@ -1472,7 +1573,7 @@ const DEFAULT_BASELINE_SLOTS: BaselineBlock[] = [
   },
   {
     id: 'floor_half_ch_read',
-    title: 'Half-Chapter Reading (28 half-chapters left)',
+    title: '2b Half-Chapter Comp Reading (28 half-chapters remaining)',
     category: 'READING',
     completed: false,
     targetBlocks: 2,
@@ -1481,17 +1582,18 @@ const DEFAULT_BASELINE_SLOTS: BaselineBlock[] = [
     bankedViaEarlyClearance: false,
     reallocatedViaEarlyClearance: false,
     reallocatedBlocksCount: 0,
+    isMechanicalRecall: false,
     earlyClearanceEligible: false,
     supportsEarlyClearance: false,
     lateNightBlocker: false,
     startupStep:
-      'Open assigned Comp half-chapter, read first 2 pages, and mark key equations.',
+      'Open next half-chapter PDF + read first page with margin highlights',
     trackId: 'science',
     cognitiveDemand: 'DEEP_SYNTHESIS',
   },
   {
     id: 'floor_half_ch_synth',
-    title: 'Half-Chapter Synthesis',
+    title: '1b Half-Chapter Note Synthesis & Equation Audit',
     category: 'SYNTHESIS',
     completed: false,
     targetBlocks: 1,
@@ -1500,11 +1602,12 @@ const DEFAULT_BASELINE_SLOTS: BaselineBlock[] = [
     bankedViaEarlyClearance: false,
     reallocatedViaEarlyClearance: false,
     reallocatedBlocksCount: 0,
+    isMechanicalRecall: false,
     earlyClearanceEligible: false,
     supportsEarlyClearance: false,
     lateNightBlocker: false,
     startupStep:
-      'Condense core equations and mechanism summary from today’s half-chapter.',
+      "Synthesize today's half-chapter equations & key mechanisms into Comp notes",
     trackId: 'science',
     cognitiveDemand: 'DEEP_SYNTHESIS',
   },
@@ -1513,75 +1616,15 @@ const DEFAULT_BASELINE_SLOTS: BaselineBlock[] = [
 const DEFAULT_SEVEN_DAY_PIPELINE: SymmetryState['pipelineDays'] = [
   {
     dayIndex: 1,
-    dayLabel: 'Tue, Nov 10',
-    loadMode: 'TAPER',
-    mode: 'TAPER_LAB',
-    modeAndAnchors: 'TAPER_LAB (Double Lab Incl. Lab #4)',
-    projectBlocksSummary: '3 proj blocks (2 Focus #1 + 1 Ambition Drip)',
-    deliverablesCompleted:
-      'Practicum Proposal (3/6) + Daily Ambition Drip: Symmetrical Triptych Ed. 4 (1b) (28 Half-Ch left)',
-    primaryDeliverable:
-      'Practicum Proposal (3/6) + Daily Ambition Drip: Symmetrical Triptych Ed. 4 (1b) (28 Half-Ch left)',
-    cruisePlus: false,
-    baseTargetBlocks: 10,
-    deductedBlocksFromExtension: 0,
-    completedBlocks: 0,
-    fixedEvent: 'LAB_2H',
-    fixedEventTimeLabel: 'Double Lab Incl. Lab #4',
-    earlyMorningAnchor: true,
-    isToday: true,
-  },
-  {
-    dayIndex: 2,
-    dayLabel: 'Wed, Nov 11',
-    loadMode: 'TAPER',
-    mode: 'TAPER_LAB',
-    modeAndAnchors: 'TAPER_LAB (Pre-Exam Final Polish)',
-    projectBlocksSummary: '3 proj blocks',
-    deliverablesCompleted:
-      'Practicum Proposal (6/6 — 100% DONE!) + Daily Ambition Drip (1b) (27 Half-Ch left)',
-    primaryDeliverable:
-      'Practicum Proposal (6/6 — 100% DONE!) + Daily Ambition Drip (1b) (27 Half-Ch left)',
-    cruisePlus: false,
-    baseTargetBlocks: 10,
-    deductedBlocksFromExtension: 0,
-    completedBlocks: 0,
-    fixedEvent: 'LAB_2H',
-    fixedEventTimeLabel: 'Pre-Exam Taper & Proposal Completion',
-    earlyMorningAnchor: true,
-    isToday: false,
-  },
-  {
-    dayIndex: 3,
-    dayLabel: 'Thu, Nov 12',
-    loadMode: 'TAPER',
-    mode: 'TAPER_LAB',
-    modeAndAnchors: 'TAPER_LAB (EXAM DAY — Ambition Drip Auto-Paused)',
-    projectBlocksSummary: '0 proj blocks',
-    deliverablesCompleted:
-      'Nov 12: Anatomy Exam + Licensing Practicum + Proposal Submitted!',
-    primaryDeliverable:
-      'Nov 12: Anatomy Exam + Licensing Practicum + Proposal Submitted!',
-    cruisePlus: false,
-    baseTargetBlocks: 7,
-    deductedBlocksFromExtension: 0,
-    completedBlocks: 0,
-    fixedEvent: 'LAB_2H',
-    fixedEventTimeLabel: 'EXAM DAY — Anatomy Exam + Proposal Due',
-    earlyMorningAnchor: true,
-    isToday: false,
-  },
-  {
-    dayIndex: 4,
     dayLabel: 'Fri, Nov 13',
     loadMode: 'CRUISE',
     mode: 'CRUISE',
-    modeAndAnchors: 'CRUISE (Evening Outing — 6:00 PM Early Shutdown)',
+    modeAndAnchors: 'CRUISE (Evening Outing — Early Shutdown (6:00 PM))',
     projectBlocksSummary: '4 proj blocks (3 Focus #1 + 1 Ambition Drip)',
     deliverablesCompleted:
-      'Lab Report #4 (3/8) + Daily Ambition Drip: Symmetrical Triptych Ed. 4 / K1C (1b) (26 left)',
+      'Lab Report #4 (3/8) + Daily Ambition Drip: Symmetrical Triptych Ed. 4 / K1C (1b) (28 Half-Ch left)',
     primaryDeliverable:
-      'Lab Report #4 (3/8) + Daily Ambition Drip: Symmetrical Triptych Ed. 4 / K1C (1b) (26 left)',
+      'Lab Report #4 (3/8) + Daily Ambition Drip: Symmetrical Triptych Ed. 4 / K1C (1b) (28 Half-Ch left)',
     cruisePlus: false,
     baseTargetBlocks: 11,
     deductedBlocksFromExtension: 0,
@@ -1590,76 +1633,145 @@ const DEFAULT_SEVEN_DAY_PIPELINE: SymmetryState['pipelineDays'] = [
     fixedEventTimeLabel: 'Evening Outing — 6:00 PM Early Shutdown',
     earlyEveningShutdownBadge: 'Early Shutdown (6:00 PM)',
     earlyMorningAnchor: false,
-    isToday: false,
+    isToday: true,
   },
   {
-    dayIndex: 5,
+    dayIndex: 2,
     dayLabel: 'Sat, Nov 14',
     loadMode: 'CRUISE',
     mode: 'CRUISE',
-    modeAndAnchors: 'CRUISE (Weekend Flow)',
+    modeAndAnchors: 'CRUISE (Weekend Sprint)',
     projectBlocksSummary: '5 proj blocks (4 Focus #1 + 1 Ambition Drip)',
     deliverablesCompleted:
-      'Lab Report #4 (7/8) + Daily Ambition Drip (1b) (25 left)',
+      'Lab Report #4 (7/8) + Daily Ambition Drip (1b) (27 Half-Ch left)',
     primaryDeliverable:
-      'Lab Report #4 (7/8) + Daily Ambition Drip (1b) (25 left)',
+      'Lab Report #4 (7/8) + Daily Ambition Drip (1b) (27 Half-Ch left)',
     cruisePlus: false,
     baseTargetBlocks: 12,
     deductedBlocksFromExtension: 0,
     completedBlocks: 0,
     fixedEvent: 'NONE',
-    fixedEventTimeLabel: 'Weekend Flow',
+    fixedEventTimeLabel: 'Weekend Sprint',
     earlyMorningAnchor: false,
     isToday: false,
   },
   {
-    dayIndex: 6,
+    dayIndex: 3,
     dayLabel: 'Sun, Nov 15',
     loadMode: 'CRUISE',
     mode: 'CRUISE',
-    modeAndAnchors: 'CRUISE (Weekend Flow)',
+    modeAndAnchors: 'CRUISE (Weekend Sprint)',
     projectBlocksSummary: '4 proj blocks (3 Focus #1 + 1 Ambition Drip)',
     deliverablesCompleted:
-      'Lab Report #4 (8/8 — 100% DONE!) + Practicum Phase 1 (2/8) + Ambition Drip (1b) (24 left)',
+      'Lab Report #4 (8/8 — 100% DONE!) + Practicum Phase 1 (2/8) + Ambition Drip (1b) (26 Half-Ch left)',
     primaryDeliverable:
-      'Lab Report #4 (8/8 — 100% DONE!) + Practicum Phase 1 (2/8) + Ambition Drip (1b) (24 left)',
+      'Lab Report #4 (8/8 — 100% DONE!) + Practicum Phase 1 (2/8) + Ambition Drip (1b) (26 Half-Ch left)',
     cruisePlus: false,
     baseTargetBlocks: 11,
     deductedBlocksFromExtension: 0,
     completedBlocks: 0,
     fixedEvent: 'NONE',
-    fixedEventTimeLabel: 'Weekend Flow',
+    fixedEventTimeLabel: 'Weekend Sprint',
+    earlyMorningAnchor: false,
+    isToday: false,
+  },
+  {
+    dayIndex: 4,
+    dayLabel: 'Mon, Nov 16',
+    loadMode: 'CRUISE',
+    mode: 'CRUISE',
+    modeAndAnchors: 'CRUISE (Standard Comp Sprint)',
+    projectBlocksSummary: '4 proj blocks (3 Focus #1 + 1 Ambition Drip)',
+    deliverablesCompleted:
+      'Practicum Phase 1 (5/8) + Daily Ambition Drip (1b) (25 Half-Ch left)',
+    primaryDeliverable:
+      'Practicum Phase 1 (5/8) + Daily Ambition Drip (1b) (25 Half-Ch left)',
+    cruisePlus: false,
+    baseTargetBlocks: 11,
+    deductedBlocksFromExtension: 0,
+    completedBlocks: 0,
+    fixedEvent: 'NONE',
+    fixedEventTimeLabel: 'Standard Comp Sprint',
+    earlyMorningAnchor: true,
+    isToday: false,
+  },
+  {
+    dayIndex: 5,
+    dayLabel: 'Tue, Nov 17',
+    loadMode: 'TAPER',
+    mode: 'TAPER_LAB',
+    modeAndAnchors: 'TAPER_LAB (09:00–11:00 AM Lab Shift)',
+    projectBlocksSummary: '2 proj blocks (1 Focus #1 + 1 Ambition Drip)',
+    deliverablesCompleted:
+      'Practicum Phase 1 (6/8) + Daily Ambition Drip (1b) (24 Half-Ch left)',
+    primaryDeliverable:
+      'Practicum Phase 1 (6/8) + Daily Ambition Drip (1b) (24 Half-Ch left)',
+    cruisePlus: false,
+    baseTargetBlocks: 9,
+    deductedBlocksFromExtension: 0,
+    completedBlocks: 0,
+    fixedEvent: 'LAB_2H',
+    fixedEventTimeLabel: '09:00 AM – 11:00 AM Lab Shift (~2h)',
+    earlyMorningAnchor: true,
+    isToday: false,
+  },
+  {
+    dayIndex: 6,
+    dayLabel: 'Wed, Nov 18',
+    loadMode: 'CRUISE',
+    mode: 'CRUISE',
+    modeAndAnchors: 'CRUISE (Comp + Practicum Sprint)',
+    projectBlocksSummary: '4 proj blocks (3 Focus #1 + 1 Ambition Drip)',
+    deliverablesCompleted:
+      'Practicum Phase 1 (8/8 — 100% DONE!) + Cover Letter Pre-Warm (1/2) + Ambition Drip (1b) (23 Half-Ch left)',
+    primaryDeliverable:
+      'Practicum Phase 1 (8/8 — 100% DONE!) + Cover Letter Pre-Warm (1/2) + Ambition Drip (1b) (23 Half-Ch left)',
+    cruisePlus: false,
+    baseTargetBlocks: 11,
+    deductedBlocksFromExtension: 0,
+    completedBlocks: 0,
+    fixedEvent: 'NONE',
     earlyMorningAnchor: false,
     isToday: false,
   },
   {
     dayIndex: 7,
-    dayLabel: 'Mon, Nov 16',
-    loadMode: 'CRUISE',
-    mode: 'CRUISE',
-    modeAndAnchors: 'CRUISE (Standard Shift)',
-    projectBlocksSummary: '4 proj blocks (3 Focus #1 + 1 Ambition Drip)',
+    dayLabel: 'Thu, Nov 19',
+    loadMode: 'TAPER',
+    mode: 'TAPER_LAB',
+    modeAndAnchors: 'TAPER_LAB (Practicum & Clinical Lab)',
+    projectBlocksSummary: '2 proj blocks (1 Focus #1 + 1 Ambition Drip)',
     deliverablesCompleted:
-      'Practicum Phase 1 (5/8) + Daily Ambition Drip (1b) (23 left)',
+      'Cover Letter Pre-Warm (2/2 — 100% DONE!) + Daily Ambition Drip (1b) (22 Half-Ch left)',
     primaryDeliverable:
-      'Practicum Phase 1 (5/8) + Daily Ambition Drip (1b) (23 left)',
+      'Cover Letter Pre-Warm (2/2 — 100% DONE!) + Daily Ambition Drip (1b) (22 Half-Ch left)',
     cruisePlus: false,
-    baseTargetBlocks: 11,
+    baseTargetBlocks: 9,
     deductedBlocksFromExtension: 0,
     completedBlocks: 0,
-    fixedEvent: 'NONE',
-    fixedEventTimeLabel: 'Standard Shift',
+    fixedEvent: 'LAB_2H',
+    fixedEventTimeLabel: '09:00 AM – 11:00 AM Lab Shift (~2h)',
     earlyMorningAnchor: true,
     isToday: false,
   },
 ];
 
 export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
-  version: '1.2.0',
+  version: '1.1.0',
+  appVersion: '1.1.0',
   profilePresetId: 'AVERY_DEFAULT',
   profileName: 'Architect Live Preset (Medical Physics, Authorship & Hardware)',
   logicalDayRolloverHour: 4,
   earlyEveningShutdownTime: '6:00 PM',
+  hasMorningAnchorTomorrow: false,
+  liveTelemetryConfig: {
+    icsFeedUrl: '',
+    pollIntervalMinutes: 15,
+    githubUsername: 'akarlin3',
+    githubToken: '',
+    githubAutoCreditEnabled: false,
+    creditedGithubEventIds: [],
+  },
   taskWeights: {
     heavyLabel: '2-Page Paper',
     heavyBlocks: 8,
@@ -1687,18 +1799,19 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
   stateBackups: [],
   audioSettings: DEFAULT_AUDIO_ENGINE_SETTINGS,
   upcomingMilestones: [
-    'Nov 12: Anatomy Exam',
-    'Dec 8–9: Comp Exam (28 half-chapters left)',
+    'Dec 8–9: Comp Exam (Primary Sprint)',
+    'Nov 24: Lab Report #4',
+    'Nov 25 – Dec 3: Practicum Phase 1 Coding & Figures',
   ],
   bandwidth: 'Sharp',
-  loadMode: 'TAPER',
+  loadMode: 'CRUISE',
   preExamTaperActive: false,
   cruisePlus: false,
-  customModeBlockAdjustment: 10, // 7 baseline floor + 3 discretionary (2 Focus #1 + 1 Daily Ambition Drip)
+  customModeBlockAdjustment: 11, // 7 Comp baseline floor + 4 discretionary (3 Focus #1 + 1 Daily Ambition Drip)
 
   surgeConsecutiveDays: 0,
   midDayResetCompletedToday: false,
-  fixedEvent: 'LAB_2H',
+  fixedEvent: 'NONE',
   flashcardsReviewedCount: 0,
   flashcardsDailyCap: 250,
   ankiConnectEnabled: false,
@@ -1710,25 +1823,30 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     {
       id: 'proj_1',
       slot: 1,
-      title: 'Practicum Presentation Research Project Proposal',
-      presetType: 'CUSTOM',
-      completedBlocks: 1,
-      totalBlocks: 6,
+      title: 'Lab Report #4 (Due Tue, Nov 24)',
+      presetType: 'PAPER_8',
+      completedBlocks: 0,
+      totalBlocks: 8,
+      blocksTotal: 8,
       trackId: 'science',
       subTrack: '1A_INSTITUTIONAL',
-      startupStep: 'Open proposal doc + draft 2 bullet points for current section',
-      nextStepNote: '1 / 6 blocks done • Due Thu Nov 12 (Track 1A Institutional Focus #1).',
+      startupStep:
+        'Open Lab Report #4 template + outline sections and import raw lab figures',
+      nextStepNote:
+        '0 / 8 blocks • Due Tue, Nov 24 (Track 1A Institutional Focus #1).',
       cognitiveDemand: 'DEEP_SYNTHESIS',
       isAmbitionDrip: false,
       isSovereignDrip: false,
       category: 'institutional',
       blockSubSteps: [
-        'Block 1/6 (Outline & Setup): Open proposal doc + lock clinical physics problem statement',
-        'Block 2/6 (Core Sections): Open proposal doc + draft 2 bullet points for Specific Aims',
-        'Block 3/6 (Core Sections): Open proposal doc + draft dataset & pipeline methodology',
-        'Block 4/6 (Figures/Equations): Specify quantitative validation metrics & figure layout',
-        'Block 5/6 (Figures/Equations): Draft milestone timeline & benchmark table',
-        'Block 6/6 (Final Polish): Read aloud, verify citations, and export submission PDF',
+        'Block 1/8 (Outline & Setup): Open Lab Report #4 template + outline sections and import raw lab figures',
+        'Block 2/8 (Calibration & Data): Verify raw measurement tables and generate calibration curves',
+        'Block 3/8 (Methods): Draft experimental setup, phantom geometry, and acquisition parameters',
+        'Block 4/8 (Quantitative Results): Tabulate uncertainty metrics and plot primary comparison figures',
+        'Block 5/8 (Error Analysis): Draft quantitative error propagation and physical artifact analysis',
+        'Block 6/8 (Discussion): Synthesize clinical physics implications against theoretical expectations',
+        'Block 7/8 (Abstract & Captions): Write concise abstract, conclusion bullets, and figure captions',
+        'Block 8/8 (Final Audit): Verify equations, units, and references; export submission-ready PDF',
       ],
     },
     {
@@ -1738,15 +1856,17 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
       presetType: 'CUSTOM',
       completedBlocks: 0,
       totalBlocks: 6,
+      blocksTotal: 6,
       trackId: 'writing',
-      startupStep: 'Open Edition 4 manuscript + revise 1 paragraph or submission field',
+      startupStep:
+        'Open Edition 4 manuscript + revise 1 paragraph or submission field',
       nextStepNote: 'Daily Ambition Drip Slot #2 (Track 2 Writing & Authorship).',
       cognitiveDemand: 'DEEP_SYNTHESIS',
       isAmbitionDrip: true,
       isSovereignDrip: true,
       category: 'sovereign',
       blockSubSteps: [
-        'Block 1/6 (Outline & Setup): Open Edition 4 manuscript + audit remaining revision notes',
+        'Block 1/6 (Outline & Setup): Open Edition 4 manuscript + revise 1 paragraph or submission field',
         'Block 2/6 (Core Sections): Revise Part I transition & tighten 1 core paragraph',
         'Block 3/6 (Core Sections): Revise Part II pacing & verify structural symmetry',
         'Block 4/6 (Core Sections): Polish Part III closing movement & line edits',
@@ -1761,15 +1881,17 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
       presetType: 'CUSTOM',
       completedBlocks: 0,
       totalBlocks: 3,
+      blocksTotal: 3,
       trackId: 'coding',
-      startupStep: 'Isolate 1 single 5m hotend, extruder, or belt diagnostic step',
+      startupStep:
+        'Isolate 1 single 5-minute hotend, extruder, or belt diagnostic step',
       nextStepNote: '0 / 3 blocks • Daily Ambition Drip Slot #3 (Sandbox 1 Hardware).',
       cognitiveDemand: 'MECHANICAL_RECALL',
       isAmbitionDrip: true,
       isSovereignDrip: true,
       category: 'sovereign',
       blockSubSteps: [
-        'Block 1/3 (Outline & Setup): Isolate 1 single 5m hotend, extruder, or belt diagnostic step',
+        'Block 1/3 (Outline & Setup): Isolate 1 single 5-minute hotend, extruder, or belt diagnostic step',
         'Block 2/3 (Core Sections): Clear filament path / tension belts and verify extrusion feed',
         'Block 3/3 (Final Polish): Run bed-level calibration mesh and verify first-layer test print',
       ],
@@ -1798,10 +1920,10 @@ export const DEFAULT_SYMMETRY_STATE: SymmetryState = {
     targetEndTimeMs: null,
     isRunning: false,
     activeBlockSourceId: 'proj_1',
-    activeTaskTitle: 'Practicum Presentation Research Project Proposal',
+    activeTaskTitle: 'Lab Report #4 (Due Tue, Nov 24)',
     activeTaskType: 'PROJECT',
     activeStartupPrompt:
-      'Block 2/6 (Core Sections): Open proposal doc + draft 2 bullet points for Specific Aims',
+      'Open Lab Report #4 template + outline sections and import raw lab figures',
     elasticMultiplier: 1.0,
     startupShrinkLevel: 1,
     chainedBlocksCount: 0,
@@ -2257,24 +2379,40 @@ export function generateSequentialChecklist(
     }
   }
 
-  // Enforce Late-Night Flashcard Blocker: never allow a FLASHCARDS block to sit at the final slot if a non-flashcard pending block exists
+  // Enforce Late-Night Flashcard Blocker: never allow a FLASHCARDS block to sit in the final 2 slots if non-flashcard pending blocks exist
   if (finalOrderedSpecs.length > 1) {
-    const lastIdx = finalOrderedSpecs.length - 1;
-    if (finalOrderedSpecs[lastIdx].taskType === 'FLASHCARDS') {
-      for (let j = lastIdx - 1; j >= 0; j--) {
+    const copy = [...finalOrderedSpecs];
+    for (let pass = 0; pass < 2; pass++) {
+      const lastIdx = copy.length - 1;
+      const secondLastIdx = copy.length - 2;
+      const flashcardInTail =
+        copy[lastIdx]?.taskType === 'FLASHCARDS' ||
+        (secondLastIdx >= 0 && copy[secondLastIdx]?.taskType === 'FLASHCARDS');
+      if (!flashcardInTail) break;
+
+      const searchStart =
+        copy[lastIdx]?.taskType === 'FLASHCARDS' ? lastIdx - 1 : secondLastIdx - 1;
+      let swapFromIdx = -1;
+      for (let j = searchStart; j >= 0; j--) {
         if (
-          !finalOrderedSpecs[j].completed &&
-          !finalOrderedSpecs[j].banked &&
-          finalOrderedSpecs[j].taskType !== 'FLASHCARDS'
+          !copy[j].completed &&
+          !copy[j].banked &&
+          copy[j].taskType !== 'FLASHCARDS'
         ) {
-          const copy = [...finalOrderedSpecs];
-          const [nonFc] = copy.splice(j, 1);
-          copy.push(nonFc);
-          finalOrderedSpecs = copy;
+          swapFromIdx = j;
           break;
         }
       }
+      if (swapFromIdx === -1) break;
+      const [nonFc] = copy.splice(swapFromIdx, 1);
+      // Keep Ambition Drip capstone at the very end if already positioned at the tail
+      if (copy.length > 0 && copy[copy.length - 1].isAmbitionDripCapstone) {
+        copy.splice(copy.length - 1, 0, nonFc);
+      } else {
+        copy.push(nonFc);
+      }
     }
+    finalOrderedSpecs = copy;
   }
 
   const workSpecs: RawWorkSpec[] = finalOrderedSpecs.map((spec, idx) => ({
@@ -2644,7 +2782,18 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
     '```json',
     JSON.stringify(
       (() => {
-        const clean = { ...(state as unknown as Record<string, unknown>) };
+        const clean: Record<string, unknown> = {
+          ...(state as unknown as Record<string, unknown>),
+          version: state.version || '1.1.0',
+          appVersion: state.appVersion || '1.1.0',
+          liveTelemetryConfig: state.liveTelemetryConfig || {
+            icsFeedUrl: '',
+            pollIntervalMinutes: 15,
+            githubUsername: '',
+            githubAutoCreditEnabled: false,
+            creditedGithubEventIds: [],
+          },
+        };
         delete clean.proModeUnlocked;
         delete clean.proPasswordToken;
         delete clean.geminiApiKey;
@@ -2659,10 +2808,13 @@ export function serializeToStateMarkdown(state: SymmetryState): string {
   return lines.join('\n');
 }
 
-export function parseFromStateInput(rawText: string): SymmetryState {
+export function parseFromStateInput(
+  rawText: string,
+  fallbackState: SymmetryState = DEFAULT_SYMMETRY_STATE
+): SymmetryState {
   const trimmed = rawText.trim();
   const jsonBlockMatch = trimmed.match(/```json\s*([\s\S]*?)```/);
-  let baseState: SymmetryState = DEFAULT_SYMMETRY_STATE;
+  let baseState: SymmetryState = fallbackState;
   let parsedJsonSuccessfully = false;
 
   if (jsonBlockMatch || trimmed.startsWith('{')) {
@@ -2741,11 +2893,16 @@ export function parseFromStateInput(rawText: string): SymmetryState {
         const obj = item as Partial<import('../types/symmetry').OpenListItem> & {
           blocksDone?: number;
         };
+        const normalizedAlias = normalizeTrackAlias(
+          obj.trackId,
+          obj.subTrack,
+          Boolean(obj.isAmbitionDrip || obj.isSovereignDrip)
+        );
         const isDrip = Boolean(
           obj.isAmbitionDrip ||
             obj.isSovereignDrip ||
             obj.category === 'sovereign' ||
-            obj.subTrack === '1B_INDEPENDENT' ||
+            normalizedAlias.subTrack === '1B_INDEPENDENT' ||
             /sovereign\s+drip|ambition\s+drip/i.test(String(obj.title || ''))
         );
         const totalBlocks =
@@ -2754,10 +2911,11 @@ export function parseFromStateInput(rawText: string): SymmetryState {
             : typeof obj.blocksTotal === 'number'
             ? obj.blocksTotal
             : 4;
-        const rawTrackId = obj.trackId === 'personal' ? 'science' : obj.trackId;
         const blockedByTitle =
           typeof obj.blockedByTitle === 'string' && obj.blockedByTitle.trim()
             ? obj.blockedByTitle.trim()
+            : typeof obj.prerequisiteTitle === 'string' && obj.prerequisiteTitle.trim()
+            ? obj.prerequisiteTitle.trim()
             : undefined;
         return {
           id: obj.id || `proj_open_${idx + 1}`,
@@ -2771,12 +2929,10 @@ export function parseFromStateInput(rawText: string): SymmetryState {
               : 0,
           totalBlocks,
           blocksTotal: totalBlocks,
-          trackId: rawTrackId || (isDrip ? 'writing' : 'science'),
-          subTrack:
-            obj.subTrack === '1A_INSTITUTIONAL' || obj.subTrack === '1B_INDEPENDENT'
-              ? obj.subTrack
-              : undefined,
+          trackId: normalizedAlias.trackId || (isDrip ? 'writing' : 'science'),
+          subTrack: normalizedAlias.subTrack,
           blockedByTitle,
+          prerequisiteTitle: blockedByTitle,
           notes: typeof obj.notes === 'string' ? obj.notes : undefined,
           startupStep:
             obj.startupStep ||
@@ -2846,7 +3002,12 @@ export function parseFromStateInput(rawText: string): SymmetryState {
             ? b.supportsEarlyClearance
             : b.category === 'FLASHCARDS_ANATOMY' ||
               b.category === 'FLASHCARDS_COMP';
-        const rawTrackId = b.trackId === 'personal' ? 'science' : b.trackId;
+        const normalizedBaseTrack = normalizeTrackAlias(b.trackId, undefined, false);
+        const isMechRecall =
+          typeof b.isMechanicalRecall === 'boolean'
+            ? b.isMechanicalRecall
+            : b.category === 'FLASHCARDS_ANATOMY' ||
+              b.category === 'FLASHCARDS_COMP';
         return {
           id: b.id || `floor_slot_${idx + 1}`,
           title: b.title || `Baseline Slot #${idx + 1}`,
@@ -2854,6 +3015,7 @@ export function parseFromStateInput(rawText: string): SymmetryState {
           completed: Boolean(b.completed),
           targetBlocks: target,
           blocksTarget: target,
+          isMechanicalRecall: isMechRecall,
           completedBlocks:
             typeof b.completedBlocks === 'number'
               ? b.completedBlocks
@@ -2876,7 +3038,7 @@ export function parseFromStateInput(rawText: string): SymmetryState {
             b.startupStep ||
             b.startupPrompt ||
             'Open baseline material and complete 5-minute startup step.',
-          trackId: rawTrackId || 'science',
+          trackId: normalizedBaseTrack.trackId || 'science',
           cognitiveDemand: b.cognitiveDemand,
           launchUrl: typeof b.launchUrl === 'string' ? b.launchUrl : undefined,
           autoLaunchUrl: Boolean(b.autoLaunchUrl),
@@ -2902,8 +3064,12 @@ export function parseFromStateInput(rawText: string): SymmetryState {
           idx: number
         ) => {
           const slotNum = ((idx + 1) as 1 | 2 | 3);
-          const rawTrackId =
-            rawProj.trackId === 'personal' ? 'science' : rawProj.trackId;
+          const normalizedProjAlias = normalizeTrackAlias(
+            rawProj.trackId,
+            rawProj.subTrack,
+            Boolean(rawProj.isAmbitionDrip || rawProj.isSovereignDrip)
+          );
+          const rawTrackId = normalizedProjAlias.trackId;
           const isDrip =
             slotNum === 1 &&
             rawProj.isAmbitionDrip === undefined &&
@@ -2915,7 +3081,7 @@ export function parseFromStateInput(rawText: string): SymmetryState {
                     rawProj.isSovereignDrip ||
                     rawProj.category === 'sovereign' ||
                     (slotNum !== 1 &&
-                      (rawProj.subTrack === '1B_INDEPENDENT' ||
+                      (normalizedProjAlias.subTrack === '1B_INDEPENDENT' ||
                         rawTrackId === 'writing' ||
                         rawTrackId === 'coding' ||
                         rawTrackId === 'music' ||
@@ -2935,14 +3101,12 @@ export function parseFromStateInput(rawText: string): SymmetryState {
               : 0;
           const resolvedTrackId = rawTrackId || (isDrip ? 'writing' : 'science');
           const resolvedSubTrack =
-            rawProj.subTrack === '1A_INSTITUTIONAL' ||
-            rawProj.subTrack === '1B_INDEPENDENT'
-              ? rawProj.subTrack
-              : resolvedTrackId === 'science'
+            normalizedProjAlias.subTrack ||
+            (resolvedTrackId === 'science'
               ? isDrip
                 ? '1B_INDEPENDENT'
                 : '1A_INSTITUTIONAL'
-              : undefined;
+              : undefined);
           return {
             id: rawProj.id || `proj_${slotNum}`,
             slot: slotNum,
@@ -3123,9 +3287,52 @@ export function parseFromStateInput(rawText: string): SymmetryState {
           }
         : DEFAULT_HOUSE_FOUNDATION;
 
+    const resolvedPresetId =
+      parsed.profilePresetId || DEFAULT_SYMMETRY_STATE.profilePresetId;
+    const isParsedArchitect = resolvedPresetId === 'AVERY_DEFAULT';
+    const rawTelemetry = parsed.liveTelemetryConfig || {};
+    const resolvedTelemetryConfig: import('../types/symmetry').LiveTelemetryConfig = {
+      icsFeedUrl:
+        typeof rawTelemetry.icsFeedUrl === 'string' ? rawTelemetry.icsFeedUrl : '',
+      pollIntervalMinutes:
+        typeof rawTelemetry.pollIntervalMinutes === 'number' &&
+        rawTelemetry.pollIntervalMinutes > 0
+          ? Math.max(1, Math.round(rawTelemetry.pollIntervalMinutes))
+          : 15,
+      lastCalendarSyncAt:
+        typeof rawTelemetry.lastCalendarSyncAt === 'string'
+          ? rawTelemetry.lastCalendarSyncAt
+          : undefined,
+      githubUsername:
+        typeof rawTelemetry.githubUsername === 'string'
+          ? rawTelemetry.githubUsername
+          : isParsedArchitect
+          ? 'akarlin3'
+          : '',
+      githubToken:
+        typeof rawTelemetry.githubToken === 'string' && rawTelemetry.githubToken
+          ? rawTelemetry.githubToken
+          : undefined,
+      githubAutoCreditEnabled: Boolean(rawTelemetry.githubAutoCreditEnabled),
+      lastGithubSyncAt:
+        typeof rawTelemetry.lastGithubSyncAt === 'string'
+          ? rawTelemetry.lastGithubSyncAt
+          : undefined,
+      creditedGithubEventIds: Array.isArray(rawTelemetry.creditedGithubEventIds)
+        ? rawTelemetry.creditedGithubEventIds.map((id: unknown) => String(id))
+        : [],
+    };
+
     baseState = {
       ...DEFAULT_SYMMETRY_STATE,
       ...parsed,
+      version: typeof parsed.version === 'string' ? parsed.version : '1.1.0',
+      appVersion: typeof parsed.appVersion === 'string' ? parsed.appVersion : '1.1.0',
+      hasMorningAnchorTomorrow:
+        typeof parsed.hasMorningAnchorTomorrow === 'boolean'
+          ? parsed.hasMorningAnchorTomorrow
+          : Boolean(resolvedPipelineDays?.[1]?.earlyMorningAnchor),
+      liveTelemetryConfig: resolvedTelemetryConfig,
       loadMode: resolvedLoadMode,
       discretionaryBlocksCompletedToday: resolvedDiscretionaryBlocks,
       dailyAmbitionDrip: resolvedDailyAmbitionDrip,
@@ -3137,7 +3344,7 @@ export function parseFromStateInput(rawText: string): SymmetryState {
         typeof parsed.ankiConnectUrl === 'string' && parsed.ankiConnectUrl.trim()
           ? parsed.ankiConnectUrl.trim()
           : 'http://127.0.0.1:8765',
-      profilePresetId: parsed.profilePresetId || DEFAULT_SYMMETRY_STATE.profilePresetId,
+      profilePresetId: resolvedPresetId,
       profileName: parsed.profileName || DEFAULT_SYMMETRY_STATE.profileName,
       energyBandwidth:
         parsed.energyBandwidth === 'SHARP' ||
@@ -3544,4 +3751,110 @@ export function validateAndRestoreStateSnapshot(
   };
 }
 
+/**
+ * 1-Click Architect Mode migration (`v1.1.0` Post-Anatomy Dec 8–9 Comp Exam Sprint).
+ * Updates Daily Core Baseline (4b Comp + 2b Reading + 1b Synthesis), Closed List
+ * (Lab Report #4 Focus #1 + Triptych Ed. 4 + K1C), Open List Backlog (with Novel
+ * prerequisite gate), Upcoming Milestones, 7-Day Pipeline, and Completed Deliverables
+ * Archive while preserving historical `todayBlockLog`, `dailyHistory`, `roadmapTracks`
+ * credits, `creditedGithubEventIds`, and Evening Recharge Sticky `[X / 3]` counters.
+ */
+export function syncArchitectBaselineToPostAnatomy(
+  currentState: SymmetryState
+): SymmetryState {
+  const freshBaseline: BaselineBlock[] = JSON.parse(
+    JSON.stringify(DEFAULT_SYMMETRY_STATE.baselineBlocks)
+  );
+  const freshQueue: ProjectItem[] = JSON.parse(
+    JSON.stringify(DEFAULT_SYMMETRY_STATE.projectQueue)
+  );
+  const freshBacklog: SymmetryState['openListBacklog'] = JSON.parse(
+    JSON.stringify(DEFAULT_SYMMETRY_STATE.openListBacklog)
+  );
+  const freshPipeline: SymmetryState['pipelineDays'] = JSON.parse(
+    JSON.stringify(DEFAULT_SYMMETRY_STATE.pipelineDays)
+  );
 
+  // Merge completed deliverables without duplicating titles or wiping user entries
+  const existingDeliverables = Array.isArray(currentState.completedDeliverablesLog)
+    ? currentState.completedDeliverablesLog
+    : [];
+  const defaultDeliverables = DEFAULT_SYMMETRY_STATE.completedDeliverablesLog || [];
+  const seenTitles = new Set<string>();
+  const mergedDeliverables: import('../types/symmetry').CompletedDeliverableEntry[] = [];
+  for (const item of [...defaultDeliverables, ...existingDeliverables]) {
+    const key = item.title.trim().toLowerCase();
+    if (!seenTitles.has(key)) {
+      seenTitles.add(key);
+      mergedDeliverables.push({ ...item });
+    }
+  }
+
+  const existingTelemetry = currentState.liveTelemetryConfig;
+  const nextTelemetry: import('../types/symmetry').LiveTelemetryConfig = {
+    icsFeedUrl: existingTelemetry?.icsFeedUrl ?? '',
+    pollIntervalMinutes: existingTelemetry?.pollIntervalMinutes ?? 15,
+    lastCalendarSyncAt: existingTelemetry?.lastCalendarSyncAt,
+    githubUsername: existingTelemetry?.githubUsername?.trim() || 'akarlin3',
+    githubToken: existingTelemetry?.githubToken,
+    githubAutoCreditEnabled: Boolean(existingTelemetry?.githubAutoCreditEnabled),
+    lastGithubSyncAt: existingTelemetry?.lastGithubSyncAt,
+    creditedGithubEventIds: Array.isArray(existingTelemetry?.creditedGithubEventIds)
+      ? [...existingTelemetry.creditedGithubEventIds]
+      : [],
+  };
+
+  const backups = pushStateBackup(
+    currentState,
+    'PRESET_SWITCH',
+    'Pre-Sync Backup (Before Post-Anatomy v1.1.0 Baseline Shift)'
+  );
+
+  const primaryProject = freshQueue[0];
+  const nextState: SymmetryState = {
+    ...currentState,
+    version: '1.1.0',
+    appVersion: '1.1.0',
+    profilePresetId: 'AVERY_DEFAULT',
+    profileName: DEFAULT_SYMMETRY_STATE.profileName,
+    upcomingMilestones: [...(DEFAULT_SYMMETRY_STATE.upcomingMilestones || [])],
+    loadMode: 'CRUISE',
+    preExamTaperActive: false,
+    cruisePlus: false,
+    customModeBlockAdjustment: 11,
+    fixedEvent: 'NONE',
+    hasMorningAnchorTomorrow: Boolean(freshPipeline[1]?.earlyMorningAnchor),
+    liveTelemetryConfig: nextTelemetry,
+    baselineBlocks: freshBaseline,
+    baselineSlots: freshBaseline,
+    projectQueue: freshQueue,
+    projectBacklog: freshBacklog,
+    openListBacklog: freshBacklog,
+    openList: normalizeOpenListArray(freshBacklog),
+    completedDeliverablesLog: mergedDeliverables,
+    completedDeliverablesArchive: mergedDeliverables,
+    pipelineDays: freshPipeline,
+    sevenDayPipeline: freshPipeline,
+    timer: currentState.timer.isRunning
+      ? currentState.timer
+      : {
+          ...currentState.timer,
+          mode: 'WORK_20M',
+          workStage: 'IGNITION_5M',
+          secondsLeft: 300,
+          activeBlockSourceId: primaryProject?.id || 'proj_1',
+          activeTaskTitle: primaryProject?.title || 'Lab Report #4 (Due Tue, Nov 24)',
+          activeTaskType: 'PROJECT',
+          activeStartupPrompt:
+            primaryProject?.startupStep ||
+            'Open Lab Report #4 template + outline sections and import raw lab figures',
+        },
+    stateBackups: backups,
+    lastUpdated: Date.now(),
+  };
+
+  return {
+    ...nextState,
+    dailyHistory: syncTodayIntoDailyHistory(nextState),
+  };
+}

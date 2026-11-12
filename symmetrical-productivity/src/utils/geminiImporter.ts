@@ -352,9 +352,62 @@ export function parseGeminiResponseToStatePatch(
         );
         appliedChanges.push(...schemaApplied.appliedChanges);
 
+        const rawParsedTelemetry =
+          parsedJson.liveTelemetryConfig &&
+          typeof parsedJson.liveTelemetryConfig === 'object'
+            ? (parsedJson.liveTelemetryConfig as Record<string, unknown>)
+            : null;
+        const mergedLiveTelemetry: import('../types/symmetry').LiveTelemetryConfig = {
+          icsFeedUrl:
+            typeof rawParsedTelemetry?.icsFeedUrl === 'string'
+              ? rawParsedTelemetry.icsFeedUrl
+              : workingState.liveTelemetryConfig?.icsFeedUrl ?? '',
+          pollIntervalMinutes:
+            typeof rawParsedTelemetry?.pollIntervalMinutes === 'number' &&
+            rawParsedTelemetry.pollIntervalMinutes > 0
+              ? Math.max(1, Math.round(rawParsedTelemetry.pollIntervalMinutes))
+              : workingState.liveTelemetryConfig?.pollIntervalMinutes ?? 15,
+          lastCalendarSyncAt:
+            typeof rawParsedTelemetry?.lastCalendarSyncAt === 'string'
+              ? rawParsedTelemetry.lastCalendarSyncAt
+              : workingState.liveTelemetryConfig?.lastCalendarSyncAt,
+          githubUsername:
+            typeof rawParsedTelemetry?.githubUsername === 'string'
+              ? rawParsedTelemetry.githubUsername
+              : workingState.liveTelemetryConfig?.githubUsername ?? '',
+          githubToken:
+            typeof rawParsedTelemetry?.githubToken === 'string'
+              ? rawParsedTelemetry.githubToken
+              : workingState.liveTelemetryConfig?.githubToken,
+          githubAutoCreditEnabled:
+            typeof rawParsedTelemetry?.githubAutoCreditEnabled === 'boolean'
+              ? rawParsedTelemetry.githubAutoCreditEnabled
+              : Boolean(workingState.liveTelemetryConfig?.githubAutoCreditEnabled),
+          lastGithubSyncAt:
+            typeof rawParsedTelemetry?.lastGithubSyncAt === 'string'
+              ? rawParsedTelemetry.lastGithubSyncAt
+              : workingState.liveTelemetryConfig?.lastGithubSyncAt,
+          creditedGithubEventIds: Array.isArray(
+            rawParsedTelemetry?.creditedGithubEventIds
+          )
+            ? rawParsedTelemetry!.creditedGithubEventIds.map((id) => String(id))
+            : workingState.liveTelemetryConfig?.creditedGithubEventIds ?? [],
+        };
+
         const mergedCandidate: Record<string, unknown> = {
           ...schemaApplied.nextState,
           ...parsedJson,
+          version:
+            typeof parsedJson.version === 'string' ? parsedJson.version : '1.1.0',
+          appVersion:
+            typeof parsedJson.appVersion === 'string'
+              ? parsedJson.appVersion
+              : '1.1.0',
+          hasMorningAnchorTomorrow:
+            typeof parsedJson.hasMorningAnchorTomorrow === 'boolean'
+              ? parsedJson.hasMorningAnchorTomorrow
+              : workingState.hasMorningAnchorTomorrow,
+          liveTelemetryConfig: mergedLiveTelemetry,
           loadMode: schemaApplied.nextState.loadMode,
           cruisePlus: schemaApplied.nextState.cruisePlus,
           surgeConsecutiveDays: schemaApplied.nextState.surgeConsecutiveDays,
@@ -457,6 +510,9 @@ export function parseGeminiResponseToStatePatch(
 
         const syncedRestored: SymmetryState = {
           ...restored,
+          version: restored.version || '1.1.0',
+          appVersion: restored.appVersion || '1.1.0',
+          liveTelemetryConfig: restored.liveTelemetryConfig || mergedLiveTelemetry,
           dailyHistory: syncTodayIntoDailyHistory(restored),
         };
         return {
@@ -1337,6 +1393,39 @@ export function parseGeminiResponseToStatePatch(
     );
   }
 
+  const appVerMatch = mdText.match(
+    /App Version[^\n]*?:\s*`?([0-9]+\.[0-9]+\.[0-9]+)`?/i
+  );
+  if (appVerMatch) {
+    workingState.appVersion = appVerMatch[1];
+    workingState.version = appVerMatch[1];
+    matchedAnyStructure = true;
+  }
+
+  const telemetryHeaderMatch = mdText.match(
+    /Live Telemetry Bridges\*\*:\s*Calendar Feed[^\n]*?Poll:\s*`?(\d+)m`?,\s*Morning Anchor Lock:\s*`?(Yes|No)`?\)[^\n]*?GitHub Bridge\s*`?(?:@([a-zA-Z0-9_-]+)\s*\((Auto-Credit|1-Tap)\)|Unconfigured)`?/i
+  );
+  if (telemetryHeaderMatch) {
+    const pollMins = Math.max(1, Number(telemetryHeaderMatch[1]) || 15);
+    const morningLock = telemetryHeaderMatch[2].toLowerCase() === 'yes';
+    const ghUser = telemetryHeaderMatch[3] || '';
+    const ghAuto = (telemetryHeaderMatch[4] || '').toLowerCase() === 'auto-credit';
+    workingState.hasMorningAnchorTomorrow = morningLock;
+    workingState.liveTelemetryConfig = {
+      ...(workingState.liveTelemetryConfig || {
+        icsFeedUrl: '',
+        pollIntervalMinutes: 15,
+        githubUsername: '',
+        githubAutoCreditEnabled: false,
+        creditedGithubEventIds: [],
+      }),
+      pollIntervalMinutes: pollMins,
+      githubUsername: ghUser,
+      githubAutoCreditEnabled: ghAuto,
+    };
+    matchedAnyStructure = true;
+  }
+
   if (!matchedAnyStructure) {
     throw new Error(
       'Could not detect a JSON sync block, state.md headers, 7-Day Pipeline table, Sequential Checklist ([20m | ... work left]), or Load Mode in the pasted text.'
@@ -1363,6 +1452,15 @@ export function parseGeminiResponseToStatePatch(
 
   const syncedState: SymmetryState = {
     ...workingState,
+    version: workingState.version || '1.1.0',
+    appVersion: workingState.appVersion || '1.1.0',
+    liveTelemetryConfig: workingState.liveTelemetryConfig || {
+      icsFeedUrl: '',
+      pollIntervalMinutes: 15,
+      githubUsername: '',
+      githubAutoCreditEnabled: false,
+      creditedGithubEventIds: [],
+    },
     dailyHistory: syncTodayIntoDailyHistory(workingState),
   };
 

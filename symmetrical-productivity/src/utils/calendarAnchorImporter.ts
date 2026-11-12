@@ -12,7 +12,7 @@ export interface ParsedCalendarEvent {
   isFixedAnchor90mPlus: boolean;
   suggestedAnchorType: FixedEventType;
   isEveningShutdownTrigger: boolean; // Starts between 17:30 (5:30 PM) and 21:00 (9:00 PM)
-  isEarlyMorning: boolean; // Starts before 10:30 AM
+  isEarlyMorning: boolean; // Starts before 10:00 AM
 }
 
 export interface CalendarAnchorDayPreview {
@@ -219,7 +219,7 @@ function parseIcsContent(
               isFixedAnchor90mPlus: is90mPlus,
               suggestedAnchorType: classifyAnchorType(cleanSummary),
               isEveningShutdownTrigger: eveningTrigger,
-              isEarlyMorning: startDec <= 10.5,
+              isEarlyMorning: startDec < 10.0,
             });
           }
         }
@@ -471,7 +471,7 @@ function parsePlainScheduleText(
       isFixedAnchor90mPlus: is90mPlus,
       suggestedAnchorType: classifyAnchorType(summaryClean || line),
       isEveningShutdownTrigger: eveningTrigger,
-      isEarlyMorning: startDec <= 10.5,
+      isEarlyMorning: startDec < 10.0,
     });
   }
 

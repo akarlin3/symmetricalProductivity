@@ -29,12 +29,18 @@ interface InteractivePipelineTableProps {
   state: SymmetryState;
   onUpdateDay: (dayIndex: number, patch: Partial<PipelineDay>) => void;
   compact?: boolean;
+  onSyncLiveTelemetry?: () => void;
+  onOpenTelemetryModal?: () => void;
+  telemetrySyncing?: boolean;
 }
 
 export const InteractivePipelineTable: React.FC<InteractivePipelineTableProps> = ({
   state,
   onUpdateDay,
   compact = false,
+  onSyncLiveTelemetry,
+  onOpenTelemetryModal,
+  telemetrySyncing = false,
 }) => {
   const [breakerNotice, setBreakerNotice] = useState<string | null>(null);
   const [importerOpen, setImporterOpen] = useState(false);
@@ -224,27 +230,60 @@ export const InteractivePipelineTable: React.FC<InteractivePipelineTableProps> =
 
   return (
     <div className="space-y-2.5">
-      {/* Toolbar Header with Calendar .ics & Schedule Text Anchor Importer Trigger */}
+      {/* Toolbar Header with Sync Live Telemetry Pill + Calendar .ics & Schedule Text Anchor Importer Trigger */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-[11px] font-mono text-slate-400">
           7-Day Load Modes &amp; Fixed Event Anchors
         </span>
-        <button
-          id="btn-open-calendar-anchor-importer"
-          type="button"
-          onClick={() => {
-            triggerHaptic([10]);
-            setImporterOpen((prev) => !prev);
-          }}
-          className={`px-3 py-1 rounded-full border font-mono text-[11px] flex items-center gap-1.5 transition cursor-pointer ${
-            importerOpen
-              ? 'bg-sky-500/20 border-sky-400/50 text-sky-100'
-              : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-sky-300'
-          }`}
-        >
-          <Upload className="w-3 h-3" />
-          <span>{importerOpen ? 'Close Calendar Importer' : 'Import Calendar / Anchors'}</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {onSyncLiveTelemetry && (
+            <button
+              id="btn-sync-live-telemetry-table"
+              type="button"
+              disabled={telemetrySyncing}
+              onClick={() => {
+                triggerHaptic([12]);
+                onSyncLiveTelemetry();
+              }}
+              className="px-3 py-1 rounded-full bg-cyan-500/15 hover:bg-cyan-500/25 disabled:opacity-50 border border-cyan-400/40 font-mono text-[11px] text-cyan-200 flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <RefreshCw
+                className={`w-3 h-3 ${telemetrySyncing ? 'animate-spin' : ''}`}
+              />
+              <span>{telemetrySyncing ? 'Syncing...' : 'Sync Live Telemetry'}</span>
+            </button>
+          )}
+          {onOpenTelemetryModal && (
+            <button
+              id="btn-open-live-telemetry-modal-table"
+              type="button"
+              onClick={() => {
+                triggerHaptic([10]);
+                onOpenTelemetryModal();
+              }}
+              className="px-3 py-1 rounded-full bg-slate-900 hover:bg-slate-800 border border-slate-700 font-mono text-[11px] text-emerald-300 flex items-center gap-1.5 transition cursor-pointer"
+            >
+              <Link2 className="w-3 h-3" />
+              <span>Live Telemetry Setup</span>
+            </button>
+          )}
+          <button
+            id="btn-open-calendar-anchor-importer"
+            type="button"
+            onClick={() => {
+              triggerHaptic([10]);
+              setImporterOpen((prev) => !prev);
+            }}
+            className={`px-3 py-1 rounded-full border font-mono text-[11px] flex items-center gap-1.5 transition cursor-pointer ${
+              importerOpen
+                ? 'bg-sky-500/20 border-sky-400/50 text-sky-100'
+                : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-sky-300'
+            }`}
+          >
+            <Upload className="w-3 h-3" />
+            <span>{importerOpen ? 'Close Calendar Importer' : 'Import Calendar / Anchors'}</span>
+          </button>
+        </div>
       </div>
 
       {/* Inline Calendar .ics & Schedule Text Anchor Importer Panel */}
@@ -615,6 +654,9 @@ interface PipelineDrawerProps {
   onOpenStateModal: () => void;
   onUnlockArchitectMode?: (source: string) => void;
   apiKeyVersion: number;
+  onSyncLiveTelemetry?: () => void;
+  onOpenTelemetryModal?: () => void;
+  telemetrySyncing?: boolean;
 }
 
 export const PipelineDrawer: React.FC<PipelineDrawerProps> = ({
@@ -630,6 +672,9 @@ export const PipelineDrawer: React.FC<PipelineDrawerProps> = ({
   onOpenStateModal,
   onUnlockArchitectMode,
   apiKeyVersion,
+  onSyncLiveTelemetry,
+  onOpenTelemetryModal,
+  telemetrySyncing = false,
 }) => {
   if (!isOpen) return null;
 
@@ -644,24 +689,43 @@ export const PipelineDrawer: React.FC<PipelineDrawerProps> = ({
     >
       <div className="flex-1 flex flex-col justify-between overflow-y-auto p-4 sm:p-6">
         <div className="space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-4">
             <div>
               <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
                 <Calendar className="w-5 h-5 text-sky-400" />
                 <span>Interactive 7-Day Master Pipeline Table</span>
               </h2>
               <p className="text-xs text-slate-400 mt-0.5">
-                Click any day row to cycle Load Mode (Cruise / Surge / Taper), import `.ics` or schedule text anchors, and enforce the 2-day Surge circuit breaker.
+                Click any day row to cycle Load Mode (Cruise / Surge / Taper), sync live Calendar &amp; GitHub telemetry, and enforce the 2-day Surge circuit breaker.
               </p>
             </div>
-            <button
-              id="btn-close-pipeline-drawer"
-              type="button"
-              onClick={onClose}
-              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-2">
+              {onSyncLiveTelemetry && (
+                <button
+                  id="btn-sync-live-telemetry-drawer"
+                  type="button"
+                  disabled={telemetrySyncing}
+                  onClick={() => {
+                    triggerHaptic([12]);
+                    onSyncLiveTelemetry();
+                  }}
+                  className="px-3 py-1.5 rounded-full bg-cyan-500/15 hover:bg-cyan-500/25 disabled:opacity-50 border border-cyan-400/45 font-mono text-xs text-cyan-200 flex items-center gap-1.5 cursor-pointer"
+                >
+                  <RefreshCw
+                    className={`w-3.5 h-3.5 ${telemetrySyncing ? 'animate-spin' : ''}`}
+                  />
+                  <span>{telemetrySyncing ? 'Syncing...' : 'Sync Live Telemetry'}</span>
+                </button>
+              )}
+              <button
+                id="btn-close-pipeline-drawer"
+                type="button"
+                onClick={onClose}
+                className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           {/* Smart Intake & Week Planner Bar at top of 7-Day Pipeline View */}
@@ -691,15 +755,21 @@ export const PipelineDrawer: React.FC<PipelineDrawerProps> = ({
             </div>
           </div>
 
-          <InteractivePipelineTable state={state} onUpdateDay={onUpdateDay} />
+          <InteractivePipelineTable
+            state={state}
+            onUpdateDay={onUpdateDay}
+            onSyncLiveTelemetry={onSyncLiveTelemetry}
+            onOpenTelemetryModal={onOpenTelemetryModal}
+            telemetrySyncing={telemetrySyncing}
+          />
         </div>
 
         <div className="pt-4 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
           <span>
             Day 2 (Tomorrow) Early Anchor Status:{' '}
             <strong className="text-slate-200">
-              {state.pipelineDays[1]?.earlyMorningAnchor
-                ? 'Early Event Logged (Blocks Flow Extension)'
+              {state.hasMorningAnchorTomorrow || state.pipelineDays[1]?.earlyMorningAnchor
+                ? 'Early Event Logged (<10:00 AM — Locks Flow Extension)'
                 : 'Clear (Permits Flow Extension)'}
             </strong>
           </span>

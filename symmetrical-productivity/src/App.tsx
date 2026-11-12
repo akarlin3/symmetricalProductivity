@@ -6,6 +6,7 @@ import {
   Copy,
   Download,
   FastForward,
+  GitBranch,
   History,
   KeyRound,
   Layers,
@@ -18,6 +19,7 @@ import {
   Pause,
   PictureInPicture2,
   Play,
+  RefreshCw,
   RotateCcw,
   ShieldCheck,
   Sliders,
@@ -43,6 +45,7 @@ import {
   FixedEventType,
   LayoutMode,
   Level2BreakProtocol,
+  LiveTelemetryConfig,
   LoadMode,
   MajorSubTrackId,
   MediaSubTrackId,
@@ -97,6 +100,7 @@ import {
   parseFromStateInput,
   pushStateBackup,
   serializeToStateMarkdown,
+  syncArchitectBaselineToPostAnatomy,
   syncTodayIntoDailyHistory,
   validateAndRestoreStateSnapshot,
 } from './state/defaultState';
@@ -148,7 +152,18 @@ import { KeyboardShortcutModal } from './components/KeyboardShortcutModal';
 import { MobileBottomSheet } from './components/MobileBottomSheet';
 import { CommandPaletteModal } from './components/CommandPaletteModal';
 import { ConversationalArchitectModal } from './components/ConversationalArchitectModal';
+import { CalendarSyncModal } from './components/CalendarSyncModal';
 import { GeminiBridgeModal } from './components/GeminiBridgeModal';
+import {
+  normalizeLiveTelemetryConfig,
+  pollLiveCalendarFeed,
+} from './utils/calendarImporter';
+import {
+  applyGithubActivityCreditToState,
+  dismissGithubActivityEvents,
+  GithubActivityDetection,
+  pollGithubActivityTelemetry,
+} from './utils/githubTelemetry';
 import {
   extractGeminiSyncParamFromLocation,
   parseGeminiResponseToStatePatch,
@@ -363,6 +378,238 @@ export function App() {
     return () =>
       window.removeEventListener(PRO_MODE_CHANGE_EVENT, handleProModeChange);
   }, []);
+
+  // Track 5 (v1.1.0): Live Calendar (.ics) & GitHub Telemetry Bridges
+  const [calendarSyncModalOpen, setCalendarSyncModalOpen] = useState(false);
+  const [telemetrySyncing, setTelemetrySyncing] = useState(false);
+  const [pendingGithubDetection, setPendingGithubDetection] =
+    useState<GithubActivityDetection | null>(null);
+  const telemetryStateRef = useRef<{
+    state: SymmetryState;
+    architectModeUnlocked: boolean;
+  }>({
+    state,
+    architectModeUnlocked,
+  });
+  const telemetryInFlightRef = useRef(false);
+
+  useEffect(() => {
+    telemetryStateRef.current = { state, architectModeUnlocked };
+  }, [state, architectModeUnlocked]);
+
+  const handleUpdateTelemetryConfig = useCallback(
+    (patch: Partial<LiveTelemetryConfig>) => {
+      setState((prev) => {
+        const baseCfg = normalizeLiveTelemetryConfig(
+          prev.liveTelemetryConfig,
+          architectModeUnlocked
+        );
+        return {
+          ...prev,
+          liveTelemetryConfig: {
+            ...baseCfg,
+            ...patch,
+          },
+        };
+      });
+    },
+    [architectModeUnlocked, setState]
+  );
+
+  const handleApplyGithubCredit = useCallback(
+    (detection: GithubActivityDetection) => {
+      triggerHaptic([15]);
+      soundEngine.playTactileClick('BLOCK_COMPLETE');
+      setState((prev) => {
+        pushUndoSnapshot(
+          prev,
+          `GitHub Auto-Credit: ${detection.primaryRepo} (+1 Output Block)`
+        );
+        return applyGithubActivityCreditToState(prev, detection);
+      });
+      setPendingGithubDetection(null);
+      showNotice(
+        `Credited 1 Ambition Drip / Output block to ${detection.mapping.displayLabel} from ${detection.primaryRepo} (${detection.totalActivityUnits} commits/releases today).`
+      );
+    },
+    [pushUndoSnapshot, setState, showNotice]
+  );
+
+  const handleDismissGithubBanner = useCallback(() => {
+    if (!pendingGithubDetection) return;
+    const ids = pendingGithubDetection.eventIds;
+    setState((prev) => dismissGithubActivityEvents(prev, ids));
+    setPendingGithubDetection(null);
+  }, [pendingGithubDetection, setState]);
+
+  const handleSyncLiveTelemetry = useCallback(
+    async (force = false) => {
+      const { state: snapshotState, architectModeUnlocked: isArch } =
+        telemetryStateRef.current;
+      const cfg = normalizeLiveTelemetryConfig(
+        snapshotState.liveTelemetryConfig,
+        isArch
+      );
+      const hasCalendarUrl = Boolean(cfg.icsFeedUrl && cfg.icsFeedUrl.trim());
+      const hasGithubUser = Boolean(
+        cfg.githubUsername && cfg.githubUsername.trim()
+      );
+
+      if (!hasCalendarUrl && !hasGithubUser) {
+        if (force) {
+          setCalendarSyncModalOpen(true);
+          showNotice(
+            'Configure a Calendar .ics feed URL or GitHub username to enable Live Telemetry polling.'
+          );
+        }
+        return;
+      }
+
+      if (telemetryInFlightRef.current) return;
+      telemetryInFlightRef.current = true;
+      setTelemetrySyncing(true);
+
+      try {
+        const notices: string[] = [];
+
+        if (hasCalendarUrl) {
+          const calRes = await pollLiveCalendarFeed(
+            telemetryStateRef.current.state,
+            {
+              force,
+              architectModeUnlocked: isArch,
+            }
+          );
+          if (calRes.ok && calRes.classification && !calRes.skippedThrottle) {
+            const cls = calRes.classification;
+            setState((prev) => ({
+              ...prev,
+              pipelineDays: cls.nextState.pipelineDays,
+              sevenDayPipeline: cls.nextState.sevenDayPipeline,
+              hasMorningAnchorTomorrow: cls.hasMorningAnchorTomorrow,
+              loadMode: cls.nextState.loadMode,
+              customModeBlockAdjustment:
+                cls.nextState.customModeBlockAdjustment,
+              fixedEvent: cls.nextState.fixedEvent,
+              liveTelemetryConfig: {
+                ...normalizeLiveTelemetryConfig(
+                  prev.liveTelemetryConfig,
+                  isArch
+                ),
+                lastCalendarSyncAt: cls.syncedAtIso,
+              },
+            }));
+            notices.push(
+              `Calendar synced (${cls.taperDaysCount} Taper/Lab, ${cls.earlyShutdownDaysCount} Early Shutdown${
+                cls.hasMorningAnchorTomorrow ? ', Morning Anchor lock ON' : ''
+              })`
+            );
+          } else if (!calRes.ok && calRes.error && force) {
+            notices.push(calRes.error);
+          }
+        }
+
+        if (hasGithubUser) {
+          const ghRes = await pollGithubActivityTelemetry(
+            telemetryStateRef.current.state,
+            {
+              force,
+              architectModeUnlocked: isArch,
+            }
+          );
+          if (ghRes.ok && !ghRes.skippedThrottle) {
+            if (ghRes.detection) {
+              const autoCreditOn = Boolean(
+                normalizeLiveTelemetryConfig(
+                  telemetryStateRef.current.state.liveTelemetryConfig,
+                  isArch
+                ).githubAutoCreditEnabled
+              );
+              if (autoCreditOn) {
+                const det = ghRes.detection;
+                setState((prev) => {
+                  pushUndoSnapshot(
+                    prev,
+                    `GitHub Auto-Credit: ${det.primaryRepo} (+1 Output Block)`
+                  );
+                  return applyGithubActivityCreditToState(prev, det);
+                });
+                setPendingGithubDetection(null);
+                const msg = `Auto-credited 1 Ambition Drip / Output block from GitHub activity on ${det.primaryRepo} (${det.totalActivityUnits} commits/releases today).`;
+                notices.push(msg);
+                if (!force) {
+                  showNotice(msg);
+                }
+              } else {
+                setState((prev) => ({
+                  ...prev,
+                  liveTelemetryConfig: {
+                    ...normalizeLiveTelemetryConfig(
+                      prev.liveTelemetryConfig,
+                      isArch
+                    ),
+                    lastGithubSyncAt:
+                      ghRes.syncedAtIso || new Date().toISOString(),
+                  },
+                }));
+                setPendingGithubDetection(ghRes.detection);
+                notices.push(
+                  `GitHub: ${ghRes.detection.totalActivityUnits} commits/releases on ${ghRes.detection.primaryRepo}`
+                );
+              }
+            } else {
+              setState((prev) => ({
+                ...prev,
+                liveTelemetryConfig: {
+                  ...normalizeLiveTelemetryConfig(
+                    prev.liveTelemetryConfig,
+                    isArch
+                  ),
+                  lastGithubSyncAt:
+                    ghRes.syncedAtIso || new Date().toISOString(),
+                },
+              }));
+              if (force) {
+                notices.push('GitHub synced (0 new uncredited events today)');
+              }
+            }
+          } else if (!ghRes.ok && ghRes.error && force) {
+            notices.push(ghRes.error);
+          }
+        }
+
+        if (force) {
+          showNotice(
+            notices.length > 0
+              ? notices.join(' • ')
+              : 'Live Telemetry is already up to date.'
+          );
+        }
+      } finally {
+        telemetryInFlightRef.current = false;
+        setTelemetrySyncing(false);
+      }
+    },
+    [pushUndoSnapshot, setState, showNotice]
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    void handleSyncLiveTelemetry(false);
+
+    const onWindowFocus = () => {
+      void handleSyncLiveTelemetry(false);
+    };
+    window.addEventListener('focus', onWindowFocus);
+    const timerId = window.setInterval(() => {
+      void handleSyncLiveTelemetry(false);
+    }, 60_000);
+
+    return () => {
+      window.removeEventListener('focus', onWindowFocus);
+      window.clearInterval(timerId);
+    };
+  }, [handleSyncLiveTelemetry]);
 
   const handleTriggerUndo = useCallback(() => {
     const [latestSnapshot, ...rest] = undoStackRef.current;
@@ -4683,6 +4930,46 @@ export function App() {
           </div>
         )}
 
+        {/* Live GitHub Activity Auto-Credit Toast / Banner */}
+        {pendingGithubDetection && (
+          <div className="w-full">
+            <div
+              id="github-telemetry-toast-banner"
+              className={`px-4 py-2.5 rounded-2xl border backdrop-blur-xl text-xs font-mono flex flex-wrap items-center justify-between gap-2.5 ${
+                isEveningTheme
+                  ? 'bg-amber-950/85 border-amber-400/40 text-amber-100'
+                  : 'bg-emerald-950/85 border-emerald-400/40 text-emerald-100'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <GitBranch className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+                <span>{pendingGithubDetection.bannerMessage}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  id="btn-auto-credit-github-block"
+                  type="button"
+                  onClick={() =>
+                    handleApplyGithubCredit(pendingGithubDetection)
+                  }
+                  className="px-3 py-1 rounded-full bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-mono font-bold text-[11px] flex items-center gap-1 cursor-pointer"
+                >
+                  <Check className="w-3 h-3" />
+                  <span>Auto-Credit Block</span>
+                </button>
+                <button
+                  id="btn-dismiss-github-banner"
+                  type="button"
+                  onClick={handleDismissGithubBanner}
+                  className="px-2 py-1 rounded-full bg-white/[0.06] hover:bg-white/[0.12] text-slate-300 text-[11px] cursor-pointer"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Active Tab Viewport */}
         <main className="w-full max-w-none">
           {activeTab === 'PIPELINE' && (
@@ -5025,6 +5312,9 @@ export function App() {
               onUpdateProjectItem={handleUpdateProjectItem}
               onUpdateActiveTimerTask={handleUpdateActiveTimerTask}
               onUpdateBreakOptions={handleUpdateBreakOptions}
+              onSyncLiveTelemetry={() => void handleSyncLiveTelemetry(true)}
+              onOpenTelemetryModal={() => setCalendarSyncModalOpen(true)}
+              telemetrySyncing={telemetrySyncing}
             />
           )}
 
@@ -5426,14 +5716,20 @@ export function App() {
                 }))
               }
               onToggleTomorrowEarlyAnchor={() =>
-                setState((prev) => ({
-                  ...prev,
-                  pipelineDays: prev.pipelineDays.map((d, idx) =>
-                    idx === 1
-                      ? { ...d, earlyMorningAnchor: !d.earlyMorningAnchor }
-                      : d
-                  ),
-                }))
+                setState((prev) => {
+                  const currentFlag = Boolean(
+                    prev.hasMorningAnchorTomorrow ||
+                      prev.pipelineDays[1]?.earlyMorningAnchor
+                  );
+                  const nextFlag = !currentFlag;
+                  return {
+                    ...prev,
+                    hasMorningAnchorTomorrow: nextFlag,
+                    pipelineDays: prev.pipelineDays.map((d, idx) =>
+                      idx === 1 ? { ...d, earlyMorningAnchor: nextFlag } : d
+                    ),
+                  };
+                })
               }
               onToggleOption0Timer={() => {
                 triggerHaptic([15]);
@@ -5987,6 +6283,9 @@ export function App() {
         onUnlockArchitectMode={handleUnlockArchitectMode}
         apiKeyVersion={apiKeyVersion}
         onUpdateDay={handleUpdatePipelineDay}
+        onSyncLiveTelemetry={() => void handleSyncLiveTelemetry(true)}
+        onOpenTelemetryModal={() => setCalendarSyncModalOpen(true)}
+        telemetrySyncing={telemetrySyncing}
       />
 
       {/* State-Aware AI Side-Panel (Cmd/Ctrl + /) */}
@@ -6074,6 +6373,40 @@ export function App() {
               <div className="flex flex-wrap items-center gap-2">
                 {architectModeUnlocked && (
                   <button
+                    id="btn-sync-architect-post-anatomy"
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic([15]);
+                      setState((prev) => {
+                        const updatedBackups = pushStateBackup(
+                          prev,
+                          'PRESET_SWITCH',
+                          'Before Post-Anatomy Architect Baseline Sync (v1.1.0)'
+                        );
+                        pushUndoSnapshot(
+                          prev,
+                          'Synced Architect Baseline to Post-Anatomy (v1.1.0)'
+                        );
+                        const migrated = syncArchitectBaselineToPostAnatomy({
+                          ...prev,
+                          stateBackups: updatedBackups,
+                        });
+                        setStateIoText(serializeToStateMarkdown(migrated));
+                        return migrated;
+                      });
+                      showNotice(
+                        'Synced Architect Baseline to Post-Anatomy (v1.1.0): 4b Comp + 2b Reading + 1b Synthesis, Focus #1 Lab Report #4 (0/8), logs & Sticky [X/3] counters preserved.'
+                      );
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-mono font-extrabold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Sync Architect Baseline to Post-Anatomy (v1.1.0)</span>
+                  </button>
+                )}
+
+                {architectModeUnlocked && (
+                  <button
                     id="btn-lock-architect-mode"
                     type="button"
                     onClick={() => {
@@ -6085,6 +6418,19 @@ export function App() {
                     Lock / Hide Architect Mode
                   </button>
                 )}
+
+                <button
+                  id="btn-settings-live-telemetry"
+                  type="button"
+                  onClick={() => {
+                    setStateModalOpen(false);
+                    setCalendarSyncModalOpen(true);
+                  }}
+                  className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-cyan-400/40 text-cyan-200 font-mono font-bold text-xs flex items-center gap-1.5 cursor-pointer transition"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 text-cyan-300" />
+                  <span>Live Telemetry (.ics &amp; GitHub)</span>
+                </button>
 
                 <button
                   id="btn-settings-customize-with-ai"
@@ -7520,6 +7866,34 @@ export function App() {
         }
         onShowNotice={showNotice}
         isEveningTheme={isEveningTheme}
+      />
+
+      {/* Track 5 (v1.1.0): Live Calendar (.ics) & GitHub Telemetry Modal */}
+      <CalendarSyncModal
+        isOpen={calendarSyncModalOpen}
+        onClose={() => setCalendarSyncModalOpen(false)}
+        state={state}
+        architectModeUnlocked={architectModeUnlocked}
+        onUpdateTelemetryConfig={handleUpdateTelemetryConfig}
+        onApplyCalendarTelemetryState={(nextTelemetryState, summary) => {
+          setState((prev) => {
+            pushUndoSnapshot(
+              prev,
+              `Calendar Telemetry Applied (${summary})`
+            );
+            return {
+              ...nextTelemetryState,
+              stateBackups: prev.stateBackups,
+            };
+          });
+          showNotice(summary);
+        }}
+        onDetectedGithubActivity={(detection) => {
+          setPendingGithubDetection(detection);
+        }}
+        onAutoCreditGithubDetection={(detection) => {
+          handleApplyGithubCredit(detection);
+        }}
       />
 
       {/* Connect Firebase Cloud Sync Modal (When VITE_FIREBASE_* is not yet set in .env.local or Cloudflare Worker vars) */}

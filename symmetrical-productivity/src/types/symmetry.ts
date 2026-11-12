@@ -103,7 +103,8 @@ export interface BaselineBlock {
   reallocatedBlocksCount?: number;
   earlyClearanceEligible?: boolean; // Toggleable per slot
   supportsEarlyClearance?: boolean; // Alias for earlyClearanceEligible
-  lateNightBlocker?: boolean; // Toggleable per slot (prevents scheduling as final block of night)
+  isMechanicalRecall?: boolean; // Mechanical recall / SRS classification flag
+  lateNightBlocker?: boolean; // Toggleable per slot (prevents scheduling in final blocks of night)
   startupStep: string;
   startupPrompt?: string;
   launchUrl?: string;
@@ -130,6 +131,7 @@ export interface ProjectItem {
   nextStepNote: string;
   notes?: string;
   blockedByTitle?: string;
+  prerequisiteTitle?: string;
   dueDateLabel?: string;
   launchUrl?: string;
   autoLaunchUrl?: boolean;
@@ -567,8 +569,20 @@ export interface StateBackupSnapshot {
   stateJson: string;
 }
 
+export interface LiveTelemetryConfig {
+  icsFeedUrl?: string;
+  pollIntervalMinutes: number;
+  lastCalendarSyncAt?: string;
+  githubUsername?: string;
+  githubToken?: string;
+  githubAutoCreditEnabled: boolean;
+  lastGithubSyncAt?: string;
+  creditedGithubEventIds: string[];
+}
+
 export interface SymmetryState {
   version: string;
+  appVersion?: string;
   profilePresetId?: ProfilePresetId;
   profileName?: string;
   inlineEditModeActive?: boolean;
@@ -576,6 +590,8 @@ export interface SymmetryState {
   uiTerminology?: UiTerminologyOverrides;
   logicalDayRolloverHour?: number; // Default: 4 (4:00 AM), adjustable 0..23
   earlyEveningShutdownTime?: string; // Default: '6:00 PM'
+  hasMorningAnchorTomorrow?: boolean; // Auto-locks tonight's Flow Extension gate when next-morning event < 10:00 AM
+  liveTelemetryConfig?: LiveTelemetryConfig;
   taskWeights?: TaskWeightsConfig;
   breakOptions?: BreakOptionsConfig;
   energyBandwidth?: EnergyBandwidthState; // 'SHARP' | 'STEADY' | 'LOW_FOGGY'
@@ -639,6 +655,8 @@ export interface SymmetryState {
   watchmansRest?: boolean;
   lastUpdated?: number;
 }
+
+export type AppState = SymmetryState;
 
 export type SymmetrySyncStatus = 'LOCAL_MODE' | 'SYNCING' | 'SYNCED' | 'ERROR';
 

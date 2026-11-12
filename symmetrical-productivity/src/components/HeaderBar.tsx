@@ -212,7 +212,16 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   const visibleMilestones = (state.upcomingMilestones || []).filter((m) => {
     if (architectModeUnlocked) return true;
     const lower = m.toLowerCase();
-    return !lower.includes('nov 12') && !lower.includes('dec 8');
+    return (
+      !lower.includes('nov 12') &&
+      !lower.includes('nov 24') &&
+      !lower.includes('nov 25') &&
+      !lower.includes('dec 3') &&
+      !lower.includes('dec 8') &&
+      !lower.includes('comp exam') &&
+      !lower.includes('lab report') &&
+      !lower.includes('practicum')
+    );
   });
 
   // 3 Primary Views in the Sleek Center Pill Switcher

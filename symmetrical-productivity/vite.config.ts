@@ -28,9 +28,10 @@ export default defineConfig({
     allowedHosts: true,
   },
   build: {
-    rollupOptions: {
+    chunkSizeWarningLimit: 3000,
+    rolldownOptions: {
       output: {
-        inlineDynamicImports: true,
+        codeSplitting: false,
       },
     },
   },

@@ -149,9 +149,10 @@ export const Tab3Recharge: React.FC<Tab3RechargeProps> = ({
   const visibleCategoryCards = allCategoryCards.filter((c) => !c.hidden);
   const hiddenCategoryCards = allCategoryCards.filter((c) => c.hidden);
 
-  // Flow Extension 3-part eligibility check (Rule 7)
+  // Flow Extension 3-part eligibility check (Rule 7 + Live Calendar <10:00 AM Anchor Lock)
   const tomorrowDay = state.pipelineDays[1];
-  const tomorrowHasZeroEarlyEvents = !tomorrowDay?.earlyMorningAnchor;
+  const tomorrowHasZeroEarlyEvents =
+    !state.hasMorningAnchorTomorrow && !tomorrowDay?.earlyMorningAnchor;
   const activeTaskNotFlashcards = state.timer.activeTaskType !== 'FLASHCARDS';
   const weeklyCapUnder2 = recharge.weeklyExtensionsUsed < 2;
   const canUseFlowExtension =

@@ -226,8 +226,34 @@ export function compileFullGeminiPayload(
 ): string {
   const normalizedMode = String(mode || 'STATE_MD').trim().toUpperCase();
 
+  const normalizedLiveTelemetry: import('../types/symmetry').LiveTelemetryConfig = {
+    icsFeedUrl: state.liveTelemetryConfig?.icsFeedUrl ?? '',
+    pollIntervalMinutes: state.liveTelemetryConfig?.pollIntervalMinutes ?? 15,
+    lastCalendarSyncAt: state.liveTelemetryConfig?.lastCalendarSyncAt,
+    githubUsername: state.liveTelemetryConfig?.githubUsername ?? '',
+    githubToken: state.liveTelemetryConfig?.githubToken,
+    githubAutoCreditEnabled: Boolean(
+      state.liveTelemetryConfig?.githubAutoCreditEnabled
+    ),
+    lastGithubSyncAt: state.liveTelemetryConfig?.lastGithubSyncAt,
+    creditedGithubEventIds: Array.isArray(
+      state.liveTelemetryConfig?.creditedGithubEventIds
+    )
+      ? [...state.liveTelemetryConfig!.creditedGithubEventIds]
+      : [],
+  };
+
   if (normalizedMode === 'MODE_D_JSON' || normalizedMode === 'JSON') {
-    return JSON.stringify(state, null, 2);
+    return JSON.stringify(
+      {
+        ...state,
+        version: state.version || '1.1.0',
+        appVersion: state.appVersion || '1.1.0',
+        liveTelemetryConfig: normalizedLiveTelemetry,
+      },
+      null,
+      2
+    );
   }
 
   const opts: GeminiExportOptions =
@@ -257,7 +283,9 @@ export function compileFullGeminiPayload(
 
   const milestones = state.upcomingMilestones?.length
     ? state.upcomingMilestones.join(' • ')
-    : 'Nov 12: Anatomy Exam • Dec 8–9: Comp Exam';
+    : state.profilePresetId === 'AVERY_DEFAULT'
+    ? 'Dec 8–9: Comp Exam (Primary Sprint) • Nov 24: Lab Report #4 • Nov 25 – Dec 3: Practicum Phase 1 Coding & Figures'
+    : 'None configured';
 
   // Flow Extension auto-recalibration delta for tomorrow
   const extraBlocksTonight = state.recharge.flowExtensionBlocksLoggedToday || 0;
@@ -271,7 +299,9 @@ export function compileFullGeminiPayload(
       ? -tomorrowDay.deductedBlocksFromExtension
       : 0;
   const tomorrowHasEarlyAnchor = Boolean(
-    tomorrowDay?.earlyMorningAnchor || tomorrowDay?.fixedEvent === 'LAB_2H'
+    state.hasMorningAnchorTomorrow ||
+      tomorrowDay?.earlyMorningAnchor ||
+      tomorrowDay?.fixedEvent === 'LAB_2H'
   );
   const flowEligible =
     !tomorrowHasEarlyAnchor &&
@@ -347,6 +377,10 @@ export function compileFullGeminiPayload(
 
   const stateWithBandwidth: SymmetryState = {
     ...state,
+    version: state.version || '1.1.0',
+    appVersion: state.appVersion || '1.1.0',
+    hasMorningAnchorTomorrow: tomorrowHasEarlyAnchor,
+    liveTelemetryConfig: normalizedLiveTelemetry,
     bandwidth,
     dailyAmbitionDrip: drip,
     openList: structuredOpenList,
@@ -359,8 +393,10 @@ export function compileFullGeminiPayload(
     '# SymmetryManager (`wl-balancer`) — Master `state.md`',
     '',
     '## Header Telemetry',
+    `- **App Version (\`symmetrical-sync\`)**: \`${state.appVersion || '1.1.0'}\``,
     `- **Logical Date (${rolloverLabel} Rollover Boundary)**: \`${logicalDate}\` (Boundary: \`${rolloverLabel}\`, Early Outing Cutoff: \`${shutdownTime}\`)`,
     `- **Active Profile Preset**: ${state.profileName || DEFAULT_SYMMETRY_STATE.profileName} (\`${state.profilePresetId || 'BALANCED_CORE'}\`)`,
+    `- **Live Telemetry Bridges**: Calendar Feed \`${normalizedLiveTelemetry.icsFeedUrl ? 'Active' : 'Manual'}\` (Poll: \`${normalizedLiveTelemetry.pollIntervalMinutes}m\`, Morning Anchor Lock: \`${tomorrowHasEarlyAnchor ? 'Yes' : 'No'}\`) • GitHub Bridge \`${normalizedLiveTelemetry.githubUsername ? `@${normalizedLiveTelemetry.githubUsername} (${normalizedLiveTelemetry.githubAutoCreditEnabled ? 'Auto-Credit' : '1-Tap'})` : 'Unconfigured'}\` (\`${normalizedLiveTelemetry.creditedGithubEventIds.length}\` events credited)`,
     `- **Current Bandwidth**: \`${bandwidth}\` (\`Sharp\` / \`Steady\` / \`Low\`)`,
     `- **Active Load Mode**: **${loadModeDisplay}** (\`${state.loadMode}\`${state.cruisePlus ? ' • Cruise+' : ''}${state.preExamTaperActive ? ' • Pre-Exam Taper Active' : ''}) — Target Ceiling: ${metrics.totalTargetBlocks} blocks`,
     `- **Daily Ambition Drip ("Zero 100%-Institutional Days")**: \`${drip.enabled ? `${drip.completedToday} / ${drip.targetBlocksPerDay} block` : 'PAUSED'}\` (Preferred Slot: \`#${drip.preferredSlotIndex + 1}\`)`,
@@ -679,6 +715,44 @@ export function parseGeminiResponseToState(
           workingState = {
             ...workingState,
             ...parsedObj,
+            version: parsedObj.version || workingState.version || '1.1.0',
+            appVersion: parsedObj.appVersion || workingState.appVersion || '1.1.0',
+            hasMorningAnchorTomorrow:
+              typeof parsedObj.hasMorningAnchorTomorrow === 'boolean'
+                ? parsedObj.hasMorningAnchorTomorrow
+                : workingState.hasMorningAnchorTomorrow,
+            liveTelemetryConfig: {
+              icsFeedUrl:
+                parsedObj.liveTelemetryConfig?.icsFeedUrl ??
+                workingState.liveTelemetryConfig?.icsFeedUrl ??
+                '',
+              pollIntervalMinutes:
+                parsedObj.liveTelemetryConfig?.pollIntervalMinutes ??
+                workingState.liveTelemetryConfig?.pollIntervalMinutes ??
+                15,
+              lastCalendarSyncAt:
+                parsedObj.liveTelemetryConfig?.lastCalendarSyncAt ??
+                workingState.liveTelemetryConfig?.lastCalendarSyncAt,
+              githubUsername:
+                parsedObj.liveTelemetryConfig?.githubUsername ??
+                workingState.liveTelemetryConfig?.githubUsername ??
+                '',
+              githubToken:
+                parsedObj.liveTelemetryConfig?.githubToken ??
+                workingState.liveTelemetryConfig?.githubToken,
+              githubAutoCreditEnabled: Boolean(
+                parsedObj.liveTelemetryConfig?.githubAutoCreditEnabled ??
+                  workingState.liveTelemetryConfig?.githubAutoCreditEnabled
+              ),
+              lastGithubSyncAt:
+                parsedObj.liveTelemetryConfig?.lastGithubSyncAt ??
+                workingState.liveTelemetryConfig?.lastGithubSyncAt,
+              creditedGithubEventIds: Array.isArray(
+                parsedObj.liveTelemetryConfig?.creditedGithubEventIds
+              )
+                ? parsedObj.liveTelemetryConfig.creditedGithubEventIds
+                : workingState.liveTelemetryConfig?.creditedGithubEventIds ?? [],
+            },
             bandwidth: parsedObj.bandwidth || workingState.bandwidth || 'Sharp',
             dailyAmbitionDrip:
               parsedObj.dailyAmbitionDrip && typeof parsedObj.dailyAmbitionDrip === 'object'

@@ -1319,14 +1319,16 @@ export const PROFILE_PRESETS: Record<string, ProfilePresetDefinition> = {
     id: 'AVERY_DEFAULT',
     title: 'Architect Live Preset (Medical Physics, Authorship & Hardware)',
     shortBadge: 'Architect Live',
-    subtitle: 'Pre-Exam 50/50 Floor (2+2+2+1) + Practicum Proposal + Symmetrical Triptych Ed. 4 + K1C',
+    subtitle:
+      'Post-Anatomy 100% Comp Exam Floor (4+2+1) + Lab Report #4 + Symmetrical Triptych Ed. 4 + K1C',
     description:
-      'Synced live state: 2b Anatomy + 2b Comp (250 RemNote cap) + 2b Half-Chapter + 1b Synthesis, Practicum Proposal (1/6), Symmetrical Triptych Ed. 4 Drip, K1C 3D Printer (0/3), 6-Channel Evening Menu incl. Italian Culture & Language, and Structural House Roadmap.',
+      'Synced v1.1.0 Post-Anatomy state: 4b Comp Flashcards (250 RemNote cap) + 2b Half-Chapter Comp Reading + 1b Equation Synthesis, Lab Report #4 Focus #1 (0/8), Symmetrical Triptych Ed. 4 Drip (0/6), Creality K1C 3D Printer (0/3), Live Calendar/GitHub Telemetry Bridges, and Structural House Roadmap.',
     isDefaultPersonal: true,
-    floorCountLabel: '7-Block Pre-Exam 50/50 Floor (2b Anatomy + 2b Comp + 2b Read + 1b Synth)',
-    cruiseCeilingBlocks: 12,
+    floorCountLabel:
+      '7-Block 100% Comp Exam Floor (4b Comp Cards + 2b Comp Reading + 1b Synthesis)',
+    cruiseCeilingBlocks: 11,
     surgeCeilingBlocks: 14,
-    taperCeilingBlocks: 10,
+    taperCeilingBlocks: 8,
     taskWeights: {
       ...DEFAULT_SYMMETRY_STATE.taskWeights!,
       quickLabel: 'Quick Task',
@@ -1888,8 +1890,58 @@ export function applyPresetToState(
     ? currentState.completedDeliverablesLog
     : JSON.parse(JSON.stringify(preset.completedDeliverablesLog || []));
 
+  const resolvedTelemetryConfig: import('../types/symmetry').LiveTelemetryConfig =
+    isArchitectPreset
+      ? {
+          icsFeedUrl: keepWork
+            ? currentState.liveTelemetryConfig?.icsFeedUrl ?? ''
+            : '',
+          pollIntervalMinutes:
+            currentState.liveTelemetryConfig?.pollIntervalMinutes ?? 15,
+          lastCalendarSyncAt: keepWork
+            ? currentState.liveTelemetryConfig?.lastCalendarSyncAt
+            : undefined,
+          githubUsername:
+            keepWork && currentState.liveTelemetryConfig?.githubUsername?.trim()
+              ? currentState.liveTelemetryConfig.githubUsername.trim()
+              : 'akarlin3',
+          githubToken: keepWork
+            ? currentState.liveTelemetryConfig?.githubToken
+            : undefined,
+          githubAutoCreditEnabled: keepWork
+            ? Boolean(currentState.liveTelemetryConfig?.githubAutoCreditEnabled)
+            : false,
+          lastGithubSyncAt: keepWork
+            ? currentState.liveTelemetryConfig?.lastGithubSyncAt
+            : undefined,
+          creditedGithubEventIds:
+            keepWork &&
+            Array.isArray(currentState.liveTelemetryConfig?.creditedGithubEventIds)
+              ? [...currentState.liveTelemetryConfig!.creditedGithubEventIds]
+              : [],
+        }
+      : {
+          icsFeedUrl:
+            keepWork && currentState.profilePresetId !== 'AVERY_DEFAULT'
+              ? currentState.liveTelemetryConfig?.icsFeedUrl ?? ''
+              : '',
+          pollIntervalMinutes: 15,
+          githubUsername:
+            keepWork &&
+            currentState.profilePresetId !== 'AVERY_DEFAULT' &&
+            currentState.liveTelemetryConfig?.githubUsername !== 'akarlin3'
+              ? currentState.liveTelemetryConfig?.githubUsername ?? ''
+              : '',
+          githubAutoCreditEnabled: false,
+          creditedGithubEventIds: [],
+        };
+
   return {
     ...currentState,
+    version: '1.1.0',
+    appVersion: '1.1.0',
+    hasMorningAnchorTomorrow: Boolean(resolvedPipelineDays?.[1]?.earlyMorningAnchor),
+    liveTelemetryConfig: resolvedTelemetryConfig,
     profilePresetId: preset.id,
     profileName: options?.customDraft?.profileName || preset.title,
     inlineEditModeActive: Boolean(preset.opensInlineEditOnLoad),
